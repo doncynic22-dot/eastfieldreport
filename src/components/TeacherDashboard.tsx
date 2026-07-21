@@ -526,12 +526,10 @@ export default function TeacherDashboard({
   // Grade/Attendance input setters
   const handleGradeInputChange = (studentId: string, field: 'classScore' | 'examScore', val: string) => {
     // Basic limit check
-    const matchedSubjectObj = subjects.find(s => s.id === selectedSubject);
-    const isJhs = matchedSubjectObj?.level === 'JHS';
-    const limit = field === 'classScore' ? (isJhs ? 50 : 30) : (isJhs ? 50 : 70);
+    const limit = 50;
     
     if (val !== '' && (isNaN(Number(val)) || Number(val) > limit || Number(val) < 0)) {
-      alert(`Continuous assessment values for ${field === 'classScore' ? 'Class Scores' : 'Exam Scores'} are strictly capped between 0 and ${limit} for JHS level.`);
+      alert(`Continuous assessment values for ${field === 'classScore' ? 'Class Scores' : 'Exam Scores'} are strictly capped between 0 and ${limit}.`);
       return;
     }
 
@@ -1213,10 +1211,8 @@ export default function TeacherDashboard({
 
           {/* MAIN GRADE ENTRY SHEET TABLE */}
           {(() => {
-            const matchedSubjectObj = subjects.find(s => s.id === selectedSubject);
-            const isJhs = matchedSubjectObj?.level === 'JHS';
-            const classLimit = isJhs ? 50 : 30;
-            const examLimit = isJhs ? 50 : 70;
+            const classLimit = 50;
+            const examLimit = 50;
 
             return (
               <div className="bg-white rounded border border-mauve-500/20 shadow-sm overflow-hidden">

@@ -1365,8 +1365,8 @@ export default function ReportPDF({
                   <thead>
                     <tr className="bg-mauve-900 text-white font-bold text-[11px] uppercase tracking-wide">
                       <th className="p-3 pl-4 bg-white text-mauve-900 border-b border-mauve-100">Subject Details</th>
-                      <th className="p-3 text-center w-36 bg-white text-mauve-900 border-b border-mauve-100">Class Score (30%)</th>
-                      <th className="p-3 text-center w-36 bg-white text-mauve-900 border-b border-mauve-100">Exam Score (70%)</th>
+                      <th className="p-3 text-center w-36 bg-white text-mauve-900 border-b border-mauve-100">Class Score (50%)</th>
+                      <th className="p-3 text-center w-36 bg-white text-mauve-900 border-b border-mauve-100">Exam Score (50%)</th>
                       <th className="p-3 text-center w-32 font-bold bg-white text-mauve-900 border-b border-mauve-100">Total (100%)</th>
                       <th className="p-3 pr-4 text-center bg-white text-mauve-900 border-b border-mauve-100">Remarks</th>
                     </tr>
