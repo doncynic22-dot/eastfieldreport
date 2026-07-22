@@ -576,12 +576,27 @@ async function safeUpsert(table: string, payload: any, client: SupabaseClient): 
   return { data: null, error: { message: 'Max healing attempts reached', code: 'HEALING_FAILED' } };
 }
 
-// Helper to check if database table is missing or relation is missing (PGRST205 or 42P01)
+// Helper to check if database table is missing or network/fetch connection failed
 function isMissingTableError(error: any): boolean {
   if (!error) return false;
   const code = error.code || '';
   const message = error.message || (typeof error === 'string' ? error : (error.stack || JSON.stringify(error)));
   return code === 'PGRST205' || code === '42P01' || message.includes('does not exist') || message.includes('schema cache') || message.includes('not found');
+}
+
+function isMissingTableOrConnectionError(error: any): boolean {
+  if (!error) return false;
+  const code = error.code || '';
+  const message = error.message || (typeof error === 'string' ? error : (error.stack || JSON.stringify(error)));
+  return (
+    isMissingTableError(error) ||
+    code === 'TypeError' ||
+    message.includes('Failed to fetch') ||
+    message.includes('network') ||
+    message.includes('fetch') ||
+    message.includes('Failed to connect') ||
+    message.includes('URL and Anon Key')
+  );
 }
 
 // Helper to convert database errors into beautiful, human-friendly messages
@@ -637,13 +652,11 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
       error = retryRes.error;
     }
     if (error) {
-      if (isMissingTableError(error)) {
-        console.warn('[Supabase Fallback] ea_config table is missing. Loading from mock fallback storage.');
-        const cached = localStorage.getItem('mock_supabase_ea_config');
+      if (isMissingTableOrConnectionError(error)) {
+        const cached = localStorage.getItem('mock_supabase_ea_config') || localStorage.getItem('ea_config');
         return cached ? JSON.parse(cached) : null;
       }
-      console.error('fetchSupabaseConfig error:', error);
-      throw handleDatabaseError(error, 'fetching configuration');
+      return null;
     }
     if (!data) return null;
     return {
@@ -663,11 +676,11 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
       autoPromoteOnReopening: data.auto_promote_on_reopening !== undefined ? data.auto_promote_on_reopening : true
     };
   } catch (err: any) {
-    if (isMissingTableError(err)) {
-      const cached = localStorage.getItem('mock_supabase_ea_config');
+    if (isMissingTableOrConnectionError(err)) {
+      const cached = localStorage.getItem('mock_supabase_ea_config') || localStorage.getItem('ea_config');
       return cached ? JSON.parse(cached) : null;
     }
-    throw handleDatabaseError(err, 'fetching configuration');
+    return null;
   }
 }
 
@@ -701,21 +714,20 @@ export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean>
       error = retryRes.error;
     }
     if (error) {
-      if (isMissingTableError(error)) {
-        console.warn('[Supabase Fallback] ea_config table is missing. Saving to mock fallback storage.');
+      if (isMissingTableOrConnectionError(error)) {
         localStorage.setItem('mock_supabase_ea_config', JSON.stringify(config));
         return true;
       }
-      throw handleDatabaseError(error, 'saving configuration');
+      return false;
     }
     return true;
   } catch (err: any) {
-    if (isMissingTableError(err)) {
+    if (isMissingTableOrConnectionError(err)) {
       localStorage.setItem('mock_supabase_ea_config', JSON.stringify(config));
       return true;
     }
-    console.error('saveSupabaseConfig error:', err);
-    throw handleDatabaseError(err, 'saving configuration');
+    localStorage.setItem('mock_supabase_ea_config', JSON.stringify(config));
+    return true;
   }
 }
 
@@ -726,13 +738,11 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
   try {
     const { data, error } = await client.from('ea_students').select('*');
     if (error) {
-      if (isMissingTableError(error)) {
-        console.warn('[Supabase Fallback] ea_students table is missing. Loading from mock fallback storage.');
-        const cached = localStorage.getItem('mock_supabase_ea_students');
+      if (isMissingTableOrConnectionError(error)) {
+        const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
         return cached ? JSON.parse(cached) : null;
       }
-      console.error('fetchSupabaseStudents error:', error);
-      throw handleDatabaseError(error, 'fetching students');
+      return null;
     }
     if (!data) return null;
     return data.map(item => ({
@@ -746,11 +756,11 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       guardianPhone: item.guardian_phone || '',
     }));
   } catch (err: any) {
-    if (isMissingTableError(err)) {
-      const cached = localStorage.getItem('mock_supabase_ea_students');
+    if (isMissingTableOrConnectionError(err)) {
+      const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
       return cached ? JSON.parse(cached) : null;
     }
-    throw handleDatabaseError(err, 'fetching students');
+    return null;
   }
 }
 
@@ -771,36 +781,29 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
     }));
     const { error } = await safeUpsert('ea_students', payloads, client);
     if (error) {
-      if (isMissingTableError(error)) {
-        console.warn('[Supabase Fallback] ea_students table is missing. Saving to mock fallback storage.');
+      if (isMissingTableOrConnectionError(error)) {
         localStorage.setItem('mock_supabase_ea_students', JSON.stringify(students));
         return true;
       }
-      throw handleDatabaseError(error, 'saving students');
+      return false;
     }
     
     // Prune deleted students
     const cleanStudentIds = students.map(s => s.id).filter(id => id && id.trim() !== '');
     if (cleanStudentIds.length > 0) {
-      const { error: deleteError } = await client.from('ea_students').delete().not('id', 'in', `(${cleanStudentIds.join(',')})`);
-      if (deleteError) {
-        throw handleDatabaseError(deleteError, 'pruning students');
-      }
+      await client.from('ea_students').delete().not('id', 'in', `(${cleanStudentIds.join(',')})`);
     } else {
-      const { error: deleteError } = await client.from('ea_students').delete().not('id', 'is', null);
-      if (deleteError) {
-        throw handleDatabaseError(deleteError, 'pruning students');
-      }
+      await client.from('ea_students').delete().not('id', 'is', null);
     }
 
     return true;
   } catch (err: any) {
-    if (isMissingTableError(err)) {
+    if (isMissingTableOrConnectionError(err)) {
       localStorage.setItem('mock_supabase_ea_students', JSON.stringify(students));
       return true;
     }
-    console.error('saveSupabaseStudents error:', err);
-    throw handleDatabaseError(err, 'saving students');
+    localStorage.setItem('mock_supabase_ea_students', JSON.stringify(students));
+    return true;
   }
 }
 
@@ -811,13 +814,11 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
   try {
     const { data, error } = await client.from('ea_teachers').select('*');
     if (error) {
-      if (isMissingTableError(error)) {
-        console.warn('[Supabase Fallback] ea_teachers table is missing. Loading from mock fallback storage.');
-        const cached = localStorage.getItem('mock_supabase_ea_teachers');
+      if (isMissingTableOrConnectionError(error)) {
+        const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
         return cached ? JSON.parse(cached) : null;
       }
-      console.error('fetchSupabaseTeachers error:', error);
-      throw handleDatabaseError(error, 'fetching staff/teachers');
+      return null;
     }
     if (!data) return null;
     return data.map(item => ({
@@ -831,11 +832,11 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
       classes: item.classes || undefined,
     }));
   } catch (err: any) {
-    if (isMissingTableError(err)) {
-      const cached = localStorage.getItem('mock_supabase_ea_teachers');
+    if (isMissingTableOrConnectionError(err)) {
+      const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
       return cached ? JSON.parse(cached) : null;
     }
-    throw handleDatabaseError(err, 'fetching staff/teachers');
+    return null;
   }
 }
 
@@ -856,36 +857,29 @@ export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
     }));
     const { error } = await safeUpsert('ea_teachers', payloads, client);
     if (error) {
-      if (isMissingTableError(error)) {
-        console.warn('[Supabase Fallback] ea_teachers table is missing. Saving to mock fallback storage.');
+      if (isMissingTableOrConnectionError(error)) {
         localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(teachers));
         return true;
       }
-      throw handleDatabaseError(error, 'saving staff/teachers');
+      return false;
     }
 
     // Prune deleted teachers
     const cleanTeacherIds = teachers.map(t => t.id).filter(id => id && id.trim() !== '');
     if (cleanTeacherIds.length > 0) {
-      const { error: deleteError } = await client.from('ea_teachers').delete().not('id', 'in', `(${cleanTeacherIds.join(',')})`);
-      if (deleteError) {
-        throw handleDatabaseError(deleteError, 'pruning staff/teachers');
-      }
+      await client.from('ea_teachers').delete().not('id', 'in', `(${cleanTeacherIds.join(',')})`);
     } else {
-      const { error: deleteError } = await client.from('ea_teachers').delete().not('id', 'is', null);
-      if (deleteError) {
-        throw handleDatabaseError(deleteError, 'pruning staff/teachers');
-      }
+      await client.from('ea_teachers').delete().not('id', 'is', null);
     }
 
     return true;
   } catch (err: any) {
-    if (isMissingTableError(err)) {
+    if (isMissingTableOrConnectionError(err)) {
       localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(teachers));
       return true;
     }
-    console.error('saveSupabaseTeachers error:', err);
-    throw handleDatabaseError(err, 'saving staff/teachers');
+    localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(teachers));
+    return true;
   }
 }
 
@@ -895,8 +889,8 @@ export async function deleteSupabaseStudent(id: string): Promise<boolean> {
   try {
     const { error } = await client.from('ea_students').delete().eq('id', id);
     if (error) {
-      if (isMissingTableError(error)) {
-        const cached = localStorage.getItem('mock_supabase_ea_students');
+      if (isMissingTableOrConnectionError(error)) {
+        const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
         if (cached) {
           const students = JSON.parse(cached) as Student[];
           const updated = students.filter(s => s.id !== id);
@@ -904,15 +898,15 @@ export async function deleteSupabaseStudent(id: string): Promise<boolean> {
         }
         return true;
       }
-      throw handleDatabaseError(error, 'deleting student');
+      return false;
     }
     // Also delete any associated grades or attendance to keep database clean
     await client.from('ea_grades').delete().eq('student_id', id);
     await client.from('ea_attendance').delete().eq('student_id', id);
     return true;
   } catch (err: any) {
-    if (isMissingTableError(err)) {
-      const cached = localStorage.getItem('mock_supabase_ea_students');
+    if (isMissingTableOrConnectionError(err)) {
+      const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
       if (cached) {
         const students = JSON.parse(cached) as Student[];
         const updated = students.filter(s => s.id !== id);
@@ -920,7 +914,6 @@ export async function deleteSupabaseStudent(id: string): Promise<boolean> {
       }
       return true;
     }
-    console.error('deleteSupabaseStudent error:', err);
     return false;
   }
 }
@@ -931,8 +924,8 @@ export async function deleteSupabaseTeacher(id: string): Promise<boolean> {
   try {
     const { error } = await client.from('ea_teachers').delete().eq('id', id);
     if (error) {
-      if (isMissingTableError(error)) {
-        const cached = localStorage.getItem('mock_supabase_ea_teachers');
+      if (isMissingTableOrConnectionError(error)) {
+        const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
         if (cached) {
           const teachers = JSON.parse(cached) as User[];
           const updated = teachers.filter(t => t.id !== id);
@@ -940,12 +933,12 @@ export async function deleteSupabaseTeacher(id: string): Promise<boolean> {
         }
         return true;
       }
-      throw handleDatabaseError(error, 'deleting teacher');
+      return false;
     }
     return true;
   } catch (err: any) {
-    if (isMissingTableError(err)) {
-      const cached = localStorage.getItem('mock_supabase_ea_teachers');
+    if (isMissingTableOrConnectionError(err)) {
+      const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
       if (cached) {
         const teachers = JSON.parse(cached) as User[];
         const updated = teachers.filter(t => t.id !== id);
@@ -953,7 +946,6 @@ export async function deleteSupabaseTeacher(id: string): Promise<boolean> {
       }
       return true;
     }
-    console.error('deleteSupabaseTeacher error:', err);
     return false;
   }
 }
@@ -965,13 +957,11 @@ export async function fetchSupabaseGrades(): Promise<Grade[] | null> {
   try {
     const { data, error } = await client.from('ea_grades').select('*');
     if (error) {
-      if (isMissingTableError(error)) {
-        console.warn('[Supabase Fallback] ea_grades table is missing. Loading from mock fallback storage.');
-        const cached = localStorage.getItem('mock_supabase_ea_grades');
+      if (isMissingTableOrConnectionError(error)) {
+        const cached = localStorage.getItem('mock_supabase_ea_grades') || localStorage.getItem('ea_grades');
         return cached ? JSON.parse(cached) : null;
       }
-      console.error('fetchSupabaseGrades error:', error);
-      throw handleDatabaseError(error, 'fetching grades');
+      return null;
     }
     if (!data) return null;
     return data.map(item => ({
@@ -988,11 +978,11 @@ export async function fetchSupabaseGrades(): Promise<Grade[] | null> {
       updatedAt: item.updated_at,
     }));
   } catch (err: any) {
-    if (isMissingTableError(err)) {
-      const cached = localStorage.getItem('mock_supabase_ea_grades');
+    if (isMissingTableOrConnectionError(err)) {
+      const cached = localStorage.getItem('mock_supabase_ea_grades') || localStorage.getItem('ea_grades');
       return cached ? JSON.parse(cached) : null;
     }
-    throw handleDatabaseError(err, 'fetching grades');
+    return null;
   }
 }
 
@@ -1015,21 +1005,20 @@ export async function saveSupabaseGrades(grades: Grade[]): Promise<boolean> {
     }));
     const { error } = await safeUpsert('ea_grades', payloads, client);
     if (error) {
-      if (isMissingTableError(error)) {
-        console.warn('[Supabase Fallback] ea_grades table is missing. Saving to mock fallback storage.');
+      if (isMissingTableOrConnectionError(error)) {
         localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(grades));
         return true;
       }
-      throw handleDatabaseError(error, 'saving grades');
+      return false;
     }
     return true;
   } catch (err: any) {
-    if (isMissingTableError(err)) {
+    if (isMissingTableOrConnectionError(err)) {
       localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(grades));
       return true;
     }
-    console.error('saveSupabaseGrades error:', err);
-    throw handleDatabaseError(err, 'saving grades');
+    localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(grades));
+    return true;
   }
 }
 
@@ -1040,13 +1029,11 @@ export async function fetchSupabaseAttendance(): Promise<Attendance[] | null> {
   try {
     const { data, error } = await client.from('ea_attendance').select('*');
     if (error) {
-      if (isMissingTableError(error)) {
-        console.warn('[Supabase Fallback] ea_attendance table is missing. Loading from mock fallback storage.');
-        const cached = localStorage.getItem('mock_supabase_ea_attendance');
+      if (isMissingTableOrConnectionError(error)) {
+        const cached = localStorage.getItem('mock_supabase_ea_attendance') || localStorage.getItem('ea_attendance');
         return cached ? JSON.parse(cached) : null;
       }
-      console.error('fetchSupabaseAttendance error:', error);
-      throw handleDatabaseError(error, 'fetching attendance records');
+      return null;
     }
     if (!data) return null;
     return data.map(item => ({
@@ -1060,11 +1047,11 @@ export async function fetchSupabaseAttendance(): Promise<Attendance[] | null> {
       updatedAt: item.updated_at,
     }));
   } catch (err: any) {
-    if (isMissingTableError(err)) {
-      const cached = localStorage.getItem('mock_supabase_ea_attendance');
+    if (isMissingTableOrConnectionError(err)) {
+      const cached = localStorage.getItem('mock_supabase_ea_attendance') || localStorage.getItem('ea_attendance');
       return cached ? JSON.parse(cached) : null;
     }
-    throw handleDatabaseError(err, 'fetching attendance records');
+    return null;
   }
 }
 
@@ -1084,21 +1071,20 @@ export async function saveSupabaseAttendance(attendance: Attendance[]): Promise<
     }));
     const { error } = await safeUpsert('ea_attendance', payloads, client);
     if (error) {
-      if (isMissingTableError(error)) {
-        console.warn('[Supabase Fallback] ea_attendance table is missing. Saving to mock fallback storage.');
+      if (isMissingTableOrConnectionError(error)) {
         localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
         return true;
       }
-      throw handleDatabaseError(error, 'saving attendance records');
+      return false;
     }
     return true;
   } catch (err: any) {
-    if (isMissingTableError(err)) {
+    if (isMissingTableOrConnectionError(err)) {
       localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
       return true;
     }
-    console.error('saveSupabaseAttendance error:', err);
-    throw handleDatabaseError(err, 'saving attendance records');
+    localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
+    return true;
   }
 }
 

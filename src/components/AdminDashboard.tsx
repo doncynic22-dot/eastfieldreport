@@ -667,7 +667,7 @@ export default function AdminDashboard({
 
       {/* Promotion Success Message */}
       {promotionSuccessMsg && (
-        <div className="p-3.5 bg-green-600 text-white rounded-xl text-xs font-semibold flex items-center justify-between gap-2 shadow-md animate-fadeIn">
+        <div className="p-3.5 bg-green-600 text-white rounded-xl text-xs font-semibold flex items-center justify-between gap-2 shadow-md animate-fadeIn no-print">
           <div className="flex items-center gap-2">
             <Check className="w-4 h-4 text-green-200 shrink-0" />
             <span>{promotionSuccessMsg}</span>
@@ -679,7 +679,7 @@ export default function AdminDashboard({
       )}
 
       {/* First Term Reopening & Auto-Promotion Banner */}
-      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-mauve-900 text-white p-4 rounded-xl shadow-md border border-blue-700/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 my-1">
+      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-mauve-900 text-white p-4 rounded-xl shadow-md border border-blue-700/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 my-1 no-print">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-white/10 rounded-xl text-yellow-300 backdrop-blur-xs shrink-0">
             <GraduationCap className="w-6 h-6" />
@@ -743,7 +743,7 @@ export default function AdminDashboard({
 
       {/* A. ANALYTICS VIEW */}
       {activeTab === 'analytics' && (
-        <div className="space-y-5 animate-fadeIn">
+        <div className="space-y-5 animate-fadeIn no-print">
           {/* Main counts */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
@@ -915,7 +915,7 @@ export default function AdminDashboard({
 
       {/* C. STUDENTS ADMISSIONS VIEW */}
       {activeTab === 'students' && (
-        <div className="space-y-4 animate-fadeIn">
+        <div className="space-y-4 animate-fadeIn no-print">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <h3 className="font-display font-bold text-mauve-900 text-base uppercase tracking-wide">Student Admissions Registry</h3>
             <div className="flex flex-wrap items-center gap-2">
@@ -1243,7 +1243,7 @@ export default function AdminDashboard({
 
       {/* D. TEACHERS REGISTER VIEW */}
       {activeTab === 'teachers' && (
-        <div className="space-y-4 animate-fadeIn">
+        <div className="space-y-4 animate-fadeIn no-print">
           <div className="flex justify-between items-center">
             <h3 className="font-display font-bold text-mauve-900 text-base uppercase tracking-wide">Staff Directory</h3>
           </div>
@@ -1576,7 +1576,7 @@ export default function AdminDashboard({
 
       {/* E. GENERAL REPORT CONFIGURATION VIEW */}
       {activeTab === 'config' && (
-        <div className="bg-white p-6 rounded-2xl border border-mauve-100 mauve-glow space-y-6 animate-fadeIn">
+        <div className="bg-white p-6 rounded-2xl border border-mauve-100 mauve-glow space-y-6 animate-fadeIn no-print">
           <div className="border-b border-mauve-100 pb-3">
             <h3 className="font-display font-bold text-mauve-900 text-lg">System Configurations</h3>
             <p className="text-xs text-mauve-500 mt-0.5">Edit academic term, continuous assessment weightings, and the global evaluation index.</p>
