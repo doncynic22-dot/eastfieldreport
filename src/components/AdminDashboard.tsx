@@ -8,7 +8,7 @@ import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel 
 import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher } from '../lib/supabase';
-import { createBatchEmailDispatchList, generateEmailReportBody } from '../services/emailDispatcher';
+import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue } from '../services/promotionService';
 
 interface AdminDashboardProps {
@@ -98,6 +98,13 @@ export default function AdminDashboard({
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [showBatchEmailModal, setShowBatchEmailModal] = useState(false);
   const [batchCopiedMsg, setBatchCopiedMsg] = useState(false);
+
+  // Automated Bulk Email Dispatcher states
+  const [batchNote, setBatchNote] = useState('');
+  const [isBulkDispatching, setIsBulkDispatching] = useState(false);
+  const [bulkDispatchIndex, setBulkDispatchIndex] = useState(-1);
+  const [bulkDispatchStatus, setBulkDispatchStatus] = useState<Record<string, 'SENT' | 'SKIPPED' | 'PENDING'>>({});
+  const [showCopiedDigestMsg, setShowCopiedDigestMsg] = useState(false);
 
   // First Term Promotion states
   const [showPromotionModal, setShowPromotionModal] = useState(false);
@@ -610,6 +617,103 @@ export default function AdminDashboard({
     } else {
       setSelectedStudentId('');
     }
+  };
+
+  // Helper to compute student statistics for email report cards
+  const getStudentStatsForEmail = (studentId: string) => {
+    const targetStudent = students.find(s => s.id === studentId);
+    if (!targetStudent) return undefined;
+
+    const sameClassStudents = students.filter(s => s.className === targetStudent.className);
+    const classStudentTotals = sameClassStudents.map(st => {
+      const stGrades = grades.filter(g => g.studentId === st.id);
+      const total = stGrades.reduce((sum, g) => sum + (g.totalScore || 0), 0);
+      const avg = stGrades.length > 0 ? total / stGrades.length : 0;
+      return { studentId: st.id, total, avg };
+    });
+
+    classStudentTotals.sort((a, b) => b.total - a.total);
+    const rankIndex = classStudentTotals.findIndex(item => item.studentId === studentId);
+    const studentData = classStudentTotals.find(item => item.studentId === studentId);
+    const attRecord = attendance.find(a => a.studentId === studentId);
+
+    return {
+      totalScore: studentData?.total || 0,
+      averageScore: studentData?.avg || 0,
+      classRank: rankIndex >= 0 ? rankIndex + 1 : undefined,
+      totalStudents: sameClassStudents.length,
+      attendanceSummary: attRecord ? `${attRecord.daysPresent} present out of ${attRecord.totalDays} academic days` : undefined
+    };
+  };
+
+  const handleStartAutoBulkDispatch = () => {
+    const dispatchList = createBatchEmailDispatchList(studentsInSelectedClass, config, getStudentStatsForEmail, batchNote);
+    const eligibleItems = dispatchList.filter(item => item.hasEmail);
+
+    if (eligibleItems.length === 0) {
+      alert('No pupils in this class have valid guardian email addresses stored.');
+      return;
+    }
+
+    setIsBulkDispatching(true);
+    setBulkDispatchIndex(0);
+
+    const newStatusMap: Record<string, 'SENT' | 'SKIPPED' | 'PENDING'> = {};
+    dispatchList.forEach(item => {
+      newStatusMap[item.student.id] = item.hasEmail ? 'PENDING' : 'SKIPPED';
+    });
+    setBulkDispatchStatus(newStatusMap);
+
+    let idx = 0;
+    const interval = setInterval(() => {
+      if (idx < eligibleItems.length) {
+        const item = eligibleItems[idx];
+        window.open(item.mailtoUrl, '_blank');
+
+        setBulkDispatchStatus(prev => ({
+          ...prev,
+          [item.student.id]: 'SENT'
+        }));
+        setBulkDispatchIndex(idx + 1);
+        idx++;
+      } else {
+        clearInterval(interval);
+        setIsBulkDispatching(false);
+      }
+    }, 1200);
+  };
+
+  const handleCopyBulkDigest = () => {
+    const digestText = generateBatchEmailDigest(studentsInSelectedClass, config, getStudentStatsForEmail, batchNote);
+    navigator.clipboard.writeText(digestText);
+    setShowCopiedDigestMsg(true);
+    setTimeout(() => setShowCopiedDigestMsg(false), 3000);
+  };
+
+  const handleOpenGroupedBCCMailer = () => {
+    const validEmails = studentsInSelectedClass
+      .map(s => s.guardianEmail)
+      .filter(e => e && e.includes('@'));
+
+    if (validEmails.length === 0) {
+      alert('No valid guardian emails in this class.');
+      return;
+    }
+
+    const bccList = validEmails.join(',');
+    const subject = encodeURIComponent(`Academic Softcopy Reports: ${selectedClass} - ${config.term} (${config.schoolYear})`);
+    const bodyText = encodeURIComponent(
+      `Dear Parents and Guardians of ${selectedClass},\n\n` +
+      `This is an official bulk notification from ${config.schoolName || 'Excel Academy'}.\n` +
+      `The Academic Softcopy Report Cards for ${config.term} (${config.schoolYear}) have been generated.\n\n` +
+      (batchNote ? `Note from School Administration:\n"${batchNote}"\n\n` : '') +
+      `Please contact the school office or check your individual ward's email thread for full performance breakdown.\n\n` +
+      `Warm regards,\n` +
+      `${config.principalName || 'Head Administrator'}\n` +
+      `${config.schoolName || 'Excel Academy'}`
+    );
+
+    window.open(`mailto:?bcc=${bccList}&subject=${subject}&body=${bodyText}`, '_blank');
   };
 
   return (
@@ -1959,18 +2063,22 @@ export default function AdminDashboard({
       {/* BATCH EMAIL DISPATCH MODAL */}
       {showBatchEmailModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn no-print">
-          <div className="bg-white rounded-2xl border border-mauve-250 w-full max-w-2xl p-6 shadow-2xl space-y-4 text-mauve-900 max-h-[90vh] flex flex-col">
+          <div className="bg-white rounded-2xl border border-mauve-250 w-full max-w-3xl p-6 shadow-2xl space-y-4 text-mauve-900 max-h-[92vh] flex flex-col">
+            {/* Header */}
             <div className="flex justify-between items-center border-b border-mauve-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-blue-50 text-blue-700 rounded-xl">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-blue-50 text-blue-700 rounded-xl">
                   <Mail className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="font-display font-bold text-mauve-900 text-base">
-                    Batch Softcopy Dispatcher ({selectedClass})
+                  <h4 className="font-display font-bold text-mauve-900 text-base flex items-center gap-2">
+                    <span>Automated Bulk Email Dispatcher</span>
+                    <span className="text-xs bg-blue-100 text-blue-800 font-mono px-2 py-0.5 rounded-full font-semibold">
+                      {selectedClass}
+                    </span>
                   </h4>
                   <p className="text-xs text-mauve-500">
-                    Send academic report notifications to all guardian email addresses and phone numbers.
+                    Automatically generate and dispatch individual academic report card emails to parents and guardians.
                   </p>
                 </div>
               </div>
@@ -1982,96 +2090,181 @@ export default function AdminDashboard({
               </button>
             </div>
 
-            {/* Top Toolbar Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-2 bg-mauve-50/70 p-3 rounded-xl border border-mauve-150 text-xs">
-              <div>
-                <span className="font-bold text-mauve-900">Pupils in Class: {studentsInSelectedClass.length}</span>
-                <span className="ml-3 text-gray-500">
-                  Guardians with Email: {studentsInSelectedClass.filter(s => s.guardianEmail && s.guardianEmail.includes('@')).length}
-                </span>
-              </div>
-              <button
-                onClick={() => {
-                  const validEmails = studentsInSelectedClass
-                    .map(s => s.guardianEmail)
-                    .filter(e => e && e.includes('@'));
-                  if (validEmails.length > 0) {
-                    navigator.clipboard.writeText(validEmails.join(', '));
-                    setBatchCopiedMsg(true);
-                    setTimeout(() => setBatchCopiedMsg(false), 2500);
-                  }
-                }}
-                className="px-3 py-1.5 bg-mauve-900 hover:bg-mauve-800 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm"
-              >
-                {batchCopiedMsg ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Mail className="w-3.5 h-3.5" />}
-                <span>{batchCopiedMsg ? 'Emails Copied to Clipboard!' : 'Copy All Guardian Emails'}</span>
-              </button>
+            {/* Custom Note/Notice for Parents */}
+            <div className="bg-blue-50/50 border border-blue-100 p-3 rounded-xl space-y-1.5 text-xs">
+              <label className="font-bold text-blue-900 flex items-center justify-between">
+                <span>📝 Custom Administrative Notice for All Emails (Optional):</span>
+                <span className="text-[10px] text-blue-600 font-normal">Appended to each ward's report message</span>
+              </label>
+              <textarea
+                value={batchNote}
+                onChange={(e) => setBatchNote(e.target.value)}
+                placeholder="e.g. Term 2 Reopening Date is 15th Sept 2026. All outstanding fees must be settled prior to arrival."
+                className="w-full text-xs p-2 rounded-lg border border-blue-200 focus:outline-none focus:ring-1 focus:ring-blue-600 bg-white text-mauve-900 h-16 resize-none"
+              />
             </div>
 
-            {/* Student List Grid */}
+            {/* Top Toolbar Action Buttons */}
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-mauve-50/80 p-3 rounded-xl border border-mauve-150 text-xs">
+              <div className="flex items-center gap-3">
+                <div>
+                  <span className="font-bold text-mauve-900">Pupils: {studentsInSelectedClass.length}</span>
+                  <span className="ml-2 text-blue-700 font-medium">
+                    ({studentsInSelectedClass.filter(s => s.guardianEmail && s.guardianEmail.includes('@')).length} with Email)
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleStartAutoBulkDispatch}
+                  disabled={isBulkDispatching}
+                  className={`px-3.5 py-1.5 font-bold rounded-lg text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm ${
+                    isBulkDispatching
+                      ? 'bg-amber-500 text-white animate-pulse'
+                      : 'bg-blue-700 hover:bg-blue-800 text-white'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>
+                    {isBulkDispatching
+                      ? `Dispatching (${bulkDispatchIndex}/${studentsInSelectedClass.filter(s => s.guardianEmail && s.guardianEmail.includes('@')).length})...`
+                      : '⚡ Auto Dispatch Queue'}
+                  </span>
+                </button>
+
+                <button
+                  onClick={handleCopyBulkDigest}
+                  className="px-3 py-1.5 bg-mauve-900 hover:bg-mauve-800 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                >
+                  {showCopiedDigestMsg ? <Check className="w-3.5 h-3.5 text-green-400" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+                  <span>{showCopiedDigestMsg ? 'Digest Copied!' : '📋 Copy All Email Bodies'}</span>
+                </button>
+
+                <button
+                  onClick={handleOpenGroupedBCCMailer}
+                  className="px-3 py-1.5 bg-gray-800 hover:bg-gray-900 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                  title="Open mail app with all parent emails in BCC"
+                >
+                  <Mail className="w-3.5 h-3.5 text-blue-300" />
+                  <span>Grouped BCC Email</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const validEmails = studentsInSelectedClass
+                      .map(s => s.guardianEmail)
+                      .filter(e => e && e.includes('@'));
+                    if (validEmails.length > 0) {
+                      navigator.clipboard.writeText(validEmails.join(', '));
+                      setBatchCopiedMsg(true);
+                      setTimeout(() => setBatchCopiedMsg(false), 2500);
+                    } else {
+                      alert('No guardian emails found in this class.');
+                    }
+                  }}
+                  className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-mauve-800 font-bold rounded-lg text-xs flex items-center gap-1 transition cursor-pointer border border-gray-300"
+                >
+                  {batchCopiedMsg ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Users className="w-3.5 h-3.5" />}
+                  <span>{batchCopiedMsg ? 'Emails Copied!' : 'Copy Emails List'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Student Dispatch Grid */}
             <div className="overflow-y-auto flex-1 space-y-2 pr-1">
-              {createBatchEmailDispatchList(studentsInSelectedClass, config).map((item) => (
-                <div key={item.student.id} className="p-3 bg-white border border-mauve-200 rounded-xl hover:border-blue-300 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-mauve-900 text-xs">{item.student.name}</span>
-                      <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{item.student.rollNumber}</span>
+              {createBatchEmailDispatchList(studentsInSelectedClass, config, getStudentStatsForEmail, batchNote).map((item) => {
+                const status = bulkDispatchStatus[item.student.id] || (item.hasEmail ? 'PENDING' : 'SKIPPED');
+
+                return (
+                  <div key={item.student.id} className="p-3 bg-white border border-mauve-200 rounded-xl hover:border-blue-300 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-mauve-900 text-xs">{item.student.name}</span>
+                        <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{item.student.rollNumber}</span>
+                        {status === 'SENT' && (
+                          <span className="text-[10px] font-bold bg-green-100 text-green-800 border border-green-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Check className="w-3 h-3 text-green-600" /> Dispatched
+                          </span>
+                        )}
+                        {status === 'SKIPPED' && (
+                          <span className="text-[10px] italic bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+                            No Email
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-600">
+                        <span>Guardian: <strong>{item.student.guardianName || 'N/A'}</strong></span>
+                        {item.hasEmail ? (
+                          <span className="text-blue-700 font-mono font-medium flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-blue-600" /> {item.student.guardianEmail}
+                          </span>
+                        ) : (
+                          <span className="text-amber-600 italic">No email stored</span>
+                        )}
+                        {item.hasPhone && (
+                          <span className="text-green-700 font-mono font-medium flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-green-600" /> {item.student.guardianPhone}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-600">
-                      <span>Guardian: <strong>{item.student.guardianName || 'N/A'}</strong></span>
-                      {item.hasEmail ? (
-                        <span className="text-blue-700 font-mono font-medium flex items-center gap-1">
-                          <Mail className="w-3 h-3 text-blue-600" /> {item.student.guardianEmail}
-                        </span>
-                      ) : (
-                        <span className="text-amber-600 italic">No email stored</span>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => {
+                          setSelectedStudentId(item.student.id);
+                          setShowBatchEmailModal(false);
+                        }}
+                        className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-mauve-800 font-bold rounded-lg text-xs transition cursor-pointer"
+                        title="View Report Card"
+                      >
+                        View Report
+                      </button>
+                      
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(item.emailBody);
+                          alert(`Email message body for ${item.student.name}'s guardian copied to clipboard!`);
+                        }}
+                        className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-mauve-800 font-bold rounded-lg text-xs transition cursor-pointer border border-gray-200"
+                        title="Copy formatted email body for this ward"
+                      >
+                        Copy Body
+                      </button>
+
+                      {item.hasEmail && (
+                        <a
+                          href={item.mailtoUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => {
+                            setBulkDispatchStatus(prev => ({ ...prev, [item.student.id]: 'SENT' }));
+                          }}
+                          className="px-2.5 py-1.5 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-lg text-xs flex items-center gap-1 transition cursor-pointer shadow-xs"
+                        >
+                          <Mail className="w-3 h-3" /> Send Email
+                        </a>
                       )}
                       {item.hasPhone && (
-                        <span className="text-green-700 font-mono font-medium flex items-center gap-1">
-                          <Phone className="w-3 h-3 text-green-600" /> {item.student.guardianPhone}
-                        </span>
+                        <a
+                          href={item.whatsAppUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2.5 py-1.5 bg-green-700 hover:bg-green-800 text-white font-bold rounded-lg text-xs flex items-center gap-1 transition cursor-pointer shadow-xs"
+                        >
+                          <MessageSquare className="w-3 h-3" /> WhatsApp
+                        </a>
                       )}
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => {
-                        setSelectedStudentId(item.student.id);
-                        setShowBatchEmailModal(false);
-                      }}
-                      className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-mauve-800 font-bold rounded-lg text-xs transition cursor-pointer"
-                      title="View Report Card"
-                    >
-                      View Report
-                    </button>
-                    {item.hasEmail && (
-                      <a
-                        href={item.mailtoUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2.5 py-1.5 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-lg text-xs flex items-center gap-1 transition cursor-pointer shadow-xs"
-                      >
-                        <Mail className="w-3 h-3" /> Email
-                      </a>
-                    )}
-                    {item.hasPhone && (
-                      <a
-                        href={item.whatsAppUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2.5 py-1.5 bg-green-700 hover:bg-green-800 text-white font-bold rounded-lg text-xs flex items-center gap-1 transition cursor-pointer shadow-xs"
-                      >
-                        <MessageSquare className="w-3 h-3" /> WhatsApp
-                      </a>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
+            {/* Footer */}
             <div className="pt-3 border-t border-mauve-100 flex justify-between items-center text-xs text-gray-500">
-              <span>Tip: Click <strong>Email</strong> or <strong>WhatsApp</strong> to launch individual guardian dispatch.</span>
+              <span>Tip: Click <strong>⚡ Auto Dispatch Queue</strong> to sequentially launch email messages for all guardians in {selectedClass}.</span>
               <button
                 onClick={() => setShowBatchEmailModal(false)}
                 className="px-4 py-2 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 font-bold rounded-xl cursor-pointer"

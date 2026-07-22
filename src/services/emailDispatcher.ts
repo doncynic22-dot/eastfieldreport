@@ -139,11 +139,12 @@ export function sendWhatsAppReport(options: EmailDispatchOptions): boolean {
 export function createBatchEmailDispatchList(
   students: Student[],
   config: ReportConfig,
-  getStudentStats?: (studentId: string) => { totalScore?: number; averageScore?: number; classRank?: number; totalStudents?: number }
+  getStudentStats?: (studentId: string) => { totalScore?: number; averageScore?: number; classRank?: number; totalStudents?: number; attendanceSummary?: string },
+  customNote?: string
 ): { student: Student; mailtoUrl: string; whatsAppUrl: string; emailBody: string; hasEmail: boolean; hasPhone: boolean }[] {
   return students.map(student => {
     const stats = getStudentStats ? getStudentStats(student.id) : undefined;
-    const options: EmailDispatchOptions = { student, config, stats };
+    const options: EmailDispatchOptions = { student, config, stats, customNote };
     
     return {
       student,
@@ -155,3 +156,35 @@ export function createBatchEmailDispatchList(
     };
   });
 }
+
+/**
+ * Generates a combined text digest containing formatted emails for all parents in a class/school.
+ */
+export function generateBatchEmailDigest(
+  students: Student[],
+  config: ReportConfig,
+  getStudentStats?: (studentId: string) => { totalScore?: number; averageScore?: number; classRank?: number; totalStudents?: number; attendanceSummary?: string },
+  customNote?: string
+): string {
+  const items = createBatchEmailDispatchList(students, config, getStudentStats, customNote);
+  const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  
+  let digest = `========================================================================\n`;
+  digest += `OFFICIAL AUTOMATED ACADEMIC REPORT DISPATCH DIGEST\n`;
+  digest += `School: ${config.schoolName || 'Excel Academy'}\n`;
+  digest += `Term: ${config.term || 'Term 1'} (${config.schoolYear || '2025/2026'})\n`;
+  digest += `Generated Date: ${dateStr}\n`;
+  digest += `Total Pupils: ${students.length}\n`;
+  digest += `========================================================================\n\n`;
+
+  items.forEach((item, index) => {
+    digest += `--- [GUARDIAN MESSAGE #${index + 1} | ${item.student.name.toUpperCase()}] ---\n`;
+    digest += `Recipient Guardian Email: ${item.student.guardianEmail || 'NONE STORED'}\n`;
+    digest += `Recipient Guardian Phone: ${item.student.guardianPhone || 'NONE STORED'}\n\n`;
+    digest += item.emailBody;
+    digest += `\n========================================================================\n\n`;
+  });
+
+  return digest;
+}
+
