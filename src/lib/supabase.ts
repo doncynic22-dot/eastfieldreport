@@ -657,7 +657,10 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
       classScoreWeight: data.class_score_weight !== undefined && data.class_score_weight !== null ? data.class_score_weight : 50,
       examScoreWeight: data.exam_score_weight !== undefined && data.exam_score_weight !== null ? data.exam_score_weight : 50,
       gradingScale: data.grading_scale || [],
-      selectedTemplate: data.report_template || 'dynamic'
+      selectedTemplate: data.report_template || 'dynamic',
+      reopeningDate: data.reopening_date || undefined,
+      lastPromotedYear: data.last_promoted_year || undefined,
+      autoPromoteOnReopening: data.auto_promote_on_reopening !== undefined ? data.auto_promote_on_reopening : true
     };
   } catch (err: any) {
     if (isMissingTableError(err)) {
@@ -685,6 +688,9 @@ export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean>
       exam_score_weight: config.examScoreWeight,
       grading_scale: config.gradingScale,
       report_template: config.selectedTemplate || 'dynamic',
+      reopening_date: config.reopeningDate || null,
+      last_promoted_year: config.lastPromotedYear || null,
+      auto_promote_on_reopening: config.autoPromoteOnReopening !== undefined ? config.autoPromoteOnReopening : true,
       updated_at: new Date().toISOString()
     };
     let { error } = await safeUpsert('ea_config', payload, client);
@@ -737,6 +743,7 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       className: item.class_name || '',
       guardianName: item.guardian_name || '',
       guardianEmail: item.guardian_email || '',
+      guardianPhone: item.guardian_phone || '',
     }));
   } catch (err: any) {
     if (isMissingTableError(err)) {
@@ -759,6 +766,7 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
       class_name: s.className,
       guardian_name: s.guardianName,
       guardian_email: s.guardianEmail,
+      guardian_phone: s.guardianPhone || '',
       updated_at: new Date().toISOString()
     }));
     const { error } = await safeUpsert('ea_students', payloads, client);

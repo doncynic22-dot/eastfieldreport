@@ -27,6 +27,7 @@ export interface Student {
   className: string; // e.g., 'Primary 1', 'JHS 2', 'Nursery 1'
   guardianName: string;
   guardianEmail: string;
+  guardianPhone?: string;
 }
 
 export interface Subject {
@@ -81,4 +82,7 @@ export interface ReportConfig {
   classScoreWeight: number; // e.g., 30 for 30%
   examScoreWeight: number;  // e.g., 70 for 70%
   selectedTemplate?: string; // 'dynamic' | 'compact' | 'high-fidelity' | 'classic'
+  reopeningDate?: string; // e.g., '2026-09-15'
+  lastPromotedYear?: string; // e.g., '2026/2027'
+  autoPromoteOnReopening?: boolean;
 }

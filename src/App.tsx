@@ -33,6 +33,7 @@ import {
   SUPABASE_SQL_SCHEMA,
   SUPABASE_SQL_REPAIR
 } from './lib/supabase';
+import { isAutoPromotionDue, promoteStudents } from './services/promotionService';
 
 
 export default function App() {
@@ -421,6 +422,19 @@ export default function App() {
   }, []);
 
   // 2. SAVE STATE MUTATIONS BACK TO LOCAL STORAGE AND SUPABASE (AUTO-SYNC)
+  // Auto-promote students at the reopening date of First Term
+  useEffect(() => {
+    if (!isInitialized || students.length === 0) return;
+    if (config.autoPromoteOnReopening !== false && isAutoPromotionDue(config)) {
+      const result = promoteStudents(students, config.schoolYear);
+      setStudents(result.promotedStudents);
+      const updatedConfig = { ...config, lastPromotedYear: config.schoolYear };
+      setConfig(updatedConfig);
+      localStorage.setItem('ea_students', JSON.stringify(result.promotedStudents));
+      localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+    }
+  }, [isInitialized, config, students.length]);
+
   // Ensure we never have teachers registered under students (e.g. from database triggers on signUp)
   useEffect(() => {
     if (!isInitialized) return;

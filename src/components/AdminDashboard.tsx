@@ -5,9 +5,11 @@
 
 import React, { useState } from 'react';
 import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel } from '../types';
-import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock } from 'lucide-react';
+import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher } from '../lib/supabase';
+import { createBatchEmailDispatchList, generateEmailReportBody } from '../services/emailDispatcher';
+import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue } from '../services/promotionService';
 
 interface AdminDashboardProps {
   students: Student[];
@@ -75,7 +77,8 @@ export default function AdminDashboard({
     level: 'PRIMARY' as AcademicLevel,
     className: 'Primary 1',
     guardianName: '',
-    guardianEmail: ''
+    guardianEmail: '',
+    guardianPhone: ''
   });
 
   // Teacher Registration Form State
@@ -93,6 +96,36 @@ export default function AdminDashboard({
   // Transcript Selector state
   const [selectedClass, setSelectedClass] = useState('Primary 4');
   const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [showBatchEmailModal, setShowBatchEmailModal] = useState(false);
+  const [batchCopiedMsg, setBatchCopiedMsg] = useState(false);
+
+  // First Term Promotion states
+  const [showPromotionModal, setShowPromotionModal] = useState(false);
+  const [promotionSuccessMsg, setPromotionSuccessMsg] = useState('');
+  const [promotionSearchQuery, setPromotionSearchQuery] = useState('');
+
+  const handleExecutePromotion = (targetYear?: string) => {
+    const activeYear = targetYear || config.schoolYear;
+    const result = promoteStudents(students, activeYear);
+    
+    setStudents(result.promotedStudents);
+    
+    const updatedConfig: ReportConfig = {
+      ...config,
+      lastPromotedYear: activeYear
+    };
+    setConfig(updatedConfig);
+    
+    localStorage.setItem('ea_students', JSON.stringify(result.promotedStudents));
+    localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+    if (getSupabaseCredentials().isConfigured) {
+      onPushToSupabase?.();
+    }
+
+    setPromotionSuccessMsg(`🎓 Promotion complete! Migrated ${result.promotedCount} pupils (${result.graduatedCount} JHS graduates) for ${activeYear}.`);
+    setTimeout(() => setPromotionSuccessMsg(''), 8000);
+    setShowPromotionModal(false);
+  };
 
   // Deletion confirmation states
   const [confirmDeleteStudentId, setConfirmDeleteStudentId] = useState<string | null>(null);
@@ -340,7 +373,8 @@ export default function AdminDashboard({
         level: studentForm.level,
         className: studentForm.className,
         guardianName: studentForm.guardianName,
-        guardianEmail: studentForm.guardianEmail
+        guardianEmail: studentForm.guardianEmail,
+        guardianPhone: studentForm.guardianPhone
       };
       setStudents(prev => [...prev, newStudent]);
     }
@@ -352,7 +386,8 @@ export default function AdminDashboard({
       level: 'PRIMARY',
       className: 'Primary 1',
       guardianName: '',
-      guardianEmail: ''
+      guardianEmail: '',
+      guardianPhone: ''
     });
     setEditingStudent(null);
     setShowStudentModal(false);
@@ -366,7 +401,8 @@ export default function AdminDashboard({
       level: student.level,
       className: student.className,
       guardianName: student.guardianName,
-      guardianEmail: student.guardianEmail
+      guardianEmail: student.guardianEmail,
+      guardianPhone: student.guardianPhone || ''
     });
     setShowStudentModal(true);
   };
@@ -629,6 +665,51 @@ export default function AdminDashboard({
         </div>
       </div>
 
+      {/* Promotion Success Message */}
+      {promotionSuccessMsg && (
+        <div className="p-3.5 bg-green-600 text-white rounded-xl text-xs font-semibold flex items-center justify-between gap-2 shadow-md animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-green-200 shrink-0" />
+            <span>{promotionSuccessMsg}</span>
+          </div>
+          <button onClick={() => setPromotionSuccessMsg('')} className="text-white hover:text-green-100 font-bold p-1 cursor-pointer">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* First Term Reopening & Auto-Promotion Banner */}
+      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-mauve-900 text-white p-4 rounded-xl shadow-md border border-blue-700/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 my-1">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-white/10 rounded-xl text-yellow-300 backdrop-blur-xs shrink-0">
+            <GraduationCap className="w-6 h-6" />
+          </div>
+          <div className="space-y-0.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="font-bold text-sm text-white">First Term Reopening & Student Promotion Engine</h4>
+              <span className="text-[10px] bg-yellow-400 text-blue-950 font-black px-2 py-0.5 rounded-md uppercase tracking-wider">
+                {config.term} ({config.schoolYear})
+              </span>
+            </div>
+            <p className="text-xs text-blue-100 leading-relaxed">
+              Reopening Date: <strong>{config.reopeningDate ? new Date(config.reopeningDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '15th Sept 2026'}</strong>.
+              {config.lastPromotedYear === config.schoolYear ? (
+                <span className="text-green-300 font-bold ml-1"> ✓ All enrolled pupils promoted for {config.schoolYear}.</span>
+              ) : (
+                <span className="text-amber-200 font-medium ml-1"> Automatically migrates pupils to next class upon First Term reopening.</span>
+              )}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => setShowPromotionModal(true)}
+          className="px-3.5 py-2 bg-yellow-400 hover:bg-yellow-300 text-blue-950 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 shrink-0 shadow-sm cursor-pointer w-full sm:w-auto"
+        >
+          <GraduationCap className="w-4 h-4" />
+          <span>Review & Execute Student Promotion</span>
+        </button>
+      </div>
+
       {/* 2. TAB TOGGLES */}
       <div className="flex flex-wrap gap-1.5 border-b border-mauve-500/10 pb-1.5 no-print">
         {[
@@ -764,6 +845,18 @@ export default function AdminDashboard({
               </select>
             </div>
 
+            {/* Batch Softcopy Dispatch Button */}
+            <div className="pt-2 border-t border-mauve-500/10 space-y-1">
+              <label className="text-[10px] uppercase font-bold text-mauve-900 block">3. Softcopy Dispatch</label>
+              <button
+                onClick={() => setShowBatchEmailModal(true)}
+                className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 px-3 rounded text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shadow-sm"
+              >
+                <Share2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Batch Email/WhatsApp ({studentsInSelectedClass.length})</span>
+              </button>
+            </div>
+
             <div className="pt-2 border-t border-mauve-500/10 text-[11px] text-gray-500 space-y-1 bg-mauve-100/50 p-2.5 rounded border border-mauve-500/10 leading-relaxed">
               <span className="font-bold text-mauve-900 uppercase block text-[10px]">System Assistant</span>
               <p>Selecting a student dynamically loads their term marks, calculated class rank, and attendance review sheets into the A4 viewer.</p>
@@ -825,26 +918,35 @@ export default function AdminDashboard({
         <div className="space-y-4 animate-fadeIn">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <h3 className="font-display font-bold text-mauve-900 text-base uppercase tracking-wide">Student Admissions Registry</h3>
-            <button
-              onClick={() => {
-                setEditingStudent(null);
-                const defaultLevel = 'PRIMARY' as AcademicLevel;
-                const defaultClass = 'Primary 1';
-                const autoRoll = getAutoRollNumber(defaultLevel, defaultClass);
-                setStudentForm({
-                  name: '',
-                  rollNumber: autoRoll,
-                  level: defaultLevel,
-                  className: defaultClass,
-                  guardianName: '',
-                  guardianEmail: ''
-                });
-                setShowStudentModal(true);
-              }}
-              className="bg-mauve-900 hover:bg-mauve-700 text-white font-bold px-4 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
-            >
-              <Plus className="w-3.5 h-3.5" /> Add New Pupil
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setShowPromotionModal(true)}
+                className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-3.5 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
+              >
+                <GraduationCap className="w-3.5 h-3.5" /> First Term Promotion Roll
+              </button>
+              <button
+                onClick={() => {
+                  setEditingStudent(null);
+                  const defaultLevel = 'PRIMARY' as AcademicLevel;
+                  const defaultClass = 'Primary 1';
+                  const autoRoll = getAutoRollNumber(defaultLevel, defaultClass);
+                  setStudentForm({
+                    name: '',
+                    rollNumber: autoRoll,
+                    level: defaultLevel,
+                    className: defaultClass,
+                    guardianName: '',
+                    guardianEmail: '',
+                    guardianPhone: ''
+                  });
+                  setShowStudentModal(true);
+                }}
+                className="bg-mauve-900 hover:bg-mauve-700 text-white font-bold px-4 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add New Pupil
+              </button>
+            </div>
           </div>
 
           {/* Search filters */}
@@ -923,18 +1025,35 @@ export default function AdminDashboard({
                         <td className="p-3 text-gray-700 font-bold">{s.className}</td>
                         <td className="p-3">
                           <div className="space-y-0.5 text-[10px]">
-                            <span className="block font-bold text-gray-700">{s.guardianName}</span>
-                            <span className="block text-gray-400 font-mono">{s.guardianEmail}</span>
+                            <span className="block font-bold text-gray-800">{s.guardianName || 'N/A'}</span>
+                            <span className="block text-gray-500 font-mono">{s.guardianEmail || 'No Email'}</span>
+                            {s.guardianPhone && (
+                              <span className="block text-green-700 font-mono flex items-center gap-1 font-semibold">
+                                <MessageSquare className="w-2.5 h-2.5 shrink-0" /> {s.guardianPhone}
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="p-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
+                              onClick={() => {
+                                setSelectedClass(s.className);
+                                setSelectedStudentId(s.id);
+                                setActiveTab('transcripts');
+                              }}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded text-[10px] flex items-center gap-1 transition cursor-pointer shadow-sm"
+                              title="Open Report Card & Send Softcopy to Parent"
+                            >
+                              <Share2 className="w-3 h-3 shrink-0" />
+                              <span>Send Softcopy</span>
+                            </button>
+                            <button
                               onClick={() => triggerEditStudent(s)}
                               className="p-1 text-mauve-900 hover:text-mauve-700 hover:bg-mauve-100 rounded transition cursor-pointer"
                               title="Edit Pupil Profile"
                             >
-                              <Edit2 className="w-3 h-3" />
+                              <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             {confirmDeleteStudentId === s.id ? (
                               <div className="flex items-center gap-1.5 animate-pulse">
@@ -1070,16 +1189,33 @@ export default function AdminDashboard({
                     />
                   </div>
 
-                  {/* Guardian Contact */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-mauve-700 block">Guardian Contact</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. +233 XX XXX XXXX or email"
-                      value={studentForm.guardianEmail}
-                      onChange={(e) => setStudentForm({ ...studentForm, guardianEmail: e.target.value })}
-                      className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
-                    />
+                  {/* Guardian Email & WhatsApp Phone */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-mauve-700 flex items-center gap-1">
+                        <Mail className="w-3 h-3 text-blue-600" /> Guardian Email
+                      </label>
+                      <input
+                        type="email"
+                        placeholder="parent@example.com"
+                        value={studentForm.guardianEmail}
+                        onChange={(e) => setStudentForm({ ...studentForm, guardianEmail: e.target.value })}
+                        className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-mauve-700 flex items-center gap-1">
+                        <MessageSquare className="w-3 h-3 text-green-600" /> Guardian WhatsApp / Phone
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="+233 XX XXX XXXX"
+                        value={studentForm.guardianPhone || ''}
+                        onChange={(e) => setStudentForm({ ...studentForm, guardianPhone: e.target.value })}
+                        className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white text-xs"
+                      />
+                    </div>
                   </div>
 
                   {/* Actions */}
@@ -1495,6 +1631,46 @@ export default function AdminDashboard({
                 />
               </div>
 
+              {/* First Term Reopening & Promotion Settings */}
+              <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-xl space-y-3">
+                <div className="flex items-center gap-2">
+                  <GraduationCap className="w-4 h-4 text-blue-700 shrink-0" />
+                  <h5 className="text-xs font-bold text-blue-950 uppercase tracking-wider">First Term Promotion Engine</h5>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="space-y-1">
+                    <label className="font-semibold text-blue-900 block">First Term Reopening Date</label>
+                    <input
+                      type="date"
+                      value={config.reopeningDate || '2026-09-15'}
+                      onChange={(e) => setConfig(prev => ({ ...prev, reopeningDate: e.target.value }))}
+                      className="w-full p-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none text-mauve-900 bg-white"
+                    />
+                    <span className="text-[10px] text-gray-500 block">Target date for First Term migration roll.</span>
+                  </div>
+
+                  <div className="space-y-2 flex flex-col justify-end">
+                    <label className="font-semibold text-blue-900 flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={config.autoPromoteOnReopening !== false}
+                        onChange={(e) => setConfig(prev => ({ ...prev, autoPromoteOnReopening: e.target.checked }))}
+                        className="w-4 h-4 rounded text-blue-700 focus:ring-blue-500"
+                      />
+                      <span>Auto-Promote on Reopening</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowPromotionModal(true)}
+                      className="w-full py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                    >
+                      <GraduationCap className="w-3.5 h-3.5" />
+                      <span>Execute Class Promotion Roll</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-mauve-700 block">Active Report Card Template Layout</label>
                 <select
@@ -1776,6 +1952,295 @@ export default function AdminDashboard({
                 </div>
               )}
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* BATCH EMAIL DISPATCH MODAL */}
+      {showBatchEmailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn no-print">
+          <div className="bg-white rounded-2xl border border-mauve-250 w-full max-w-2xl p-6 shadow-2xl space-y-4 text-mauve-900 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center border-b border-mauve-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-blue-50 text-blue-700 rounded-xl">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-display font-bold text-mauve-900 text-base">
+                    Batch Softcopy Dispatcher ({selectedClass})
+                  </h4>
+                  <p className="text-xs text-mauve-500">
+                    Send academic report notifications to all guardian email addresses and phone numbers.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBatchEmailModal(false)}
+                className="text-gray-400 hover:text-gray-600 font-bold cursor-pointer p-1 rounded-lg hover:bg-gray-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Top Toolbar Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-mauve-50/70 p-3 rounded-xl border border-mauve-150 text-xs">
+              <div>
+                <span className="font-bold text-mauve-900">Pupils in Class: {studentsInSelectedClass.length}</span>
+                <span className="ml-3 text-gray-500">
+                  Guardians with Email: {studentsInSelectedClass.filter(s => s.guardianEmail && s.guardianEmail.includes('@')).length}
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  const validEmails = studentsInSelectedClass
+                    .map(s => s.guardianEmail)
+                    .filter(e => e && e.includes('@'));
+                  if (validEmails.length > 0) {
+                    navigator.clipboard.writeText(validEmails.join(', '));
+                    setBatchCopiedMsg(true);
+                    setTimeout(() => setBatchCopiedMsg(false), 2500);
+                  }
+                }}
+                className="px-3 py-1.5 bg-mauve-900 hover:bg-mauve-800 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+              >
+                {batchCopiedMsg ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Mail className="w-3.5 h-3.5" />}
+                <span>{batchCopiedMsg ? 'Emails Copied to Clipboard!' : 'Copy All Guardian Emails'}</span>
+              </button>
+            </div>
+
+            {/* Student List Grid */}
+            <div className="overflow-y-auto flex-1 space-y-2 pr-1">
+              {createBatchEmailDispatchList(studentsInSelectedClass, config).map((item) => (
+                <div key={item.student.id} className="p-3 bg-white border border-mauve-200 rounded-xl hover:border-blue-300 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-mauve-900 text-xs">{item.student.name}</span>
+                      <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{item.student.rollNumber}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-600">
+                      <span>Guardian: <strong>{item.student.guardianName || 'N/A'}</strong></span>
+                      {item.hasEmail ? (
+                        <span className="text-blue-700 font-mono font-medium flex items-center gap-1">
+                          <Mail className="w-3 h-3 text-blue-600" /> {item.student.guardianEmail}
+                        </span>
+                      ) : (
+                        <span className="text-amber-600 italic">No email stored</span>
+                      )}
+                      {item.hasPhone && (
+                        <span className="text-green-700 font-mono font-medium flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-green-600" /> {item.student.guardianPhone}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => {
+                        setSelectedStudentId(item.student.id);
+                        setShowBatchEmailModal(false);
+                      }}
+                      className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-mauve-800 font-bold rounded-lg text-xs transition cursor-pointer"
+                      title="View Report Card"
+                    >
+                      View Report
+                    </button>
+                    {item.hasEmail && (
+                      <a
+                        href={item.mailtoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1.5 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-lg text-xs flex items-center gap-1 transition cursor-pointer shadow-xs"
+                      >
+                        <Mail className="w-3 h-3" /> Email
+                      </a>
+                    )}
+                    {item.hasPhone && (
+                      <a
+                        href={item.whatsAppUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1.5 bg-green-700 hover:bg-green-800 text-white font-bold rounded-lg text-xs flex items-center gap-1 transition cursor-pointer shadow-xs"
+                      >
+                        <MessageSquare className="w-3 h-3" /> WhatsApp
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-3 border-t border-mauve-100 flex justify-between items-center text-xs text-gray-500">
+              <span>Tip: Click <strong>Email</strong> or <strong>WhatsApp</strong> to launch individual guardian dispatch.</span>
+              <button
+                onClick={() => setShowBatchEmailModal(false)}
+                className="px-4 py-2 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 font-bold rounded-xl cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FIRST TERM STUDENT PROMOTION MODAL */}
+      {showPromotionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn no-print">
+          <div className="bg-white rounded-2xl border border-mauve-250 w-full max-w-3xl p-6 shadow-2xl space-y-4 text-mauve-900 max-h-[92vh] flex flex-col">
+            
+            {/* Header */}
+            <div className="flex justify-between items-center border-b border-mauve-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-50 text-indigo-700 rounded-xl">
+                  <GraduationCap className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-display font-bold text-mauve-900 text-base flex items-center gap-2">
+                    First Term Student Promotion & Class Migration
+                  </h4>
+                  <p className="text-xs text-mauve-500">
+                    Automated grade level progression roll for <strong>{config.schoolYear}</strong> (Reopening Date: {config.reopeningDate || '15th Sept 2026'}).
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPromotionModal(false)}
+                className="text-gray-400 hover:text-gray-600 font-bold cursor-pointer p-1 rounded-lg hover:bg-gray-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Metrics Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 bg-indigo-50/70 border border-indigo-150 rounded-xl text-center">
+                <span className="text-[10px] uppercase font-bold text-indigo-800 block">Total Enrolled</span>
+                <span className="text-lg font-black text-indigo-950">{students.length} Pupils</span>
+              </div>
+              <div className="p-3 bg-green-50/70 border border-green-150 rounded-xl text-center">
+                <span className="text-[10px] uppercase font-bold text-green-800 block">Promoting to Next Class</span>
+                <span className="text-lg font-black text-green-950">
+                  {students.filter(s => !s.className.toLowerCase().includes('graduated')).length} Pupils
+                </span>
+              </div>
+              <div className="p-3 bg-amber-50/70 border border-amber-150 rounded-xl text-center">
+                <span className="text-[10px] uppercase font-bold text-amber-800 block">Graduating JHS 3</span>
+                <span className="text-lg font-black text-amber-950">
+                  {students.filter(s => s.className.toLowerCase().includes('jhs 3')).length} Graduates
+                </span>
+              </div>
+              <div className="p-3 bg-mauve-50 border border-mauve-200 rounded-xl text-center">
+                <span className="text-[10px] uppercase font-bold text-mauve-800 block">Target Academic Cycle</span>
+                <span className="text-sm font-black text-mauve-950 mt-1 block">{config.schoolYear}</span>
+              </div>
+            </div>
+
+            {/* Reopening Date & Search Toolbar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-mauve-50/80 p-3 rounded-xl border border-mauve-150 text-xs">
+              <div className="flex items-center gap-2">
+                <label className="font-bold text-mauve-900 shrink-0">First Term Reopening Date:</label>
+                <input
+                  type="date"
+                  value={config.reopeningDate || '2026-09-15'}
+                  onChange={(e) => setConfig(prev => ({ ...prev, reopeningDate: e.target.value }))}
+                  className="p-1.5 rounded-lg border border-mauve-250 text-xs font-semibold bg-white text-mauve-900"
+                />
+              </div>
+
+              <div className="relative flex-1 max-w-xs">
+                <Search className="w-3.5 h-3.5 text-mauve-400 absolute left-2.5 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Filter pupil name or class..."
+                  value={promotionSearchQuery}
+                  onChange={(e) => setPromotionSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-mauve-250 bg-white focus:outline-none focus:ring-1 focus:ring-mauve-900"
+                />
+              </div>
+            </div>
+
+            {/* Student Migration Preview List */}
+            <div className="overflow-y-auto flex-1 space-y-2 pr-1 max-h-[40vh]">
+              {students
+                .filter(s =>
+                  s.name.toLowerCase().includes(promotionSearchQuery.toLowerCase()) ||
+                  s.className.toLowerCase().includes(promotionSearchQuery.toLowerCase())
+                )
+                .map((student) => {
+                  const { nextClass, isGraduated } = getNextClassAndLevel(student.className, student.level);
+                  const isAlreadyGraduated = student.className.toLowerCase().includes('graduated');
+
+                  return (
+                    <div
+                      key={student.id}
+                      className="p-3 bg-white border border-mauve-200 rounded-xl hover:border-indigo-300 transition flex items-center justify-between gap-3 shadow-xs"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-mauve-900 text-xs">{student.name}</span>
+                          <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                            {student.rollNumber}
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-gray-500 block">
+                          Level: {student.level}
+                        </span>
+                      </div>
+
+                      {/* Migration Arrow */}
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <span className="text-[10px] text-gray-400 block uppercase font-mono">Current</span>
+                          <span className="text-xs font-semibold text-mauve-800 bg-gray-100 px-2 py-0.5 rounded">
+                            {student.className}
+                          </span>
+                        </div>
+
+                        <ArrowUpRight className="w-4 h-4 text-indigo-600 shrink-0" />
+
+                        <div className="text-left">
+                          <span className="text-[10px] text-gray-400 block uppercase font-mono">Promoted</span>
+                          <span
+                            className={`text-xs font-bold px-2 py-0.5 rounded ${
+                              isGraduated
+                                ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                                : isAlreadyGraduated
+                                ? 'bg-gray-100 text-gray-600'
+                                : 'bg-green-100 text-green-900 border border-green-200'
+                            }`}
+                          >
+                            {nextClass}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* Note & Action Footer */}
+            <div className="pt-3 border-t border-mauve-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <span className="text-[11px] text-gray-500 leading-tight">
+                ℹ️ Promotion migrates student class levels. Historical grades & attendance for prior terms are preserved in past transcripts.
+              </span>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                <button
+                  onClick={() => setShowPromotionModal(false)}
+                  className="flex-1 sm:flex-none px-4 py-2 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleExecutePromotion()}
+                  className="flex-1 sm:flex-none px-5 py-2.5 bg-indigo-700 hover:bg-indigo-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shadow-md"
+                >
+                  <GraduationCap className="w-4 h-4" />
+                  <span>Execute First Term Promotion ({students.length} Pupils)</span>
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}

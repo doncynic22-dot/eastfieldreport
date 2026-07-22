@@ -5,7 +5,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Grade, Attendance, Subject, ReportConfig } from '../types';
-import { Printer, Check, Settings2, FileText, Sparkles, ExternalLink, Sliders, GraduationCap } from 'lucide-react';
+import { Printer, Check, Settings2, FileText, Sparkles, ExternalLink, Sliders, GraduationCap, Download, Mail, MessageSquare, Share2, Copy, CheckCircle2, Phone, X } from 'lucide-react';
+import { generateEmailReportBody, sendGuardianEmail, sendWhatsAppReport } from '../services/emailDispatcher';
 
 interface ReportPDFProps {
   student: Student;
@@ -238,6 +239,78 @@ export default function ReportPDF({
   const [printError, setPrintError] = useState<string | null>(null);
   const [isInsideIframe, setIsInsideIframe] = useState(false);
 
+  // Softcopy PDF & Dispatch states
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [parentEmailInput, setParentEmailInput] = useState(student.guardianEmail || '');
+  const [parentPhoneInput, setParentPhoneInput] = useState(student.guardianPhone || '');
+  const [customAdminNote, setCustomAdminNote] = useState('');
+  const [copiedMsg, setCopiedMsg] = useState(false);
+
+  useEffect(() => {
+    setParentEmailInput(student.guardianEmail || '');
+    setParentPhoneInput(student.guardianPhone || '');
+  }, [student.guardianEmail, student.guardianPhone, student.id]);
+
+  const handleDownloadSoftcopyPDF = async () => {
+    const element = printRef.current;
+    if (!element) return;
+    setIsGeneratingPDF(true);
+    try {
+      const html2pdfModule = (await import('html2pdf.js')).default;
+      const cleanName = student.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanTerm = (config.term || 'Term').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const opt = {
+        margin: [0.2, 0.2, 0.2, 0.2] as [number, number, number, number],
+        filename: `${cleanName}_${cleanTerm}_Report.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' as const }
+      };
+      await html2pdfModule().set(opt).from(element).save();
+    } catch (err) {
+      console.error('Failed to generate PDF:', err);
+      handlePrint();
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  const getDispatchOptions = () => {
+    const updatedStudent: Student = {
+      ...student,
+      guardianEmail: parentEmailInput || student.guardianEmail,
+      guardianPhone: parentPhoneInput || student.guardianPhone
+    };
+    return {
+      student: updatedStudent,
+      config,
+      stats: {
+        totalScore: totalSum,
+        averageScore: studentAverage,
+        classRank: studentRank,
+        totalStudents: allClassStudents.length,
+        attendanceSummary: attendance ? `${attendance.daysPresent} / ${attendance.totalDays} days present` : undefined
+      },
+      customNote: customAdminNote
+    };
+  };
+
+  const handleSendEmail = () => {
+    sendGuardianEmail(getDispatchOptions());
+  };
+
+  const handleSendWhatsApp = () => {
+    sendWhatsAppReport(getDispatchOptions());
+  };
+
+  const handleCopyMessage = () => {
+    const bodyText = generateEmailReportBody(getDispatchOptions());
+    navigator.clipboard.writeText(bodyText);
+    setCopiedMsg(true);
+    setTimeout(() => setCopiedMsg(false), 2500);
+  };
+
   useEffect(() => {
     try {
       setIsInsideIframe(window.self !== window.top);
@@ -335,23 +408,188 @@ export default function ReportPDF({
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
-          <div className="w-full sm:w-auto">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-3">
+          <div className="w-full md:w-auto">
             <h4 className="font-display font-bold text-mauve-900 text-sm flex items-center gap-1.5 uppercase tracking-wide">
               <Settings2 className="w-4 h-4 text-mauve-900" />
-              Customize Transcript Details
+              Transcript Controls & Dispatch
             </h4>
-            <p className="text-[11px] text-gray-500 mt-0.5">Configure signatures, headers, and principal endorsements. Choose 'Save as PDF' in the destination dropdown to download.</p>
+            <p className="text-[11px] text-gray-500 mt-0.5">Export softcopy PDF file, send directly to parent Email/WhatsApp, or print hardcopy.</p>
           </div>
-          <button
-            onClick={handlePrint}
-            className="w-full sm:w-auto bg-mauve-900 hover:bg-mauve-700 active:scale-[0.98] focus:ring-2 focus:ring-mauve-500/50 text-white font-bold text-xs px-5 py-2.5 rounded-lg transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer shadow-sm uppercase tracking-wider"
-            id={`btn-print-${student.id}`}
-          >
-            <Printer className="w-4 h-4 shrink-0" />
-            <span>Print / Export PDF</span>
-          </button>
+
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+            <button
+              onClick={handleDownloadSoftcopyPDF}
+              disabled={isGeneratingPDF}
+              className="flex-1 md:flex-none bg-emerald-700 hover:bg-emerald-800 active:scale-[0.98] text-white font-bold text-xs px-3.5 py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm uppercase tracking-wider"
+              title="Generate and download softcopy PDF file"
+            >
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span>{isGeneratingPDF ? 'Generating PDF...' : 'Download Softcopy PDF'}</span>
+            </button>
+
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="flex-1 md:flex-none bg-blue-700 hover:bg-blue-800 active:scale-[0.98] text-white font-bold text-xs px-3.5 py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm uppercase tracking-wider"
+              title="Send softcopy report card to parent email or WhatsApp"
+            >
+              <Share2 className="w-3.5 h-3.5 shrink-0" />
+              <span>Send Softcopy</span>
+            </button>
+
+            <button
+              onClick={handlePrint}
+              className="flex-1 md:flex-none bg-mauve-900 hover:bg-mauve-800 active:scale-[0.98] focus:ring-2 focus:ring-mauve-500/50 text-white font-bold text-xs px-3.5 py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm uppercase tracking-wider"
+              id={`btn-print-${student.id}`}
+            >
+              <Printer className="w-3.5 h-3.5 shrink-0" />
+              <span>Print Hardcopy</span>
+            </button>
+          </div>
         </div>
+
+        {/* Softcopy Dispatch Modal */}
+        {showShareModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn no-print">
+            <div className="bg-white rounded-2xl border border-mauve-250 w-full max-w-lg p-6 shadow-2xl space-y-5 text-mauve-900">
+              <div className="flex justify-between items-center border-b border-mauve-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-blue-50 text-blue-700 rounded-xl">
+                    <Share2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-display font-bold text-mauve-900 text-base">
+                      Send Softcopy Report Card
+                    </h4>
+                    <p className="text-xs text-mauve-500">
+                      Parent dispatch portal for {student.name} ({student.className})
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowShareModal(false)}
+                  className="text-gray-400 hover:text-gray-600 font-bold cursor-pointer p-1 rounded-lg hover:bg-gray-100"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Student/Parent info summary */}
+              <div className="bg-mauve-50/50 p-3.5 rounded-xl border border-mauve-150 text-xs space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-mauve-800">Pupil: {student.name} ({student.rollNumber})</span>
+                  <span className="bg-mauve-100 text-mauve-800 text-[10px] font-bold px-2 py-0.5 rounded uppercase">
+                    {student.className}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-gray-600 text-[11px]">
+                  <span>Guardian Name: <strong>{student.guardianName || 'N/A'}</strong></span>
+                  <span>Average Score: <strong>{studentAverage.toFixed(1)}%</strong></span>
+                </div>
+              </div>
+
+              {/* Parent Contact Details */}
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-mauve-700 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-blue-600" />
+                    Parent Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={parentEmailInput}
+                    onChange={(e) => setParentEmailInput(e.target.value)}
+                    placeholder="parent@example.com"
+                    className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-blue-500 outline-none text-xs text-mauve-900 bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-mauve-700 flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-green-600" />
+                    Parent WhatsApp / Phone Number
+                  </label>
+                  <input
+                    type="text"
+                    value={parentPhoneInput}
+                    onChange={(e) => setParentPhoneInput(e.target.value)}
+                    placeholder="e.g. +233241234567 or 0241234567"
+                    className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-green-500 outline-none text-xs text-mauve-900 bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-mauve-700 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-purple-600" />
+                    Custom Admin Note (Optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={customAdminNote}
+                    onChange={(e) => setCustomAdminNote(e.target.value)}
+                    placeholder="e.g. Please note school re-opens on September 15th. Fee balance due."
+                    className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-purple-500 outline-none text-xs text-mauve-900 bg-white resize-none"
+                  />
+                </div>
+              </div>
+
+              {/* Dispatch Action Buttons */}
+              <div className="space-y-2 pt-2 border-t border-mauve-100">
+                <span className="text-[11px] font-bold text-mauve-700 uppercase tracking-wider block">
+                  Softcopy Dispatch Options
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    onClick={handleDownloadSoftcopyPDF}
+                    disabled={isGeneratingPDF}
+                    className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>{isGeneratingPDF ? 'Generating...' : '1. Download Softcopy PDF'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleSendEmail}
+                    className="w-full bg-blue-700 hover:bg-blue-800 text-white font-semibold text-xs py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <Mail className="w-4 h-4" />
+                    <span>2. Send via Parent Email</span>
+                  </button>
+
+                  <button
+                    onClick={handleSendWhatsApp}
+                    className="w-full bg-green-700 hover:bg-green-800 text-white font-semibold text-xs py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span>3. Send via WhatsApp</span>
+                  </button>
+
+                  <button
+                    onClick={handleCopyMessage}
+                    className="w-full bg-mauve-100 hover:bg-mauve-200 text-mauve-800 font-semibold text-xs py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer border border-mauve-200"
+                  >
+                    {copiedMsg ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiedMsg ? 'Message Copied!' : 'Copy Summary Text'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-[10px] text-amber-800 leading-relaxed">
+                💡 <strong>Tip for Admin:</strong> Click <em>"1. Download Softcopy PDF"</em> to save the PDF file locally, then click <em>"Send via WhatsApp"</em> or <em>"Send via Email"</em> to send the message and attach the downloaded softcopy report card to the parent.
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  onClick={() => setShowShareModal(false)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded-xl cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Customization Controls Accordion-like */}
         <div className="border-t border-mauve-500/10 pt-3">

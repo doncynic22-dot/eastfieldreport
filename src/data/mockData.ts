@@ -45,11 +45,11 @@ export const INITIAL_SUBJECTS: Subject[] = [
 ];
 
 export const INITIAL_STUDENTS: Student[] = [
-  { id: "st-101", name: "Kwame Asante", rollNumber: "ST-001", level: "PRIMARY", className: "Primary 1", guardianName: "Emmanuel Asante", guardianEmail: "emmanuel@asante.com" },
-  { id: "st-102", name: "Ama Boateng", rollNumber: "ST-002", level: "PRIMARY", className: "Primary 1", guardianName: "Kofi Boateng", guardianEmail: "kofi@boateng.com" },
-  { id: "st-103", name: "Kofi Mensah", rollNumber: "ST-003", level: "JHS", className: "JHS 1", guardianName: "Yao Mensah", guardianEmail: "yao@mensah.com" },
-  { id: "st-104", name: "Yaa Asantewaa", rollNumber: "ST-004", level: "JHS", className: "JHS 1", guardianName: "Maame Asantewaa", guardianEmail: "maame@asantewaa.com" },
-  { id: "st-105", name: "Abena Osei", rollNumber: "ST-005", level: "NURSERY", className: "Nursery 1", guardianName: "Charles Osei", guardianEmail: "charles@osei.com" }
+  { id: "st-101", name: "Kwame Asante", rollNumber: "ST-001", level: "PRIMARY", className: "Primary 1", guardianName: "Emmanuel Asante", guardianEmail: "emmanuel@asante.com", guardianPhone: "+233241234567" },
+  { id: "st-102", name: "Ama Boateng", rollNumber: "ST-002", level: "PRIMARY", className: "Primary 1", guardianName: "Kofi Boateng", guardianEmail: "kofi@boateng.com", guardianPhone: "+233501234567" },
+  { id: "st-103", name: "Kofi Mensah", rollNumber: "ST-003", level: "JHS", className: "JHS 1", guardianName: "Yao Mensah", guardianEmail: "yao@mensah.com", guardianPhone: "+233271234567" },
+  { id: "st-104", name: "Yaa Asantewaa", rollNumber: "ST-004", level: "JHS", className: "JHS 1", guardianName: "Maame Asantewaa", guardianEmail: "maame@asantewaa.com", guardianPhone: "+233201234567" },
+  { id: "st-105", name: "Abena Osei", rollNumber: "ST-005", level: "NURSERY", className: "Nursery 1", guardianName: "Charles Osei", guardianEmail: "charles@osei.com", guardianPhone: "+233551234567" }
 ];
 
 export const INITIAL_GRADING_SCALE: GradingScaleRule[] = [
@@ -73,7 +73,9 @@ export const DEFAULT_REPORT_CONFIG: ReportConfig = {
   schoolLogoText: 'EA',
   classScoreWeight: 50, // 50% Class Score
   examScoreWeight: 50,  // 50% Terminal Exams
-  selectedTemplate: 'dynamic'
+  selectedTemplate: 'dynamic',
+  reopeningDate: '2026-09-15',
+  autoPromoteOnReopening: true
 };
 
 export const INITIAL_USERS: User[] = [
