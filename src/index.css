@@ -6,17 +6,17 @@
   --font-display: "Space Grotesk", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-mauve-50: #F5F0F5;
-  --color-mauve-100: #EBDDEB;
-  --color-mauve-200: #E3D2E3;
-  --color-mauve-300: #D8BDD8;
-  --color-mauve-400: #C29DC2;
-  --color-mauve-500: #AF87B3;
-  --color-mauve-600: #976F9A;
-  --color-mauve-700: #7A5B7E;
-  --color-mauve-800: #6B4E6E;
-  --color-mauve-900: #5D4360;
-  --color-mauve-950: #463048;
+  --color-mauve-50: #F3E6F3;
+  --color-mauve-100: #E2BFE2;
+  --color-mauve-200: #CD97CD;
+  --color-mauve-300: #B26EB2;
+  --color-mauve-400: #964A96;
+  --color-mauve-500: #7B307B;
+  --color-mauve-600: #642164;
+  --color-mauve-700: #4E164E;
+  --color-mauve-800: #390D39;
+  --color-mauve-900: #250725;
+  --color-mauve-950: #160316;
 }
 
 @layer utilities {
@@ -26,7 +26,7 @@
     backdrop-filter: blur(8px);
   }
   .mauve-glow {
-    box-shadow: 0 4px 20px -2px rgba(141, 86, 137, 0.15);
+    box-shadow: 0 4px 20px -2px rgba(92, 43, 95, 0.25);
   }
 }
 
@@ -37,16 +37,16 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #faf7f9;
+  background: #f8f2f8;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #dcbed9;
+  background: #c48ec4;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a971a5;
+  background: #914e94;
 }
 
 /* Screen and Print style for high-fidelity Report Templates */

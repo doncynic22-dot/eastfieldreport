@@ -735,7 +735,7 @@ export default function App() {
                         <div className="p-2 rounded bg-mauve-100 text-mauve-900 border border-mauve-500/10">
                           <Icon className="w-4 h-4" />
                         </div>
-                        <span className="text-[9px] font-mono font-bold bg-[#EBDDEB] text-mauve-900 px-2 py-0.5 rounded uppercase tracking-wider">
+                        <span className="text-[9px] font-mono font-bold bg-mauve-100 text-mauve-900 px-2 py-0.5 rounded uppercase tracking-wider">
                           {feat.badge}
                         </span>
                       </div>
