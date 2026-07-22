@@ -79,6 +79,10 @@ export default function TeacherDashboard({
   // Attendance inputs state (studentId -> {totalDays, daysPresent, remarks})
   const [attendanceInputs, setAttendanceInputs] = useState<Record<string, { totalDays: string; daysPresent: string; remarks: string }>>({});
 
+  // Student list sorting states
+  const [studentSortField, setStudentSortField] = useState<'rollNumber' | 'name'>('rollNumber');
+  const [studentSortOrder, setStudentSortOrder] = useState<'asc' | 'desc'>('asc');
+
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // 1. CHOOSE INSTANT DEMO PROFILES
@@ -132,6 +136,13 @@ export default function TeacherDashboard({
       if (regSelectedClasses.length > 1) {
         setRegError('Academy Staff Policy: Nursery, KG, and Primary division teachers can only be assigned to a single class.');
         return;
+      }
+      for (const cls of regSelectedClasses) {
+        const assignedTeacher = teachers.find(t => t.classes?.includes(cls));
+        if (assignedTeacher) {
+          setRegError(`Class Assignment Conflict: "${cls}" is already assigned to ${assignedTeacher.name}. In Primary, Nursery, and KG, a class cannot be assigned to more than one teacher.`);
+          return;
+        }
       }
     }
 
@@ -361,6 +372,14 @@ export default function TeacherDashboard({
   };
 
   const toggleRegClass = (cls: string) => {
+    if (regLevel === 'PRIMARY' || regLevel === 'NURSERY') {
+      const assignedTeacher = teachers.find(t => t.classes?.includes(cls));
+      if (assignedTeacher && !regSelectedClasses.includes(cls)) {
+        setRegError(`Cannot select "${cls}": Already assigned to ${assignedTeacher.name}. In Primary, Nursery, and KG, each class can only be assigned to one teacher.`);
+      } else {
+        setRegError('');
+      }
+    }
     setRegSelectedClasses(prev => {
       if (regLevel === 'PRIMARY' || regLevel === 'NURSERY') {
         return prev.includes(cls) ? [] : [cls];
@@ -411,7 +430,17 @@ export default function TeacherDashboard({
     : [];
 
   // 4. LOAD GRADEBOOK & ATTENDANCE ON INTERCEPTOR RESOLUTION
-  const activeClassStudents = students.filter(s => s.className === selectedClass);
+  const activeClassStudents = students
+    .filter(s => s.className === selectedClass)
+    .sort((a, b) => {
+      let comparison = 0;
+      if (studentSortField === 'rollNumber') {
+        comparison = a.rollNumber.localeCompare(b.rollNumber, undefined, { numeric: true, sensitivity: 'base' });
+      } else {
+        comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      return studentSortOrder === 'asc' ? comparison : -comparison;
+    });
 
   useEffect(() => {
     if (!selectedClass || !selectedSubject || !currentUser) return;
@@ -895,27 +924,53 @@ export default function TeacherDashboard({
                 <div className="flex flex-wrap gap-1 p-2 rounded border border-mauve-500/10 bg-mauve-50">
                   {regLevel === 'NURSERY' && classes.NURSERY.map(c => {
                     const isSel = regSelectedClasses.includes(c);
+                    const assignedTeacher = teachers.find(t => t.classes?.includes(c));
                     return (
                       <button
                         key={c}
                         type="button"
                         onClick={() => toggleRegClass(c)}
-                        className={`px-2 py-0.5 text-[11px] border rounded cursor-pointer font-semibold transition ${isSel ? 'bg-mauve-900 text-white border-mauve-900 shadow-sm' : 'bg-white text-mauve-900/80 border-mauve-500/15'}`}
+                        className={`px-2 py-1 text-[11px] border rounded cursor-pointer font-semibold transition flex items-center gap-1 ${
+                          isSel 
+                            ? 'bg-mauve-900 text-white border-mauve-900 shadow-sm' 
+                            : assignedTeacher 
+                              ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100' 
+                              : 'bg-white text-mauve-900/80 border-mauve-500/15 hover:bg-mauve-50'
+                        }`}
+                        title={assignedTeacher ? `Assigned to ${assignedTeacher.name}` : 'Available'}
                       >
-                        {c}
+                        <span>{c}</span>
+                        {assignedTeacher && !isSel && (
+                          <span className="text-[9px] bg-amber-200 text-amber-900 px-1 py-0.2 rounded font-mono">
+                            {assignedTeacher.name.split(' ')[0]}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
                   {regLevel === 'PRIMARY' && classes.PRIMARY.map(c => {
                     const isSel = regSelectedClasses.includes(c);
+                    const assignedTeacher = teachers.find(t => t.classes?.includes(c));
                     return (
                       <button
                         key={c}
                         type="button"
                         onClick={() => toggleRegClass(c)}
-                        className={`px-2 py-0.5 text-[11px] border rounded cursor-pointer font-semibold transition ${isSel ? 'bg-mauve-900 text-white border-mauve-900 shadow-sm' : 'bg-white text-mauve-900/80 border-mauve-500/15'}`}
+                        className={`px-2 py-1 text-[11px] border rounded cursor-pointer font-semibold transition flex items-center gap-1 ${
+                          isSel 
+                            ? 'bg-mauve-900 text-white border-mauve-900 shadow-sm' 
+                            : assignedTeacher 
+                              ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100' 
+                              : 'bg-white text-mauve-900/80 border-mauve-500/15 hover:bg-mauve-50'
+                        }`}
+                        title={assignedTeacher ? `Assigned to ${assignedTeacher.name}` : 'Available'}
                       >
-                        {c}
+                        <span>{c}</span>
+                        {assignedTeacher && !isSel && (
+                          <span className="text-[9px] bg-amber-200 text-amber-900 px-1 py-0.2 rounded font-mono">
+                            {assignedTeacher.name.split(' ')[0]}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -1230,9 +1285,23 @@ export default function TeacherDashboard({
                     </p>
                   </div>
 
-                  <div className="flex gap-2 text-[10px] font-mono font-bold text-mauve-900">
-                    <span className="bg-white border border-mauve-500/15 px-2 py-0.5 rounded">Class limit: {classLimit} Marks</span>
-                    <span className="bg-white border border-mauve-500/15 px-2 py-0.5 rounded">Exam limit: {examLimit} Marks</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={`${studentSortField}-${studentSortOrder}`}
+                      onChange={(e) => {
+                        const [f, o] = e.target.value.split('-') as ['rollNumber' | 'name', 'asc' | 'desc'];
+                        setStudentSortField(f);
+                        setStudentSortOrder(o);
+                      }}
+                      className="text-[11px] px-2 py-1 rounded border border-mauve-500/20 bg-white font-semibold text-mauve-900 outline-none focus:ring-1 focus:ring-mauve-900"
+                    >
+                      <option value="rollNumber-asc">Sort ID: Ascending ↑</option>
+                      <option value="rollNumber-desc">Sort ID: Descending ↓</option>
+                      <option value="name-asc">Sort Name: A to Z ↑</option>
+                      <option value="name-desc">Sort Name: Z to A ↓</option>
+                    </select>
+                    <span className="bg-white border border-mauve-500/15 px-2 py-0.5 rounded text-[10px] font-mono font-bold text-mauve-900">Class limit: {classLimit} Marks</span>
+                    <span className="bg-white border border-mauve-500/15 px-2 py-0.5 rounded text-[10px] font-mono font-bold text-mauve-900">Exam limit: {examLimit} Marks</span>
                   </div>
                 </div>
 
@@ -1240,7 +1309,25 @@ export default function TeacherDashboard({
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-mauve-50/50 text-[11px] font-bold text-mauve-900 border-b border-mauve-500/20 uppercase tracking-wider">
-                        <th className="p-3 pl-4">Student Details</th>
+                        <th 
+                          className="p-3 pl-4 cursor-pointer hover:bg-mauve-100 transition select-none"
+                          onClick={() => {
+                            if (studentSortField === 'rollNumber') {
+                              setStudentSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                            } else {
+                              setStudentSortField('rollNumber');
+                              setStudentSortOrder('asc');
+                            }
+                          }}
+                          title="Click to toggle sorting by Student ID"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>Student Details</span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-mauve-900 text-white font-mono font-bold">
+                              {studentSortField === 'rollNumber' ? (studentSortOrder === 'asc' ? 'ID Asc ↑' : 'ID Desc ↓') : 'Sort ID'}
+                            </span>
+                          </div>
+                        </th>
                         <th className="p-3 text-center w-40">Class Score ({classLimit})</th>
                         <th className="p-3 text-center w-40">Exam Score ({examLimit})</th>
                         <th className="p-3 text-center w-32">Total (100)</th>
@@ -1327,7 +1414,25 @@ export default function TeacherDashboard({
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-mauve-50/50 text-[11px] font-bold text-mauve-900 border-b border-mauve-500/20 uppercase tracking-wider">
-                    <th className="p-3 pl-4">Student Details</th>
+                    <th 
+                      className="p-3 pl-4 cursor-pointer hover:bg-mauve-100 transition select-none"
+                      onClick={() => {
+                        if (studentSortField === 'rollNumber') {
+                          setStudentSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setStudentSortField('rollNumber');
+                          setStudentSortOrder('asc');
+                        }
+                      }}
+                      title="Click to toggle sorting by Student ID"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>Student Details</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-mauve-900 text-white font-mono font-bold">
+                          {studentSortField === 'rollNumber' ? (studentSortOrder === 'asc' ? 'ID Asc ↑' : 'ID Desc ↓') : 'Sort ID'}
+                        </span>
+                      </div>
+                    </th>
                     <th className="p-3 text-center w-40">Days Opened</th>
                     <th className="p-3 text-center w-40">Days Present</th>
                     <th className="p-3 text-center w-32">Percentage</th>

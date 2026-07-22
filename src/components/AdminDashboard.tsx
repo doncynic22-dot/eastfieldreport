@@ -63,10 +63,12 @@ export default function AdminDashboard({
   const [logoDragActive, setLogoDragActive] = useState(false);
   const [logoUploadError, setLogoUploadError] = useState('');
 
-  // Search and Filter States
+  // Search, Filter and Sort States
   const [studentSearch, setStudentSearch] = useState('');
   const [studentLevelFilter, setStudentLevelFilter] = useState<string>('ALL');
   const [studentClassFilter, setStudentClassFilter] = useState<string>('ALL');
+  const [studentSortField, setStudentSortField] = useState<'rollNumber' | 'name'>('rollNumber');
+  const [studentSortOrder, setStudentSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Modal / Form States
   const [showStudentModal, setShowStudentModal] = useState(false);
@@ -465,8 +467,15 @@ export default function AdminDashboard({
 
     if (teacherForm.level === 'NURSERY' || teacherForm.level === 'PRIMARY') {
       if (teacherForm.classes.length > 1) {
-        setTeacherError('Academy Staff Policy: Nursery & Primary division teachers cannot be assigned to more than one class.');
+        setTeacherError('Academy Staff Policy: Nursery, KG, and Primary division teachers cannot be assigned to more than one class.');
         return;
+      }
+      for (const cls of teacherForm.classes) {
+        const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(cls));
+        if (assignedTeacher) {
+          setTeacherError(`Class Assignment Conflict: "${cls}" is already assigned to ${assignedTeacher.name}. In Nursery, KG, and Primary divisions, a class cannot be assigned to more than one teacher.`);
+          return;
+        }
       }
     }
 
@@ -532,6 +541,14 @@ export default function AdminDashboard({
   };
 
   const toggleClassForTeacherForm = (className: string) => {
+    if (teacherForm.level === 'NURSERY' || teacherForm.level === 'PRIMARY') {
+      const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(className));
+      if (assignedTeacher && !teacherForm.classes.includes(className)) {
+        setTeacherError(`Cannot select "${className}": Already assigned to ${assignedTeacher.name}. In Nursery, KG, and Primary, a class cannot be assigned to more than one teacher.`);
+      } else {
+        setTeacherError('');
+      }
+    }
     setTeacherForm(prev => {
       if (prev.level === 'NURSERY' || prev.level === 'PRIMARY') {
         const alreadySelected = prev.classes.includes(className);
@@ -594,18 +611,33 @@ export default function AdminDashboard({
     }));
   };
 
-  // Filter students for Directory
-  const filteredStudents = students.filter((s) => {
-    const matchesSearch = s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
-                          s.rollNumber.toLowerCase().includes(studentSearch.toLowerCase()) ||
-                          s.guardianName.toLowerCase().includes(studentSearch.toLowerCase());
-    const matchesLevel = studentLevelFilter === 'ALL' || s.level === studentLevelFilter;
-    const matchesClass = studentClassFilter === 'ALL' || s.className === studentClassFilter;
-    return matchesSearch && matchesLevel && matchesClass;
-  });
+  // Filter and sort students for Directory
+  const filteredStudents = students
+    .filter((s) => {
+      const matchesSearch = s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
+                            s.rollNumber.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                            s.guardianName.toLowerCase().includes(studentSearch.toLowerCase());
+      const matchesLevel = studentLevelFilter === 'ALL' || s.level === studentLevelFilter;
+      const matchesClass = studentClassFilter === 'ALL' || s.className === studentClassFilter;
+      return matchesSearch && matchesLevel && matchesClass;
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+      if (studentSortField === 'rollNumber') {
+        comparison = a.rollNumber.localeCompare(b.rollNumber, undefined, { numeric: true, sensitivity: 'base' });
+      } else {
+        comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      return studentSortOrder === 'asc' ? comparison : -comparison;
+    });
 
   // Transcript selector helpers
-  const studentsInSelectedClass = students.filter((s) => s.className === selectedClass);
+  const studentsInSelectedClass = students
+    .filter((s) => s.className === selectedClass)
+    .sort((a, b) => {
+      const comp = a.rollNumber.localeCompare(b.rollNumber, undefined, { numeric: true, sensitivity: 'base' });
+      return studentSortOrder === 'asc' ? comp : -comp;
+    });
   const selectedStudent = students.find((s) => s.id === selectedStudentId);
 
   // When class changes in transcript selector, auto-select first student in that class
@@ -1054,7 +1086,7 @@ export default function AdminDashboard({
           </div>
 
           {/* Search filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white p-3 rounded border border-mauve-500/20 shadow-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-white p-3 rounded border border-mauve-500/20 shadow-sm">
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-mauve-400 absolute left-2.5 top-2.5" />
               <input
@@ -1091,6 +1123,23 @@ export default function AdminDashboard({
                 ))}
               </select>
             </div>
+
+            <div>
+              <select
+                value={`${studentSortField}-${studentSortOrder}`}
+                onChange={(e) => {
+                  const [f, o] = e.target.value.split('-') as ['rollNumber' | 'name', 'asc' | 'desc'];
+                  setStudentSortField(f);
+                  setStudentSortOrder(o);
+                }}
+                className="w-full text-xs p-1.5 rounded border border-mauve-500/15 focus:outline-none focus:ring-1 focus:ring-mauve-900 text-mauve-900 bg-white font-medium"
+              >
+                <option value="rollNumber-asc">Sort: Student ID (Ascending ↑)</option>
+                <option value="rollNumber-desc">Sort: Student ID (Descending ↓)</option>
+                <option value="name-asc">Sort: Name (A to Z ↑)</option>
+                <option value="name-desc">Sort: Name (Z to A ↓)</option>
+              </select>
+            </div>
           </div>
 
           {/* Table Directory */}
@@ -1099,8 +1148,44 @@ export default function AdminDashboard({
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-mauve-50 border-b border-mauve-500/20 text-[11px] font-bold text-mauve-900 uppercase tracking-wider">
-                    <th className="p-3 pl-4">Student Details</th>
-                    <th className="p-3">Roll Number</th>
+                    <th 
+                      className="p-3 pl-4 cursor-pointer hover:bg-mauve-100 transition select-none"
+                      onClick={() => {
+                        if (studentSortField === 'name') {
+                          setStudentSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setStudentSortField('name');
+                          setStudentSortOrder('asc');
+                        }
+                      }}
+                      title="Click to sort by Name"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Student Details</span>
+                        {studentSortField === 'name' && (
+                          <span className="text-mauve-900 font-extrabold">{studentSortOrder === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </div>
+                    </th>
+                    <th 
+                      className="p-3 cursor-pointer hover:bg-mauve-100 transition select-none"
+                      onClick={() => {
+                        if (studentSortField === 'rollNumber') {
+                          setStudentSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setStudentSortField('rollNumber');
+                          setStudentSortOrder('asc');
+                        }
+                      }}
+                      title="Click to sort by Student ID / Roll Number"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Roll Number</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${studentSortField === 'rollNumber' ? 'bg-mauve-900 text-white' : 'bg-mauve-200 text-mauve-800'}`}>
+                          {studentSortField === 'rollNumber' ? (studentSortOrder === 'asc' ? 'ID Asc ↑' : 'ID Desc ↓') : 'Sort ID'}
+                        </span>
+                      </div>
+                    </th>
                     <th className="p-3">Academy Level</th>
                     <th className="p-3">Assigned Class</th>
                     <th className="p-3">Guardian Contacts</th>
@@ -1561,29 +1646,53 @@ export default function AdminDashboard({
                     <div className="flex flex-wrap gap-1.5 p-3 rounded-xl border border-mauve-150 bg-mauve-50/25">
                       {teacherForm.level === 'NURSERY' && classes.NURSERY.map(c => {
                         const isSel = teacherForm.classes.includes(c);
+                        const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(c));
                         return (
                           <button
                             key={c}
                             type="button"
-                            disabled={!!editingTeacher}
                             onClick={() => toggleClassForTeacherForm(c)}
-                            className={`px-2.5 py-1 text-xs border rounded-lg transition ${isSel ? 'bg-mauve-600 text-white border-mauve-700 font-bold' : 'bg-white text-mauve-700 border-mauve-200 hover:bg-mauve-50'} ${editingTeacher ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                            className={`px-2.5 py-1 text-xs border rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                              isSel 
+                                ? 'bg-mauve-600 text-white border-mauve-700 font-bold' 
+                                : assignedTeacher 
+                                  ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100' 
+                                  : 'bg-white text-mauve-700 border-mauve-200 hover:bg-mauve-50'
+                            }`}
+                            title={assignedTeacher ? `Assigned to ${assignedTeacher.name}` : 'Available'}
                           >
-                            {c}
+                            <span>{c}</span>
+                            {assignedTeacher && !isSel && (
+                              <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-mono font-medium">
+                                Assigned: {assignedTeacher.name.split(' ')[0]}
+                              </span>
+                            )}
                           </button>
                         );
                       })}
                       {teacherForm.level === 'PRIMARY' && classes.PRIMARY.map(c => {
                         const isSel = teacherForm.classes.includes(c);
+                        const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(c));
                         return (
                           <button
                             key={c}
                             type="button"
-                            disabled={!!editingTeacher}
                             onClick={() => toggleClassForTeacherForm(c)}
-                            className={`px-2.5 py-1 text-xs border rounded-lg transition ${isSel ? 'bg-mauve-600 text-white border-mauve-700 font-bold' : 'bg-white text-mauve-700 border-mauve-200 hover:bg-mauve-50'} ${editingTeacher ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                            className={`px-2.5 py-1 text-xs border rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                              isSel 
+                                ? 'bg-mauve-600 text-white border-mauve-700 font-bold' 
+                                : assignedTeacher 
+                                  ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100' 
+                                  : 'bg-white text-mauve-700 border-mauve-200 hover:bg-mauve-50'
+                            }`}
+                            title={assignedTeacher ? `Assigned to ${assignedTeacher.name}` : 'Available'}
                           >
-                            {c}
+                            <span>{c}</span>
+                            {assignedTeacher && !isSel && (
+                              <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-mono font-medium">
+                                Assigned: {assignedTeacher.name.split(' ')[0]}
+                              </span>
+                            )}
                           </button>
                         );
                       })}
@@ -1593,9 +1702,8 @@ export default function AdminDashboard({
                           <button
                             key={c}
                             type="button"
-                            disabled={!!editingTeacher}
                             onClick={() => toggleClassForTeacherForm(c)}
-                            className={`px-2.5 py-1 text-xs border rounded-lg transition ${isSel ? 'bg-mauve-600 text-white border-mauve-700 font-bold' : 'bg-white text-mauve-700 border-mauve-200 hover:bg-mauve-50'} ${editingTeacher ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                            className={`px-2.5 py-1 text-xs border rounded-lg transition cursor-pointer ${isSel ? 'bg-mauve-600 text-white border-mauve-700 font-bold' : 'bg-white text-mauve-700 border-mauve-200 hover:bg-mauve-50'}`}
                           >
                             {c}
                           </button>
@@ -2357,8 +2465,13 @@ export default function AdminDashboard({
               {students
                 .filter(s =>
                   s.name.toLowerCase().includes(promotionSearchQuery.toLowerCase()) ||
+                  s.rollNumber.toLowerCase().includes(promotionSearchQuery.toLowerCase()) ||
                   s.className.toLowerCase().includes(promotionSearchQuery.toLowerCase())
                 )
+                .sort((a, b) => {
+                  const comp = a.rollNumber.localeCompare(b.rollNumber, undefined, { numeric: true, sensitivity: 'base' });
+                  return studentSortOrder === 'asc' ? comp : -comp;
+                })
                 .map((student) => {
                   const { nextClass, isGraduated } = getNextClassAndLevel(student.className, student.level);
                   const isAlreadyGraduated = student.className.toLowerCase().includes('graduated');

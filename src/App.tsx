@@ -682,7 +682,7 @@ export default function App() {
                   Ghanaian Basic Education Framework
                 </span>
                 <h1 className="font-display font-bold text-2xl sm:text-3xl text-mauve-900 tracking-tight uppercase">
-                  EASTFILED ACADEMY REPORT MANAGEMENT SYSTEM
+                  EASTFIELD ACADEMY REPORT MANAGEMENT SYSTEM
                 </h1>
                 <p className="text-xs text-gray-600 max-w-xl mx-auto leading-relaxed">
                   A high-fidelity record platform designed for Eastfield Academy teachers and administrators to automate pupil evaluations, log term attendances, and generate crisp transcript cards.
