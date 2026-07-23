@@ -5,6 +5,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Grade, Attendance, Subject, ReportConfig } from '../types';
+import { getNextClassAndLevel } from '../services/promotionService';
 import { Printer, Check, Settings2, FileText, Sparkles, ExternalLink, Sliders, GraduationCap, Download, Mail, MessageSquare, Share2, Copy, CheckCircle2, Phone, X } from 'lucide-react';
 import { generateEmailReportBody, sendGuardianEmail, sendWhatsAppReport } from '../services/emailDispatcher';
 
@@ -170,6 +171,36 @@ export default function ReportPDF({
 
   const [customRollNumber, setCustomRollNumber] = useState(student.rollNumber);
   const [customClassRoll, setCustomClassRoll] = useState(allClassStudents.length);
+
+  // Promotional Status options
+  const initialNextClass = getNextClassAndLevel(student.className, student.level);
+  const [showPromotionStatus, setShowPromotionStatus] = useState(true);
+  const [promotionDecision, setPromotionDecision] = useState<'PROMOTED' | 'RETAINED' | 'GRADUATED' | 'CUSTOM'>(
+    initialNextClass.isGraduated ? 'GRADUATED' : 'PROMOTED'
+  );
+  const [promotedToClass, setPromotedToClass] = useState(initialNextClass.nextClass);
+  const [customPromotionText, setCustomPromotionText] = useState(
+    initialNextClass.isGraduated ? 'GRADUATED' : `PROMOTED TO ${initialNextClass.nextClass.toUpperCase()}`
+  );
+
+  useEffect(() => {
+    const info = getNextClassAndLevel(student.className, student.level);
+    setPromotionDecision(info.isGraduated ? 'GRADUATED' : 'PROMOTED');
+    setPromotedToClass(info.nextClass);
+    setCustomPromotionText(info.isGraduated ? 'GRADUATED' : `PROMOTED TO ${info.nextClass.toUpperCase()}`);
+  }, [student.id, student.className, student.level]);
+
+  const getPromotionBadgeText = () => {
+    if (promotionDecision === 'PROMOTED') {
+      return `PROMOTED TO ${promotedToClass.toUpperCase()}`;
+    } else if (promotionDecision === 'RETAINED') {
+      return `RETAINED IN ${student.className.toUpperCase()}`;
+    } else if (promotionDecision === 'GRADUATED') {
+      return `GRADUATED FROM ${config.schoolName.toUpperCase()}`;
+    } else {
+      return customPromotionText.toUpperCase();
+    }
+  };
 
   useEffect(() => {
     setCustomRollNumber(student.rollNumber);
@@ -757,6 +788,70 @@ export default function ReportPDF({
                 </div>
               </div>
 
+              {/* Promotional Status & Next Level Customizer */}
+              <div className="col-span-1 md:col-span-2 border-t border-mauve-500/10 pt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-mauve-900 uppercase tracking-wider flex items-center gap-1">
+                    <GraduationCap className="w-3.5 h-3.5 text-mauve-900" />
+                    3rd Term Promotional Status Indicator
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showPromotionStatus}
+                        onChange={(e) => setShowPromotionStatus(e.target.checked)}
+                        className="rounded border-mauve-500/20 text-mauve-900 focus:ring-mauve-900 w-3.5 h-3.5"
+                      />
+                      Display Promotional Status Banner on Report Card
+                    </label>
+                    <div>
+                      <label className="text-[10px] text-gray-500 block">Promotional Decision</label>
+                      <select
+                        value={promotionDecision}
+                        onChange={(e) => setPromotionDecision(e.target.value as any)}
+                        className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900 font-bold focus:outline-none focus:ring-1 focus:ring-mauve-900"
+                      >
+                        <option value="PROMOTED">Promoted to Next Class</option>
+                        <option value="RETAINED">Retained in Current Class</option>
+                        <option value="GRADUATED">Graduated from Academy</option>
+                        <option value="CUSTOM">Custom Promotional Message</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {promotionDecision === 'PROMOTED' && (
+                    <div>
+                      <label className="text-[10px] text-gray-500 block">Promoted To Class / Level Number</label>
+                      <input
+                        type="text"
+                        value={promotedToClass}
+                        onChange={(e) => setPromotedToClass(e.target.value)}
+                        placeholder="E.g., Primary 2, Kindergarten 2, JHS 1"
+                        className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-mauve-900"
+                      />
+                      <span className="text-[9px] text-gray-400 block mt-0.5">Specify target promoted class or level number (e.g. Primary 2, Basic 3, JHS 1).</span>
+                    </div>
+                  )}
+
+                  {promotionDecision === 'CUSTOM' && (
+                    <div>
+                      <label className="text-[10px] text-gray-500 block">Custom Promotional Message</label>
+                      <input
+                        type="text"
+                        value={customPromotionText}
+                        onChange={(e) => setCustomPromotionText(e.target.value)}
+                        placeholder="E.g., PROMOTED TO BASIC 4 (LEVEL 4)"
+                        className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900 font-bold focus:outline-none focus:ring-1 focus:ring-mauve-900"
+                      />
+                      <span className="text-[9px] text-gray-400 block mt-0.5">Custom text printed on the report card banner.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {student.level === 'JHS' && (
                 <div className="col-span-1 md:col-span-2 border-t border-mauve-500/10 pt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -1086,30 +1181,46 @@ export default function ReportPDF({
                 {/* Bio Metadata Bubbles */}
                 <div className="space-y-2 px-2 print:space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex-1 min-w-[180px] px-3.5 py-1 border-2 border-[#A899F7]/50 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
-                      <span className="font-serif font-bold italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">NAME:</span>
-                      <span className="font-serif font-extrabold text-slate-900 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-300 print:text-[10px]">{student.name}</span>
+                    <div className="flex-1 min-w-[180px] px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
+                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">NAME:</span>
+                      <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{student.name}</span>
                     </div>
-                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/50 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm shrink-0 print:py-0.5">
-                      <span className="font-serif font-bold italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">{student.className.toUpperCase().includes('KG') ? 'KG' : 'NURSERY'}:</span>
-                      <span className="font-serif font-extrabold text-slate-900 text-[11px] uppercase px-1 print:text-[10px]">{student.className}</span>
+                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm shrink-0 print:py-0.5">
+                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">{student.className.toUpperCase().includes('KG') ? 'KG' : 'NURSERY'}:</span>
+                      <span className="font-serif font-black text-slate-950 text-[11px] uppercase px-1 print:text-[10px]">{student.className}</span>
                     </div>
-                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/50 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm shrink-0 print:py-0.5">
-                      <span className="font-serif font-bold italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">ROLL:</span>
-                      <span className="font-serif font-extrabold text-slate-900 text-[11px] uppercase px-1 print:text-[10px]">{customRollNumber}</span>
+                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm shrink-0 print:py-0.5">
+                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">ROLL:</span>
+                      <span className="font-serif font-black text-slate-950 text-[11px] uppercase px-1 print:text-[10px]">{customRollNumber}</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/50 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
-                      <span className="font-serif font-bold italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">SCHOOL YEAR:</span>
-                      <span className="font-serif font-extrabold text-slate-900 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-300 print:text-[10px]">{config.schoolYear}</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
+                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">SCHOOL YEAR:</span>
+                      <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{config.schoolYear}</span>
                     </div>
-                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/50 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
-                      <span className="font-serif font-bold italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">REOPENING:</span>
-                      <span className="font-serif font-extrabold text-slate-900 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-300 print:text-[10px]">{currentReopening}</span>
+                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
+                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">REOPENING:</span>
+                      <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{currentReopening}</span>
+                    </div>
+                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
+                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">NO. ON ROLL:</span>
+                      <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{customClassRoll}</span>
                     </div>
                   </div>
+
+                  {showPromotionStatus && (
+                    <div className="px-3.5 py-1.5 border-2 border-[#4A3B94] rounded-2xl bg-[#E8E5FC] flex flex-wrap items-center justify-between gap-2 shadow-sm print:py-1">
+                      <span className="font-serif font-black italic text-[#4A3B94] text-[10px] uppercase tracking-wider flex items-center gap-1.5">
+                        <GraduationCap className="w-4 h-4 text-[#4A3B94] inline shrink-0" />
+                        PROMOTIONAL STATUS (ANNUAL/3RD TERM):
+                      </span>
+                      <span className="font-serif font-black text-slate-950 text-[11px] sm:text-xs uppercase tracking-widest bg-white px-3 py-1 rounded-full border-2 border-[#4A3B94] shadow-xs">
+                        {getPromotionBadgeText()}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Subject Grades Table */}
@@ -1342,32 +1453,45 @@ export default function ReportPDF({
               </div>
 
               {/* Bio Metadata */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-2 sm:gap-y-4 gap-x-6 py-3 px-2 text-[11px] font-serif border-b border-gray-300 print:py-1.5 print:gap-y-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-y-2 sm:gap-y-4 gap-x-6 py-3 px-2 text-[11px] font-serif border-b-2 border-slate-900 print:py-1.5 print:gap-y-1">
                 <div className="flex items-baseline gap-1.5">
-                  <span className="font-extrabold text-slate-700 whitespace-nowrap uppercase tracking-wider">NAME:</span>
-                  <span className="border-b border-dashed border-slate-400 grow font-extrabold text-slate-900 uppercase px-1">{student.name}</span>
+                  <span className="font-black text-slate-950 whitespace-nowrap uppercase tracking-wider">NAME:</span>
+                  <span className="border-b-2 border-dashed border-slate-900 grow font-black text-slate-950 uppercase px-1">{student.name}</span>
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="font-extrabold text-slate-700 whitespace-nowrap uppercase tracking-wider">YEAR:</span>
-                  <span className="border-b border-dashed border-slate-400 grow font-extrabold text-slate-900 uppercase px-1">{config.schoolYear}</span>
+                  <span className="font-black text-slate-950 whitespace-nowrap uppercase tracking-wider">YEAR:</span>
+                  <span className="border-b-2 border-dashed border-slate-900 grow font-black text-slate-950 uppercase px-1">{config.schoolYear}</span>
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="font-extrabold text-slate-700 whitespace-nowrap uppercase tracking-wider">GRADE:</span>
-                  <span className="border-b border-dashed border-slate-400 grow font-extrabold text-slate-900 uppercase px-1">{student.className}</span>
+                  <span className="font-black text-slate-950 whitespace-nowrap uppercase tracking-wider">GRADE:</span>
+                  <span className="border-b-2 border-dashed border-slate-900 grow font-black text-slate-950 uppercase px-1">{student.className}</span>
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="font-extrabold text-slate-700 whitespace-nowrap uppercase tracking-wider">TERM:</span>
-                  <span className="border-b border-dashed border-slate-400 grow font-extrabold text-slate-900 uppercase px-1">{config.term}</span>
+                  <span className="font-black text-slate-950 whitespace-nowrap uppercase tracking-wider">TERM:</span>
+                  <span className="border-b-2 border-dashed border-slate-900 grow font-black text-slate-950 uppercase px-1">{config.term}</span>
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="font-extrabold text-slate-700 whitespace-nowrap uppercase tracking-wider">REOPENING:</span>
-                  <span className="border-b border-dashed border-slate-400 grow font-extrabold text-slate-900 uppercase px-1">{currentReopening}</span>
+                  <span className="font-black text-slate-950 whitespace-nowrap uppercase tracking-wider">REOPENING:</span>
+                  <span className="border-b-2 border-dashed border-slate-900 grow font-black text-slate-950 uppercase px-1">{currentReopening}</span>
                 </div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="font-extrabold text-slate-700 whitespace-nowrap uppercase tracking-wider">NO. ON ROLL:</span>
-                  <span className="border-b border-dashed border-slate-400 grow font-extrabold text-slate-900 uppercase px-1">{customClassRoll}</span>
+                  <span className="font-black text-slate-950 whitespace-nowrap uppercase tracking-wider">NO. ON ROLL:</span>
+                  <span className="border-b-2 border-dashed border-slate-900 grow font-black text-slate-950 uppercase px-1">{customClassRoll}</span>
                 </div>
               </div>
+
+              {/* Promotional Status Banner for JHS & Primary */}
+              {showPromotionStatus && (
+                <div className="p-2 sm:p-2.5 bg-[#1e293b] text-white rounded border-2 border-slate-900 flex flex-wrap items-center justify-between gap-2 shadow-sm my-2">
+                  <span className="font-serif font-extrabold uppercase text-[10px] sm:text-[11px] tracking-widest text-amber-300 flex items-center gap-1.5">
+                    <GraduationCap className="w-4 h-4 text-amber-300 inline shrink-0" />
+                    PROMOTIONAL STATUS (ANNUAL/3RD TERM):
+                  </span>
+                  <span className="font-serif font-black text-xs sm:text-sm uppercase tracking-widest bg-amber-300 text-slate-950 px-3 py-1 rounded font-black shadow-xs">
+                    {getPromotionBadgeText()}
+                  </span>
+                </div>
+              )}
 
               {/* Transcript Table */}
               <div className="overflow-hidden border border-slate-900 rounded-sm">
@@ -1556,24 +1680,41 @@ export default function ReportPDF({
               </div>
 
               {/* 2. Student Bio Meta */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-mauve-50 rounded border border-mauve-500/15 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 p-4 bg-mauve-50 rounded-xl border-2 border-mauve-900/20 text-xs">
                 <div>
-                  <span className="block text-[9px] uppercase font-mono tracking-wider text-gray-400 font-semibold">Student Fullname</span>
-                  <span className="font-bold text-gray-900 text-xs mt-0.5 block truncate">{student.name}</span>
+                  <span className="block text-[9px] uppercase font-mono tracking-wider text-mauve-900 font-extrabold">Student Fullname</span>
+                  <span className="font-extrabold text-slate-950 text-xs mt-0.5 block truncate">{student.name}</span>
                 </div>
                 <div>
-                  <span className="block text-[9px] uppercase font-mono tracking-wider text-gray-400 font-semibold">Class Identifier</span>
-                  <span className="font-bold text-gray-900 text-xs mt-0.5 block">{student.className}</span>
+                  <span className="block text-[9px] uppercase font-mono tracking-wider text-mauve-900 font-extrabold">Class Identifier</span>
+                  <span className="font-extrabold text-slate-950 text-xs mt-0.5 block">{student.className}</span>
                 </div>
                 <div>
-                  <span className="block text-[9px] uppercase font-mono tracking-wider text-gray-400 font-semibold">Roll ID</span>
-                  <span className="font-mono text-xs font-bold text-mauve-900 mt-0.5 block">{customRollNumber}</span>
+                  <span className="block text-[9px] uppercase font-mono tracking-wider text-mauve-900 font-extrabold">Roll ID</span>
+                  <span className="font-mono text-xs font-black text-slate-950 mt-0.5 block">{customRollNumber}</span>
                 </div>
                 <div>
-                  <span className="block text-[9px] uppercase font-mono tracking-wider text-gray-400 font-semibold">Academy Level</span>
-                  <span className="font-bold text-gray-900 text-xs mt-0.5 block uppercase">{student.level}</span>
+                  <span className="block text-[9px] uppercase font-mono tracking-wider text-mauve-900 font-extrabold">Academy Level</span>
+                  <span className="font-extrabold text-slate-950 text-xs mt-0.5 block uppercase">{student.level}</span>
+                </div>
+                <div>
+                  <span className="block text-[9px] uppercase font-mono tracking-wider text-mauve-900 font-extrabold">No. on Roll</span>
+                  <span className="font-mono text-xs font-black text-slate-950 mt-0.5 block">{customClassRoll}</span>
                 </div>
               </div>
+
+              {/* Promotional Status Banner for Default Template */}
+              {showPromotionStatus && (
+                <div className="p-3 bg-mauve-900 text-white rounded-xl border-2 border-mauve-950 flex flex-wrap items-center justify-between gap-2 shadow-sm">
+                  <span className="font-display font-extrabold uppercase text-xs tracking-wider text-mauve-100 flex items-center gap-2">
+                    <GraduationCap className="w-4 h-4 text-amber-300 shrink-0" />
+                    Promotional Status (3rd Term / Annual):
+                  </span>
+                  <span className="font-mono font-black text-xs uppercase tracking-wider bg-amber-300 text-slate-950 px-3 py-1 rounded-lg shadow-xs">
+                    {getPromotionBadgeText()}
+                  </span>
+                </div>
+              )}
 
               {/* 3. Performance Summary Badges */}
               <div className="grid grid-cols-3 gap-3 text-center">
