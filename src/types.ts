@@ -5,7 +5,7 @@
 
 export type UserRole = 'ADMIN' | 'TEACHER';
 
-export type AcademicLevel = 'NURSERY' | 'PRIMARY' | 'JHS';
+export type AcademicLevel = 'NURSERY' | 'KINDERGARTEN' | 'PRIMARY' | 'JHS';
 
 export interface User {
   id: string;
@@ -45,6 +45,7 @@ export interface Grade {
   totalScore: number; // sum, automatically graded
   gradeLetter: string;
   remarks: string;
+  nurseryRemark?: 'MO' | 'O' | 'S' | 'NA';
   term: string;       // e.g., 'Term 1'
   year: string;       // e.g., '2025/2026'
   teacherId: string;

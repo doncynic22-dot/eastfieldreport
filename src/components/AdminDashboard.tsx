@@ -22,7 +22,7 @@ interface AdminDashboardProps {
   setAttendance: React.Dispatch<React.SetStateAction<Attendance[]>>;
   config: ReportConfig;
   setConfig: React.Dispatch<React.SetStateAction<ReportConfig>>;
-  classes: { NURSERY: string[]; PRIMARY: string[]; JHS: string[] };
+  classes: { NURSERY: string[]; KINDERGARTEN?: string[]; PRIMARY: string[]; JHS: string[] };
   onSignOut?: () => void;
   supabaseStatus?: { isConfigured: boolean; isConnected: boolean; message: string };
   isSupabaseSyncing?: boolean;
@@ -320,12 +320,14 @@ export default function AdminDashboard({
   // 1. CALCULATE ANALYTICS
   const totalStudents = students.length;
   const totalTeachers = teachers.filter((t) => t.role === 'TEACHER').length;
+  const kgClasses = classes.KINDERGARTEN || [];
   const nurseryStudentsCount = students.filter((s) => s.level === 'NURSERY').length;
+  const kgStudentsCount = students.filter((s) => s.level === 'KINDERGARTEN').length;
   const primaryStudentsCount = students.filter((s) => s.level === 'PRIMARY').length;
   const jhsStudentsCount = students.filter((s) => s.level === 'JHS').length;
 
   // Class Lists for dropdown queries
-  const allClassNames = [...classes.NURSERY, ...classes.PRIMARY, ...classes.JHS];
+  const allClassNames = [...classes.NURSERY, ...kgClasses, ...classes.PRIMARY, ...classes.JHS];
 
   // Calculate Overall Averages
   const levelAverages = (level: AcademicLevel) => {
@@ -439,7 +441,13 @@ export default function AdminDashboard({
 
   // Adjust class list in form dynamically based on chosen level
   const handleLevelChangeInForm = (level: AcademicLevel) => {
-    const defaultClass = level === 'NURSERY' ? classes.NURSERY[0] : level === 'PRIMARY' ? classes.PRIMARY[0] : classes.JHS[0];
+    const defaultClass = level === 'NURSERY' 
+      ? classes.NURSERY[0] 
+      : level === 'KINDERGARTEN'
+        ? (kgClasses[0] || 'Kindergarten 1')
+        : level === 'PRIMARY' 
+          ? classes.PRIMARY[0] 
+          : classes.JHS[0];
     const autoRoll = getAutoRollNumber(level, defaultClass);
     setStudentForm(prev => ({
       ...prev,
@@ -465,7 +473,7 @@ export default function AdminDashboard({
       return;
     }
 
-    if (teacherForm.level === 'NURSERY' || teacherForm.level === 'PRIMARY') {
+    if (teacherForm.level === 'NURSERY' || teacherForm.level === 'KINDERGARTEN' || teacherForm.level === 'PRIMARY') {
       if (teacherForm.classes.length > 1) {
         setTeacherError('Academy Staff Policy: Nursery, KG, and Primary division teachers cannot be assigned to more than one class.');
         return;
@@ -479,7 +487,7 @@ export default function AdminDashboard({
       }
     }
 
-    const finalSubjects = (teacherForm.level === 'NURSERY' || teacherForm.level === 'PRIMARY')
+    const finalSubjects = (teacherForm.level === 'NURSERY' || teacherForm.level === 'KINDERGARTEN' || teacherForm.level === 'PRIMARY')
       ? subjects.filter(s => s.level === teacherForm.level).map(s => s.id)
       : teacherForm.subjects;
 
@@ -541,7 +549,7 @@ export default function AdminDashboard({
   };
 
   const toggleClassForTeacherForm = (className: string) => {
-    if (teacherForm.level === 'NURSERY' || teacherForm.level === 'PRIMARY') {
+    if (teacherForm.level === 'NURSERY' || teacherForm.level === 'KINDERGARTEN' || teacherForm.level === 'PRIMARY') {
       const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(className));
       if (assignedTeacher && !teacherForm.classes.includes(className)) {
         setTeacherError(`Cannot select "${className}": Already assigned to ${assignedTeacher.name}. In Nursery, KG, and Primary, a class cannot be assigned to more than one teacher.`);
@@ -550,7 +558,7 @@ export default function AdminDashboard({
       }
     }
     setTeacherForm(prev => {
-      if (prev.level === 'NURSERY' || prev.level === 'PRIMARY') {
+      if (prev.level === 'NURSERY' || prev.level === 'KINDERGARTEN' || prev.level === 'PRIMARY') {
         const alreadySelected = prev.classes.includes(className);
         return {
           ...prev,
@@ -569,7 +577,7 @@ export default function AdminDashboard({
 
   const toggleSubjectForTeacherForm = (subId: string) => {
     setTeacherForm(prev => {
-      if (prev.level === 'NURSERY' || prev.level === 'PRIMARY') {
+      if (prev.level === 'NURSERY' || prev.level === 'KINDERGARTEN' || prev.level === 'PRIMARY') {
         return prev; // Entitled to all subjects, lock selection
       }
       const alreadySelected = prev.subjects.includes(subId);
@@ -600,7 +608,7 @@ export default function AdminDashboard({
   };
 
   const handleTeacherLevelChange = (level: AcademicLevel) => {
-    const levelSubjects = (level === 'NURSERY' || level === 'PRIMARY')
+    const levelSubjects = (level === 'NURSERY' || level === 'KINDERGARTEN' || level === 'PRIMARY')
       ? subjects.filter(s => s.level === level).map(s => s.id)
       : [];
     setTeacherForm(prev => ({
@@ -907,7 +915,7 @@ export default function AdminDashboard({
           {/* Performance breakdown by levels */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {[
-              { title: 'Nursery & Kindergarten', count: nurseryStudentsCount, classes: classes.NURSERY, avg: levelAverages('NURSERY') },
+              { title: 'Nursery & Kindergarten', count: nurseryStudentsCount + kgStudentsCount, classes: [...classes.NURSERY, ...kgClasses], avg: levelAverages('NURSERY') || levelAverages('KINDERGARTEN') },
               { title: 'Primary Classes (P1 - P6)', count: primaryStudentsCount, classes: classes.PRIMARY, avg: levelAverages('PRIMARY') },
               { title: 'Junior High (JHS 1 - JHS 3)', count: jhsStudentsCount, classes: classes.JHS, avg: levelAverages('JHS') }
             ].map((lvl, index) => (
@@ -1006,7 +1014,7 @@ export default function AdminDashboard({
                 student={selectedStudent}
                 grades={grades.filter((g) => g.studentId === selectedStudent.id)}
                 attendance={attendance.find((a) => a.studentId === selectedStudent.id)}
-                subjects={subjects.filter((sub) => sub.level === selectedStudent.level)}
+                subjects={subjects}
                 config={config}
                 allClassStudents={students.filter((s) => s.className === selectedStudent.className)}
                 allGrades={grades}
@@ -1105,7 +1113,8 @@ export default function AdminDashboard({
                 className="w-full text-xs p-1.5 rounded border border-mauve-500/15 focus:outline-none focus:ring-1 focus:ring-mauve-900 text-mauve-900 bg-white"
               >
                 <option value="ALL">All Academy Levels</option>
-                <option value="NURSERY">Nursery & KG</option>
+                <option value="NURSERY">Nursery Division</option>
+                <option value="KINDERGARTEN">Kindergarten (KG1, KG2)</option>
                 <option value="PRIMARY">Primary Six (P1-P6)</option>
                 <option value="JHS">Junior High School (JHS)</option>
               </select>
@@ -1205,6 +1214,7 @@ export default function AdminDashboard({
                         <td className="p-3">
                           <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
                             s.level === 'NURSERY' ? 'bg-rose-50 text-rose-700 border border-rose-150' :
+                            s.level === 'KINDERGARTEN' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
                             s.level === 'PRIMARY' ? 'bg-mauve-50 text-mauve-900 border border-mauve-500/10' :
                             'bg-cyan-50 text-cyan-700 border border-cyan-150'
                           }`}>
@@ -1338,8 +1348,9 @@ export default function AdminDashboard({
                         onChange={(e) => handleLevelChangeInForm(e.target.value as AcademicLevel)}
                         className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
                       >
-                        <option value="NURSERY">Nursery & KG</option>
-                        <option value="PRIMARY">PrimARY</option>
+                        <option value="NURSERY">Nursery</option>
+                        <option value="KINDERGARTEN">Kindergarten (KG1, KG2)</option>
+                        <option value="PRIMARY">Primary</option>
                         <option value="JHS">Junior High (JHS)</option>
                       </select>
                     </div>
@@ -1360,6 +1371,7 @@ export default function AdminDashboard({
                         className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
                       >
                         {studentForm.level === 'NURSERY' && classes.NURSERY.map(c => <option key={c} value={c}>{c}</option>)}
+                        {studentForm.level === 'KINDERGARTEN' && kgClasses.map(c => <option key={c} value={c}>{c}</option>)}
                         {studentForm.level === 'PRIMARY' && classes.PRIMARY.map(c => <option key={c} value={c}>{c}</option>)}
                         {studentForm.level === 'JHS' && classes.JHS.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
@@ -1468,6 +1480,7 @@ export default function AdminDashboard({
                     <td className="p-3">
                       <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
                         t.level === 'NURSERY' ? 'bg-rose-50 text-rose-700 border border-rose-150' :
+                        t.level === 'KINDERGARTEN' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
                         t.level === 'PRIMARY' ? 'bg-mauve-50 text-mauve-900 border border-mauve-500/10' :
                         'bg-cyan-50 text-cyan-700 border border-cyan-150'
                       }`}>
@@ -1618,7 +1631,7 @@ export default function AdminDashboard({
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-mauve-700 block">Staff Division</label>
                     <div className="flex gap-2">
-                      {['NURSERY', 'PRIMARY', 'JHS'].map((l) => (
+                      {['NURSERY', 'KINDERGARTEN', 'PRIMARY', 'JHS'].map((l) => (
                         <button
                           key={l}
                           type="button"
@@ -1645,6 +1658,32 @@ export default function AdminDashboard({
                     </label>
                     <div className="flex flex-wrap gap-1.5 p-3 rounded-xl border border-mauve-150 bg-mauve-50/25">
                       {teacherForm.level === 'NURSERY' && classes.NURSERY.map(c => {
+                        const isSel = teacherForm.classes.includes(c);
+                        const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(c));
+                        return (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => toggleClassForTeacherForm(c)}
+                            className={`px-2.5 py-1 text-xs border rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                              isSel 
+                                ? 'bg-mauve-600 text-white border-mauve-700 font-bold' 
+                                : assignedTeacher 
+                                  ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100' 
+                                  : 'bg-white text-mauve-700 border-mauve-200 hover:bg-mauve-50'
+                            }`}
+                            title={assignedTeacher ? `Assigned to ${assignedTeacher.name}` : 'Available'}
+                          >
+                            <span>{c}</span>
+                            {assignedTeacher && !isSel && (
+                              <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-mono font-medium">
+                                Assigned: {assignedTeacher.name.split(' ')[0]}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                      {teacherForm.level === 'KINDERGARTEN' && kgClasses.map(c => {
                         const isSel = teacherForm.classes.includes(c);
                         const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(c));
                         return (

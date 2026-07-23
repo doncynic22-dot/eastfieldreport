@@ -46,7 +46,37 @@ export default function App() {
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Nav State: 'hub' | 'admin' | 'teacher'
-  const [activePortal, setActivePortal] = useState<'hub' | 'admin' | 'teacher'>('hub');
+  const [activePortal, setActivePortal] = useState<'hub' | 'admin' | 'teacher'>(() => {
+    if (typeof window !== 'undefined') {
+      const q = window.location.search || '';
+      const h = window.location.hash || '';
+      if (q.includes('action=reset-password') || q.includes('type=recovery') || h.includes('action=reset-password') || h.includes('type=recovery')) {
+        return 'teacher';
+      }
+    }
+    return 'hub';
+  });
+
+  // Listen for password reset link redirects dynamically
+  useEffect(() => {
+    const handleUrlChange = () => {
+      if (typeof window !== 'undefined') {
+        const q = window.location.search || '';
+        const h = window.location.hash || '';
+        if (q.includes('action=reset-password') || q.includes('type=recovery') || h.includes('action=reset-password') || h.includes('type=recovery')) {
+          setActivePortal('teacher');
+        }
+      }
+    };
+
+    handleUrlChange();
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, []);
 
   // Admin Security Lock Gate State
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
@@ -565,7 +595,7 @@ export default function App() {
 
   // Helper reset app to original state
   const handleResetApplicationState = () => {
-    if (confirm('Warning: This will clear all custom inputs and reset the registry back to default Academy demo records. Proceed?')) {
+    if (confirm('Warning: This will clear all custom inputs and reset the registry back to default Academy records. Proceed?')) {
       localStorage.clear();
       setStudents(INITIAL_STUDENTS);
       setTeachers(INITIAL_USERS);

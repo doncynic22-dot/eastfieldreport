@@ -240,13 +240,17 @@ export default function ReportPDF({
   const [nurseryStationery, setNurseryStationery] = useState('20.00');
   const [nurseryPta, setNurseryPta] = useState('10.00');
 
+  const clsUpper = (student.className || '').toUpperCase();
+  const isKg = student.level === 'KINDERGARTEN' || clsUpper.includes('KG') || clsUpper.includes('KINDERGARTEN');
+  const isNurseryLevel = student.level === 'NURSERY' || clsUpper.includes('NURSERY');
+
   const templateStyle = config.selectedTemplate || 'dynamic';
-  const isCompactTemplate = templateStyle === 'compact' || (templateStyle === 'dynamic' && student.level === 'NURSERY');
-  const isHighFidelityTemplate = templateStyle === 'high-fidelity' || (templateStyle === 'dynamic' && (student.level === 'JHS' || student.level === 'PRIMARY'));
+  const isCompactTemplate = templateStyle === 'compact' || (templateStyle === 'dynamic' && (isNurseryLevel || isKg));
+  const isHighFidelityTemplate = templateStyle === 'high-fidelity' || (templateStyle === 'dynamic' && (student.level === 'JHS' || (student.level === 'PRIMARY' && !isKg && !isNurseryLevel)));
 
   const isJHS = student.level === 'JHS';
-  const isPrimary = student.level === 'PRIMARY';
-  const isNursery = isCompactTemplate;
+  const isPrimary = student.level === 'PRIMARY' && !isKg && !isNurseryLevel;
+  const isNursery = isNurseryLevel || isKg;
 
   const currentReopening = isJHS ? jhsReopening : (isPrimary ? primaryReopening : nurseryReopening);
   const currentContact = isJHS ? jhsContact : (isPrimary ? primaryContact : nurseryContact);
@@ -967,7 +971,7 @@ export default function ReportPDF({
                   </div>
 
                   <div className="space-y-2">
-                    <p className="text-[10px] font-bold text-mauve-900 uppercase tracking-wider">Primary Report Card Bills (GHC)</p>
+                    <p className="text-[10px] font-bold text-mauve-900 uppercase tracking-wider">Primary/KG Report Card Bills (GHC)</p>
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <label className="text-[9px] text-gray-500 block">Arrears</label>
@@ -1028,7 +1032,7 @@ export default function ReportPDF({
                 </div>
               )}
 
-              {student.level === 'NURSERY' && (
+              {(student.level === 'NURSERY' || student.level === 'KINDERGARTEN') && (
                 <div className="col-span-1 md:col-span-2 border-t border-mauve-500/10 pt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <p className="text-[10px] font-bold text-mauve-900 uppercase tracking-wider">Nursery/KG Details Customizer</p>
@@ -1227,17 +1231,100 @@ export default function ReportPDF({
                 <div className="overflow-hidden border-2 border-[#7285DE] rounded bg-white shadow-sm mx-2">
                   <table className="w-full text-left border-collapse font-serif text-[11px]">
                     <thead>
-                      <tr className="bg-[#B5C4F7] text-[#2B3B63] font-extrabold text-[9px] uppercase tracking-wider border-b-2 border-[#7285DE]">
-                        <th className="p-1.5 pl-3 border-r border-[#7285DE] bg-white">Subject</th>
-                        <th className="p-1.5 text-center w-28 border-r border-[#7285DE] print:w-24 bg-white">Class score (50)</th>
-                        <th className="p-1.5 text-center w-28 border-r border-[#7285DE] print:w-24 bg-white">Exam score (50)</th>
-                        <th className="p-1.5 text-center w-24 border-r border-[#7285DE] print:w-20 bg-white">Overall (100)</th>
-                        <th className="p-1.5 pr-3 text-center bg-white">Comment</th>
-                      </tr>
+                      {isKg ? (
+                        <tr className="bg-[#B5C4F7] text-[#2B3B63] font-extrabold text-[9px] uppercase tracking-wider border-b-2 border-[#7285DE]">
+                          <th className="p-1.5 pl-3 border-r border-[#7285DE] bg-white">SUBJECT</th>
+                          <th className="p-1.5 text-center w-24 border-r border-[#7285DE] bg-white">CLASS SCORE (50)</th>
+                          <th className="p-1.5 text-center w-24 border-r border-[#7285DE] bg-white">EXAM SCORE (50)</th>
+                          <th className="p-1.5 text-center w-24 border-r border-[#7285DE] bg-white">OVERALL (100)</th>
+                          <th className="p-1.5 text-center bg-white">COMMENT</th>
+                        </tr>
+                      ) : (
+                        <tr className="bg-[#B5C4F7] text-[#2B3B63] font-extrabold text-[9px] uppercase tracking-wider border-b-2 border-[#7285DE]">
+                          <th className="p-1.5 pl-3 border-r border-[#7285DE] bg-white">Subject</th>
+                          <th className="p-1.5 text-center w-16 border-r border-[#7285DE] bg-white">MO</th>
+                          <th className="p-1.5 text-center w-16 border-r border-[#7285DE] bg-white">O</th>
+                          <th className="p-1.5 text-center w-16 border-r border-[#7285DE] bg-white">S</th>
+                          <th className="p-1.5 text-center w-16 bg-white">NA</th>
+                        </tr>
+                      )}
                     </thead>
                     <tbody className="divide-y divide-[#7285DE] text-[11px] text-slate-800">
                       {(() => {
-                        const levelSubjects = subjects.filter(sub => sub.level === 'NURSERY');
+                        if (isKg) {
+                          const kgStandardSubjects = [
+                            {
+                              displayName: 'LITERACY / LANGUAGE (LIT)',
+                              shortCode: 'LIT',
+                              matchKeys: ['LITERACY', 'LANGUAGE', 'LIT']
+                            },
+                            {
+                              displayName: 'NUMERACY (NUM)',
+                              shortCode: 'NUM',
+                              matchKeys: ['NUMERACY', 'NUM']
+                            },
+                            {
+                              displayName: 'OUR WORLD OUR PEOPLE (OWOP)',
+                              shortCode: 'OWOP',
+                              matchKeys: ['OUR WORLD', 'OWOP', 'PEOPLE']
+                            },
+                            {
+                              displayName: 'CREATIVE ARTS (CA)',
+                              shortCode: 'CA',
+                              matchKeys: ['CREATIVE', 'CREATIVITY', 'CA', 'CRT']
+                            },
+                            {
+                              displayName: 'WRITING (WRT)',
+                              shortCode: 'WRT',
+                              matchKeys: ['WRITING', 'WRT']
+                            }
+                          ];
+
+                          return kgStandardSubjects.map((stdSub, index) => {
+                            const matchedGrade = studentGrades.find((g) => {
+                              if (stdSub.shortCode === 'LIT' && g.subjectId === 'sub-k-lit') return true;
+                              if (stdSub.shortCode === 'NUM' && g.subjectId === 'sub-k-num') return true;
+                              if (stdSub.shortCode === 'OWOP' && g.subjectId === 'sub-k-owop') return true;
+                              if (stdSub.shortCode === 'CA' && g.subjectId === 'sub-k-ca') return true;
+                              if (stdSub.shortCode === 'WRT' && g.subjectId === 'sub-k-wrt') return true;
+
+                              const subObj = subjects.find((s) => s.id === g.subjectId);
+                              if (subObj) {
+                                const sName = subObj.name.toUpperCase();
+                                const sCode = (subObj.code || '').toUpperCase();
+                                return stdSub.matchKeys.some((k) => sName.includes(k) || sCode === k);
+                              }
+                              return false;
+                            });
+
+                            const g = matchedGrade;
+                            const commentText = g
+                              ? (g.remarks || (g.totalScore >= 80 ? 'HIGHEST' : g.totalScore >= 70 ? 'HIGHER' : g.totalScore >= 60 ? 'HIGH' : g.totalScore >= 50 ? 'AVERAGE' : 'GOOD'))
+                              : '';
+
+                            return (
+                              <tr key={index} className="hover:bg-[#E8E5FC]/20 print:hover:bg-transparent">
+                                <td className="p-1.5 pl-3 border-r border-[#7285DE] font-bold text-slate-800 bg-white uppercase text-[10px]">
+                                  {stdSub.displayName}
+                                </td>
+                                <td className="p-1.5 text-center border-r border-[#7285DE] font-mono font-bold text-slate-800 bg-white">
+                                  {g ? g.classScore : ''}
+                                </td>
+                                <td className="p-1.5 text-center border-r border-[#7285DE] font-mono font-bold text-slate-800 bg-white">
+                                  {g ? g.examScore : ''}
+                                </td>
+                                <td className="p-1.5 text-center border-r border-[#7285DE] font-mono font-extrabold text-[#2B3B63] bg-white">
+                                  {g ? g.totalScore : ''}
+                                </td>
+                                <td className="p-1.5 text-center italic text-slate-700 bg-white uppercase text-[10px] font-bold">
+                                  {commentText}
+                                </td>
+                              </tr>
+                            );
+                          });
+                        }
+
+                        let levelSubjects = subjects.filter(sub => sub.level === student.level);
 
                         const rows = levelSubjects.map((sub) => {
                           const matchedGrade = studentGrades.find((g) => g.subjectId === sub.id);
@@ -1264,23 +1351,48 @@ export default function ReportPDF({
 
                         return allRows.map((row, index) => {
                           const g = row.grade;
-                          const gradeInfo = g ? getGradeDetails(g.totalScore) : null;
+                          const remarkVal = (g?.nurseryRemark || g?.remarks || '').toString().trim().toUpperCase();
+                          let selectedKey: 'MO' | 'O' | 'S' | 'NA' = 'MO';
+
+                          if (['MO', 'O', 'S', 'NA'].includes(remarkVal)) {
+                            selectedKey = remarkVal as any;
+                          } else if (g) {
+                            if (g.totalScore >= 80) selectedKey = 'MO';
+                            else if (g.totalScore >= 65) selectedKey = 'O';
+                            else if (g.totalScore >= 45) selectedKey = 'S';
+                            else selectedKey = 'NA';
+                          }
+
+                          const renderRadioDot = (key: 'MO' | 'O' | 'S' | 'NA') => {
+                            if (!g) {
+                              return <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 mx-auto opacity-40"></div>;
+                            }
+                            if (selectedKey === key) {
+                              return (
+                                <div className="w-4 h-4 rounded-full bg-[#3B4CA3] border-2 border-[#3B4CA3] mx-auto flex items-center justify-center shadow-xs">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+                                </div>
+                              );
+                            }
+                            return <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 mx-auto"></div>;
+                          };
+
                           return (
                             <tr key={index} className="hover:bg-[#E8E5FC]/20 print:hover:bg-transparent">
                               <td className="p-1.5 pl-3 border-r border-[#7285DE] font-bold text-slate-800 bg-white">
                                 {row.name}
                               </td>
-                              <td className="p-1.5 text-center border-r border-[#7285DE] font-mono text-slate-700 font-bold bg-white">
-                                {g ? g.classScore : ''}
+                              <td className="p-1 text-center border-r border-[#7285DE] bg-white">
+                                {renderRadioDot('MO')}
                               </td>
-                              <td className="p-1.5 text-center border-r border-[#7285DE] font-mono text-slate-700 font-bold bg-white">
-                                {g ? g.examScore : ''}
+                              <td className="p-1 text-center border-r border-[#7285DE] bg-white">
+                                {renderRadioDot('O')}
                               </td>
-                              <td className="p-1.5 text-center border-r border-[#7285DE] font-mono font-extrabold text-[#3B4CA3] bg-white">
-                                {g ? g.totalScore : ''}
+                              <td className="p-1 text-center border-r border-[#7285DE] bg-white">
+                                {renderRadioDot('S')}
                               </td>
-                              <td className="p-1.5 pr-3 text-center text-slate-600 italic font-medium text-[9px] print:text-[8px] bg-white">
-                                {g ? gradeInfo?.remarks : ''}
+                              <td className="p-1 text-center bg-white">
+                                {renderRadioDot('NA')}
                               </td>
                             </tr>
                           );
@@ -1290,44 +1402,32 @@ export default function ReportPDF({
                   </table>
                 </div>
 
-                {/* Combined Bottom Section in 2 Columns to guarantee fitting inside a single A4 page */}
+                {/* Combined Bottom Section in 2 Columns */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2 print:gap-3">
                   {/* Left Column: Attendance & Bills */}
                   <div className="space-y-3 print:space-y-2">
                     {/* Attendance, Attitude & Conduct */}
                     <div className="overflow-hidden border-2 border-[#7285DE] rounded bg-white shadow-sm">
-                      <table className="w-full text-left border-collapse font-serif text-[10px]">
+                      <table className="w-full text-center border-collapse font-serif text-[10px]">
                         <thead>
-                          <tr className="bg-[#B5C4F7] text-[#2B3B63] font-extrabold text-[8px] uppercase tracking-wider border-b border-[#7285DE] text-center">
-                            <th className="p-1 border-r border-[#7285DE]">ATTENDANCE</th>
-                            <th className="p-1 border-r border-[#7285DE]">ATTITUDE</th>
-                            <th className="p-1">CONDUCT</th>
+                          <tr className="bg-[#B5C4F7] text-[#2B3B63] font-extrabold text-[8px] uppercase tracking-wider border-b border-[#7285DE]">
+                            <th className="p-1 border-r border-[#7285DE] w-1/3">ATTENDANCE</th>
+                            <th className="p-1 border-r border-[#7285DE] w-1/3">ATTITUDE</th>
+                            <th className="p-1 w-1/3">CONDUCT</th>
                           </tr>
                         </thead>
                         <tbody>
-                          <tr className="text-center font-medium text-slate-700 leading-normal">
-                            <td className="p-1.5 border-r border-[#7285DE] bg-[#E8E5FC]/10">
-                              {attendance ? (
-                                <div className="space-y-0.5">
-                                  <div className="text-slate-900 font-extrabold text-[9px]">
-                                    Present: <span className="text-green-700 font-mono">{attendance.daysPresent}</span> / <span className="font-mono">{attendance.totalDays}</span>
-                                  </div>
-                                  <div className="text-[8px] text-gray-500">
-                                    Absent: <span className="text-rose-600 font-mono">{attendance.totalDays - attendance.daysPresent}</span> days
-                                  </div>
-                                  <div className="text-[8px] uppercase tracking-wider text-[#4A3B94] font-bold">
-                                    Rate: {((attendance.daysPresent / attendance.totalDays) * 100).toFixed(0)}%
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-gray-400 italic text-[8px]">No attendance logged</span>
-                              )}
+                          <tr className="font-bold text-slate-800 text-[10px] leading-normal">
+                            <td className="p-1.5 border-r border-[#7285DE] bg-white text-left font-serif text-[9px] leading-tight space-y-0.5">
+                              <div>Present: <span className="font-bold">{attendance?.daysPresent ?? 60} / {attendance?.totalDays ?? 60}</span></div>
+                              <div>Absent: <span className="font-bold">{(attendance?.totalDays ?? 60) - (attendance?.daysPresent ?? 60)} days</span></div>
+                              <div>RATE: <span className="font-bold">{Math.round(((attendance?.daysPresent ?? 60) / (attendance?.totalDays ?? 60)) * 100)}%</span></div>
                             </td>
-                            <td className="p-1.5 border-r border-[#7285DE] italic text-slate-800 bg-[#E8E5FC]/5 text-[9px] px-2">
-                              {studentAverage >= 80 ? '"Very helpful, active, and respectful."' : studentAverage >= 60 ? '"Attentive, eager to learn, and friendly."' : '"Shows a positive attitude and tries well."'}
+                            <td className="p-1.5 border-r border-[#7285DE] bg-white italic font-serif text-[9px] text-slate-800">
+                              "{studentAverage >= 80 ? 'Very helpful, active, and respectful.' : 'Attentive, active, and respectful.'}"
                             </td>
-                            <td className="p-1.5 italic text-slate-800 bg-[#E8E5FC]/10 text-[9px] px-2">
-                              {attendance?.remarks ? `"${attendance.remarks}"` : '"Very obedient, well-behaved and polite."'}
+                            <td className="p-1.5 bg-white italic font-serif text-[9px] text-slate-800">
+                              "{attendance?.remarks ? attendance.remarks : 'Very obedient, well-behaved and polite.'}"
                             </td>
                           </tr>
                         </tbody>
@@ -1336,7 +1436,7 @@ export default function ReportPDF({
 
                     {/* Bills Section */}
                     <div className="border-2 border-[#7285DE] bg-[#EBF1FE] rounded p-2.5 shadow-sm">
-                      <h3 className="font-serif font-extrabold text-[9px] text-[#2B3B63] text-center uppercase tracking-widest italic underline mb-1.5">
+                      <h3 className="font-serif font-extrabold text-[9px] text-[#2B3B63] uppercase tracking-widest italic underline mb-1.5">
                         BILLS SUMMARY
                       </h3>
                       <div className="space-y-1 text-[9px] text-slate-800 font-serif">
@@ -1370,7 +1470,7 @@ export default function ReportPDF({
                           <span className="grow mx-1 border-b border-dotted border-slate-400 opacity-60"></span>
                           <span className="font-mono font-bold text-slate-900">GH₵ {currentPta}</span>
                         </div>
-                        <div className="pt-1 border-t border-[#7285DE] flex justify-between items-center font-extrabold text-[#2B3B63] uppercase text-[9px] mt-1.5">
+                        <div className="pt-1 border-t-2 border-[#7285DE] flex justify-between items-center font-extrabold text-[#2B3B63] uppercase text-[9px] mt-1.5">
                           <span>TOTAL FEES:</span>
                           <span className="grow mx-1"></span>
                           <span className="font-mono text-[10px] text-[#3B4CA3]">GH₵ {totalBillSum.toFixed(2)}</span>
@@ -1379,30 +1479,45 @@ export default function ReportPDF({
                     </div>
                   </div>
 
-                  {/* Right Column: Comments & Signatures */}
-                  <div className="flex flex-col justify-between space-y-3 print:space-y-2 h-full">
-                    {/* General comments box */}
-                    <div className="bg-white/80 p-3 rounded border border-[#7285DE]/40 italic text-slate-700 text-[10px] leading-relaxed shadow-sm print:p-2">
-                      <span className="block not-italic font-bold text-[#4A3B94] uppercase tracking-wider text-[8px] mb-1">Principal's Remarks</span>
-                      {customPrincipalComment ? `"${customPrincipalComment}"` : (attendance?.remarks ? `"${attendance.remarks}"` : '"Keep up the wonderful energy! Extremely proud of your terminal steps."')}
+                  {/* Right Column: Comments & Key Legend */}
+                  <div className="flex flex-col justify-between space-y-2 print:space-y-1.5 h-full font-serif">
+                    {!isKg && (
+                      <div className="border border-[#7285DE]/60 rounded bg-white p-2 text-[9px] shadow-xs">
+                        <span className="block font-bold text-[#4A3B94] uppercase tracking-wider text-[8px] mb-1">Remarks Key</span>
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-slate-700 font-medium text-[9px]">
+                          <div><span className="font-bold text-slate-900">MO</span> – Most often</div>
+                          <div><span className="font-bold text-slate-900">O</span> – Often</div>
+                          <div><span className="font-bold text-slate-900">S</span> – Sometimes</div>
+                          <div><span className="font-bold text-slate-900">NA</span> – Needs Assistance</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Headmistress' / Teacher's / Principal's Remarks Box */}
+                    <div className="bg-white/80 p-2.5 rounded border-2 border-[#7285DE]/60 italic text-slate-700 text-[9.5px] leading-relaxed shadow-sm grow">
+                      <span className="block not-italic font-bold text-[#4A3B94] uppercase tracking-wider text-[8px] mb-1">
+                        {isKg ? "PRINCIPAL'S REMARKS" : "Headmistress' / Teacher's Remarks"}
+                      </span>
+                      {customPrincipalComment ? `"${customPrincipalComment}"` : (isKg ? '"Keep up the wonderful energy! Extremely proud of your terminal steps."' : (attendance?.remarks ? `"${attendance.remarks}"` : '"Exhibiting steady growth and enthusiasm."'))}
                     </div>
 
-                    {/* Headmistress Contact info */}
-                    <div className="border border-slate-300 rounded p-1.5 text-center bg-white shadow-sm">
-                      <span className="block text-[8px] uppercase font-bold text-slate-600 italic tracking-wider leading-none">Headmistress' contact</span>
-                      <span className="block font-mono font-bold text-[11px] text-[#4A3B94] mt-0.5">{currentContact}</span>
-                    </div>
-
-                    {/* Bottom: Academy Crest circular seal & Standing Bee Mascot nested beautifully */}
-                    <div className="flex items-center justify-around gap-4 pt-1 bg-white/40 p-1.5 rounded border border-[#A899F7]/10">
-                      {/* Academy Crest Circular Seal */}
-                      <div className="w-14 h-14 border border-[#A899F7]/30 p-1 bg-white rounded shadow-sm flex items-center justify-center">
-                        <SchoolSealSVG className="w-full h-full" />
+                    {/* Bottom Details & Mascot */}
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#7285DE]/20">
+                      <div className="flex items-center gap-2">
+                        <div className="w-10 h-10">
+                          <StandingBeeSVG className="w-full h-full" />
+                        </div>
+                        <div>
+                          <span className="block text-[8px] uppercase font-bold text-slate-600 italic leading-none">Headmistress' contact</span>
+                          <span className="block font-mono font-bold text-[11px] text-[#4A3B94] mt-0.5">{currentContact}</span>
+                          <span className="block text-[8px] italic font-serif text-slate-500 mt-0.5">First Among Equals</span>
+                        </div>
                       </div>
-                      {/* Standing Bee Mascot */}
-                      <div className="w-12 h-12">
-                        <StandingBeeSVG className="w-full h-full" />
-                      </div>
+                      {showLogo && (
+                        <div className="w-10 h-10 border border-[#A899F7]/30 p-0.5 bg-white rounded shadow-xs flex items-center justify-center shrink-0">
+                          <SchoolSealSVG className="w-full h-full" />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

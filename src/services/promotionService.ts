@@ -26,8 +26,9 @@ export const CLASS_PROGRESSION_SEQUENCE: { className: string; level: AcademicLev
   // Nursery Level
   { className: 'Nursery 1', level: 'NURSERY' },
   { className: 'Nursery 2', level: 'NURSERY' },
-  { className: 'Kindergarten 1', level: 'NURSERY' },
-  { className: 'Kindergarten 2', level: 'NURSERY' },
+  // Kindergarten Level
+  { className: 'Kindergarten 1', level: 'KINDERGARTEN' },
+  { className: 'Kindergarten 2', level: 'KINDERGARTEN' },
   // Primary Level
   { className: 'Primary 1', level: 'PRIMARY' },
   { className: 'Primary 2', level: 'PRIMARY' },

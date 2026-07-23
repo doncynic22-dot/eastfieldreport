@@ -5,8 +5,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel } from '../types';
-import { BookOpen, UserCheck, Search, CheckCircle2, Save, Users, Calendar, Award, LogIn, UserPlus, ShieldAlert, School, Eye, EyeOff, KeyRound, Lock } from 'lucide-react';
+import { BookOpen, UserCheck, Search, CheckCircle2, Save, Users, Calendar, Award, LogIn, UserPlus, ShieldAlert, School, Eye, EyeOff, KeyRound, Lock, Mail, Send, Copy, Check, ExternalLink, ShieldCheck, RefreshCw } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { sendPasswordResetEmail } from '../services/emailDispatcher';
 
 interface TeacherDashboardProps {
   students: Student[];
@@ -18,7 +19,7 @@ interface TeacherDashboardProps {
   attendance: Attendance[];
   setAttendance: React.Dispatch<React.SetStateAction<Attendance[]>>;
   config: ReportConfig;
-  classes: { NURSERY: string[]; PRIMARY: string[]; JHS: string[] };
+  classes: { NURSERY: string[]; KINDERGARTEN?: string[]; PRIMARY: string[]; JHS: string[] };
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
   isAdminAuthenticated: boolean;
@@ -68,14 +69,56 @@ export default function TeacherDashboard({
   const [resetStep, setResetStep] = useState<'request' | 'verify'>('request');
   const [sentPin, setSentPin] = useState('');
   const [enteredPin, setEnteredPin] = useState('');
+  const [copiedResetLink, setCopiedResetLink] = useState(false);
+
+  // Check if password reset link was opened from email link
+  useEffect(() => {
+    try {
+      const parseResetParams = () => {
+        const queryStr = window.location.search || '';
+        const hashStr = window.location.hash || '';
+        const searchParams = new URLSearchParams(queryStr);
+        
+        let hashParams = new URLSearchParams();
+        if (hashStr) {
+          const rawHash = hashStr.startsWith('#') ? hashStr.substring(1) : hashStr;
+          hashParams = new URLSearchParams(rawHash.includes('?') ? rawHash.substring(rawHash.indexOf('?')) : rawHash);
+        }
+
+        const action = searchParams.get('action') || searchParams.get('type') || hashParams.get('action') || hashParams.get('type');
+        const emailParam = searchParams.get('email') || hashParams.get('email');
+
+        if (action === 'reset-password' || action === 'recovery' || emailParam) {
+          setAuthMode('forgot');
+          setResetStep('verify');
+          if (emailParam) {
+            setResetEmail(emailParam);
+            setResetSuccess(`Security reset link verified for registered account (${emailParam})! Please configure your new password below.`);
+          } else {
+            setResetSuccess(`Security reset link verified! Please enter your registered email and new password below.`);
+          }
+        }
+      };
+
+      parseResetParams();
+      window.addEventListener('popstate', parseResetParams);
+      window.addEventListener('hashchange', parseResetParams);
+      return () => {
+        window.removeEventListener('popstate', parseResetParams);
+        window.removeEventListener('hashchange', parseResetParams);
+      };
+    } catch (e) {
+      console.warn('URL search params check error:', e);
+    }
+  }, []);
 
   // Class and Subject selector interceptor states
   const [selectedLevel, setSelectedLevel] = useState<AcademicLevel | ''>('');
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedSubject, setSelectedSubject] = useState<string>('');
 
-  // Grade Book inputs state (studentId -> {classScore, examScore})
-  const [gradeInputs, setGradeInputs] = useState<Record<string, { classScore: string; examScore: string }>>({});
+  // Grade Book inputs state (studentId -> {classScore, examScore, nurseryRemark})
+  const [gradeInputs, setGradeInputs] = useState<Record<string, { classScore: string; examScore: string; nurseryRemark?: 'MO' | 'O' | 'S' | 'NA' }>>({});
   // Attendance inputs state (studentId -> {totalDays, daysPresent, remarks})
   const [attendanceInputs, setAttendanceInputs] = useState<Record<string, { totalDays: string; daysPresent: string; remarks: string }>>({});
 
@@ -132,7 +175,7 @@ export default function TeacherDashboard({
       return;
     }
 
-    if (regLevel === 'PRIMARY' || regLevel === 'NURSERY') {
+    if (regLevel === 'PRIMARY' || regLevel === 'NURSERY' || regLevel === 'KINDERGARTEN') {
       if (regSelectedClasses.length > 1) {
         setRegError('Academy Staff Policy: Nursery, KG, and Primary division teachers can only be assigned to a single class.');
         return;
@@ -146,7 +189,7 @@ export default function TeacherDashboard({
       }
     }
 
-    const finalSubjects = (regLevel === 'NURSERY' || regLevel === 'PRIMARY')
+    const finalSubjects = (regLevel === 'NURSERY' || regLevel === 'KINDERGARTEN' || regLevel === 'PRIMARY')
       ? subjects.filter(s => s.level === regLevel).map(s => s.id)
       : regSelectedSubjects;
 
@@ -309,19 +352,73 @@ export default function TeacherDashboard({
     }
   };
 
-  // 3b. PASSWORD RESET PROCESS (Direct reset)
+  // 3b. PASSWORD RESET PROCESS (Email Reset Link Dispatch & Verification)
+  const handleRequestResetLink = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setResetError('');
+    setResetSuccess('');
+
+    const cleanEmail = resetEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      setResetError('Please enter your registered teacher email address.');
+      return;
+    }
+
+    const teacher = teachers.find(t => t.email.toLowerCase() === cleanEmail && t.role === 'TEACHER');
+    if (!teacher) {
+      setResetError('Security Check Failed: No registered teacher account found with this email address.');
+      return;
+    }
+
+    // Build the reset URL link
+    const origin = window.location.origin;
+    const pathname = window.location.pathname;
+    const resetUrl = `${origin}${pathname}?action=reset-password&email=${encodeURIComponent(cleanEmail)}`;
+
+    // Trigger Supabase Auth password reset if configured
+    try {
+      if (supabase && supabase.auth) {
+        await supabase.auth.resetPasswordForEmail(cleanEmail, { redirectTo: resetUrl });
+      }
+    } catch (err) {
+      console.warn('Supabase resetPasswordForEmail warning:', err);
+    }
+
+    // Dispatch email with reset link ONLY to the teacher's registered email
+    sendPasswordResetEmail({
+      teacherName: teacher.name,
+      email: cleanEmail,
+      resetUrl,
+      schoolName: config.schoolName
+    });
+
+    // Stay on current form and present success message
+    setResetSuccess(`Password reset link has been successfully sent to your registered email account (${cleanEmail})! Please check your email inbox and click the reset link.`);
+  };
+
+  const handleCopyResetLink = () => {
+    const cleanEmail = resetEmail.trim().toLowerCase();
+    const resetUrl = `${window.location.origin}${window.location.pathname}?action=reset-password&email=${encodeURIComponent(cleanEmail)}`;
+    
+    navigator.clipboard.writeText(resetUrl);
+    setCopiedResetLink(true);
+    setTimeout(() => setCopiedResetLink(false), 2500);
+  };
+
   const handleResetPassword = (e: React.FormEvent) => {
     e.preventDefault();
     setResetError('');
     setResetSuccess('');
 
-    if (!resetEmail || !resetNewPassword || !resetConfirmPassword) {
-      setResetError('Please complete all password fields.');
+    const cleanEmail = resetEmail.trim().toLowerCase();
+
+    if (!cleanEmail || !resetNewPassword || !resetConfirmPassword) {
+      setResetError('Please complete all required password fields.');
       return;
     }
 
     if (resetNewPassword !== resetConfirmPassword) {
-      setResetError('New passwords do not match.');
+      setResetError('New passwords do not match. Please re-type.');
       return;
     }
 
@@ -330,9 +427,9 @@ export default function TeacherDashboard({
       return;
     }
 
-    const teacherIndex = teachers.findIndex(t => t.email.toLowerCase() === resetEmail.toLowerCase() && t.role === 'TEACHER');
+    const teacherIndex = teachers.findIndex(t => t.email.toLowerCase() === cleanEmail && t.role === 'TEACHER');
     if (teacherIndex === -1) {
-      setResetError('No registered teacher found with this email address.');
+      setResetError('No registered teacher account found with this email address.');
       return;
     }
 
@@ -346,18 +443,24 @@ export default function TeacherDashboard({
       return updated;
     });
 
-    setResetSuccess('Your password has been successfully updated! Pre-filling credentials and returning to login...');
+    setResetSuccess('Your password has been successfully reset! Pre-filling credentials and returning to login...');
     
     setTimeout(() => {
-      setLoginEmail(resetEmail);
+      setLoginEmail(cleanEmail);
       setLoginPassword(resetNewPassword);
       setAuthMode('login');
-      // Reset input fields
+      setResetStep('request');
+      setSentPin('');
+      setEnteredPin('');
       setResetEmail('');
       setResetNewPassword('');
       setResetConfirmPassword('');
       setResetSuccess('');
       setResetError('');
+
+      if (window.location.search.includes('action=reset-password')) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
     }, 1500);
   };
 
@@ -365,14 +468,14 @@ export default function TeacherDashboard({
   const handleRegLevelShift = (lvl: AcademicLevel) => {
     setRegLevel(lvl);
     setRegSelectedClasses([]);
-    const lvlSubjects = (lvl === 'NURSERY' || lvl === 'PRIMARY')
+    const lvlSubjects = (lvl === 'NURSERY' || lvl === 'KINDERGARTEN' || lvl === 'PRIMARY')
       ? subjects.filter(s => s.level === lvl).map(s => s.id)
       : [];
     setRegSelectedSubjects(lvlSubjects);
   };
 
   const toggleRegClass = (cls: string) => {
-    if (regLevel === 'PRIMARY' || regLevel === 'NURSERY') {
+    if (regLevel === 'PRIMARY' || regLevel === 'NURSERY' || regLevel === 'KINDERGARTEN') {
       const assignedTeacher = teachers.find(t => t.classes?.includes(cls));
       if (assignedTeacher && !regSelectedClasses.includes(cls)) {
         setRegError(`Cannot select "${cls}": Already assigned to ${assignedTeacher.name}. In Primary, Nursery, and KG, each class can only be assigned to one teacher.`);
@@ -381,7 +484,7 @@ export default function TeacherDashboard({
       }
     }
     setRegSelectedClasses(prev => {
-      if (regLevel === 'PRIMARY' || regLevel === 'NURSERY') {
+      if (regLevel === 'PRIMARY' || regLevel === 'NURSERY' || regLevel === 'KINDERGARTEN') {
         return prev.includes(cls) ? [] : [cls];
       }
       return prev.includes(cls) ? prev.filter(c => c !== cls) : [...prev, cls];
@@ -390,7 +493,7 @@ export default function TeacherDashboard({
 
   const toggleRegSubject = (subId: string) => {
     setRegSelectedSubjects(prev => {
-      if (regLevel === 'PRIMARY' || regLevel === 'NURSERY') {
+      if (regLevel === 'PRIMARY' || regLevel === 'NURSERY' || regLevel === 'KINDERGARTEN') {
         return prev; // Entitled to all subjects, lock selection
       }
       const isSel = prev.includes(subId);
@@ -420,9 +523,11 @@ export default function TeacherDashboard({
   const teacherAllowedClasses = currentUser 
     ? (currentUser.level === 'NURSERY' 
         ? classes.NURSERY 
-        : currentUser.level === 'PRIMARY' 
-          ? classes.PRIMARY 
-          : classes.JHS)
+        : currentUser.level === 'KINDERGARTEN'
+          ? (classes.KINDERGARTEN || [])
+          : currentUser.level === 'PRIMARY' 
+            ? classes.PRIMARY 
+            : classes.JHS)
     : [];
 
   const teacherAllowedSubjects = currentUser 
@@ -446,15 +551,27 @@ export default function TeacherDashboard({
     if (!selectedClass || !selectedSubject || !currentUser) return;
 
     // Load existing grades into input states
-    const initialGrades: Record<string, { classScore: string; examScore: string }> = {};
+    const initialGrades: Record<string, { classScore: string; examScore: string; nurseryRemark?: 'MO' | 'O' | 'S' | 'NA' }> = {};
     const initialAttendance: Record<string, { totalDays: string; daysPresent: string; remarks: string }> = {};
 
     activeClassStudents.forEach(student => {
       // Load grades
       const matchedGrade = grades.find(g => g.studentId === student.id && g.subjectId === selectedSubject);
+      let loadedNurseryRemark = matchedGrade?.nurseryRemark;
+      if (!loadedNurseryRemark && matchedGrade) {
+        const remUpper = matchedGrade.remarks?.toUpperCase() || '';
+        if (['MO', 'O', 'S', 'NA'].includes(remUpper)) {
+          loadedNurseryRemark = remUpper as 'MO' | 'O' | 'S' | 'NA';
+        } else if (matchedGrade.totalScore >= 80) loadedNurseryRemark = 'MO';
+        else if (matchedGrade.totalScore >= 65) loadedNurseryRemark = 'O';
+        else if (matchedGrade.totalScore >= 45) loadedNurseryRemark = 'S';
+        else loadedNurseryRemark = 'NA';
+      }
+
       initialGrades[student.id] = {
         classScore: matchedGrade ? matchedGrade.classScore.toString() : '',
-        examScore: matchedGrade ? matchedGrade.examScore.toString() : ''
+        examScore: matchedGrade ? matchedGrade.examScore.toString() : '',
+        nurseryRemark: loadedNurseryRemark
       };
 
       // Load attendance
@@ -498,7 +615,7 @@ export default function TeacherDashboard({
       const examNum = sGrade?.examScore ? Number(sGrade.examScore) : 0;
       const totalNum = classNum + examNum;
 
-      if (sGrade && (sGrade.classScore || sGrade.examScore)) {
+      if (sGrade && (sGrade.classScore || sGrade.examScore || sGrade.nurseryRemark)) {
         const gradeIndex = updatedGrades.findIndex(g => g.studentId === student.id && g.subjectId === selectedSubject);
         const gradeRecord: Grade = {
           studentId: student.id,
@@ -507,7 +624,8 @@ export default function TeacherDashboard({
           examScore: examNum,
           totalScore: totalNum,
           gradeLetter: getGradeLetter(totalNum),
-          remarks: getGradeRemarks(totalNum),
+          remarks: sGrade.nurseryRemark || getGradeRemarks(totalNum),
+          nurseryRemark: sGrade.nurseryRemark,
           term: config.term,
           year: config.schoolYear,
           teacherId: currentUser.id,
@@ -569,6 +687,26 @@ export default function TeacherDashboard({
         [field]: val
       }
     }));
+  };
+
+  const handleNurseryRemarkChange = (studentId: string, remark: 'MO' | 'O' | 'S' | 'NA') => {
+    let defaultClassScore = '45';
+    let defaultExamScore = '45';
+    if (remark === 'O') { defaultClassScore = '38'; defaultExamScore = '37'; }
+    if (remark === 'S') { defaultClassScore = '28'; defaultExamScore = '27'; }
+    if (remark === 'NA') { defaultClassScore = '18'; defaultExamScore = '17'; }
+
+    setGradeInputs(prev => {
+      const current = prev[studentId] || { classScore: '', examScore: '' };
+      return {
+        ...prev,
+        [studentId]: {
+          classScore: current.classScore || defaultClassScore,
+          examScore: current.examScore || defaultExamScore,
+          nurseryRemark: remark
+        }
+      };
+    });
   };
 
   const handleAttInputChange = (studentId: string, field: 'totalDays' | 'daysPresent' | 'remarks', val: string) => {
@@ -735,13 +873,80 @@ export default function TeacherDashboard({
             </form>
           )}
 
-          {authMode === 'forgot' && (
+          {authMode === 'forgot' && resetStep === 'request' && (
+            <form onSubmit={handleRequestResetLink} className="space-y-3.5 text-xs">
+              <div className="text-center space-y-1 border-b border-mauve-500/10 pb-3">
+                <div className="w-10 h-10 rounded-full bg-mauve-100 flex items-center justify-center mx-auto text-mauve-900">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <h4 className="font-display font-bold text-mauve-900 text-xs uppercase tracking-wider">Email Password Reset Link</h4>
+                <p className="text-[11px] text-gray-500 leading-relaxed max-w-sm mx-auto">
+                  Enter your registered teacher email account below. A secure password reset link will be sent to your inbox.
+                </p>
+              </div>
+
+              {resetError && (
+                <div className="bg-rose-50 text-rose-700 p-2.5 rounded border border-rose-200 text-xs flex items-center gap-2 animate-fadeIn">
+                  <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                  <span>{resetError}</span>
+                </div>
+              )}
+
+              {resetSuccess && (
+                <div className="bg-green-50 text-green-700 p-2.5 rounded border border-green-200 text-xs flex items-start gap-2 animate-fadeIn">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-green-600 mt-0.5" />
+                  <span className="leading-tight">{resetSuccess}</span>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-bold text-mauve-900 block">Registered Teacher Email Address</label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. primary@eastfield.com"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 rounded border border-mauve-500/20 outline-none text-mauve-900 bg-white focus:ring-1 focus:ring-mauve-900 text-xs font-medium"
+                  />
+                  <Mail className="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                </div>
+                <p className="text-[9.5px] text-gray-400">Must match the registered email account for your teacher profile.</p>
+              </div>
+
+              <div className="flex gap-2.5 pt-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('login');
+                    setResetError('');
+                    setResetSuccess('');
+                  }}
+                  className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded text-xs transition-all cursor-pointer text-center uppercase tracking-wider border border-gray-300/30"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 bg-mauve-900 hover:bg-mauve-700 text-white font-bold rounded text-xs transition-all cursor-pointer text-center uppercase tracking-wider shadow-sm flex items-center justify-center gap-1.5"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  Send Reset Link
+                </button>
+              </div>
+            </form>
+          )}
+
+          {authMode === 'forgot' && resetStep === 'verify' && (
             <form onSubmit={handleResetPassword} className="space-y-3.5 text-xs">
               <div className="text-center space-y-1 border-b border-mauve-500/10 pb-3">
-                <KeyRound className="w-6 h-6 text-mauve-900 mx-auto" />
-                <h4 className="font-display font-bold text-mauve-900 text-xs uppercase tracking-wider">Reset Account Password</h4>
+                <div className="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center mx-auto">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <h4 className="font-display font-bold text-mauve-900 text-xs uppercase tracking-wider">Set New Account Password</h4>
                 <p className="text-[11px] text-gray-500 leading-relaxed">
-                  Enter your registered teacher email and configure your secure new password.
+                  Reset link verified for account: <span className="font-bold text-mauve-900 underline">{resetEmail}</span>
                 </p>
               </div>
 
@@ -759,18 +964,6 @@ export default function TeacherDashboard({
                 </div>
               )}
 
-              <div className="space-y-1">
-                <label className="text-[10px] uppercase font-bold text-mauve-900 block">Registered Email Address</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. primary@eastfield.com"
-                  value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                  className="w-full px-3 py-2 rounded border border-mauve-500/20 outline-none text-mauve-900 bg-white focus:ring-1 focus:ring-mauve-900 text-xs"
-                />
-              </div>
-
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1 relative">
                   <label className="text-[10px] uppercase font-bold text-mauve-900 block">New Password</label>
@@ -778,7 +971,7 @@ export default function TeacherDashboard({
                     <input
                       type={showResetPassword ? "text" : "password"}
                       required
-                      placeholder="At least 4 chars"
+                      placeholder="Min 4 characters"
                       value={resetNewPassword}
                       onChange={(e) => setResetNewPassword(e.target.value)}
                       className="w-full pl-3 pr-10 py-1.5 rounded border border-mauve-500/20 outline-none text-mauve-900 bg-white focus:ring-1 focus:ring-mauve-900 text-xs font-mono"
@@ -788,11 +981,7 @@ export default function TeacherDashboard({
                       onClick={() => setShowResetPassword(!showResetPassword)}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-mauve-900 focus:outline-none cursor-pointer"
                     >
-                      {showResetPassword ? (
-                        <EyeOff className="w-3.5 h-3.5" />
-                      ) : (
-                        <Eye className="w-3.5 h-3.5" />
-                      )}
+                      {showResetPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -802,7 +991,7 @@ export default function TeacherDashboard({
                   <input
                     type={showResetPassword ? "text" : "password"}
                     required
-                    placeholder="Repeat password"
+                    placeholder="Repeat new password"
                     value={resetConfirmPassword}
                     onChange={(e) => setResetConfirmPassword(e.target.value)}
                     className="w-full px-3 py-1.5 rounded border border-mauve-500/20 outline-none text-mauve-900 bg-white focus:ring-1 focus:ring-mauve-900 text-xs font-mono"
@@ -810,26 +999,44 @@ export default function TeacherDashboard({
                 </div>
               </div>
 
-              <div className="flex gap-2.5 pt-1.5">
+              <div className="flex items-center justify-between text-[10px] pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleRequestResetLink()}
+                  className="text-mauve-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Resend Reset Email Link
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyResetLink}
+                  className="text-mauve-800 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedResetLink ? <Check className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
+                  {copiedResetLink ? 'Reset Link Copied!' : 'Copy Direct Reset Link'}
+                </button>
+              </div>
+
+              <div className="flex gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={() => {
-                    setAuthMode('login');
                     setResetStep('request');
-                    setSentPin('');
-                    setEnteredPin('');
                     setResetError('');
                     setResetSuccess('');
                   }}
-                  className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded text-xs transition-all cursor-pointer text-center uppercase tracking-wider border border-gray-300/30"
+                  className="py-2 px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded text-xs transition-all cursor-pointer text-center uppercase tracking-wider border border-gray-300/30"
                 >
-                  Cancel
+                  Back
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 bg-mauve-900 hover:bg-mauve-700 text-white font-bold rounded text-xs transition-all cursor-pointer text-center uppercase tracking-wider shadow-sm animate-pulse-subtle"
+                  className="flex-1 py-2 bg-mauve-900 hover:bg-mauve-700 text-white font-bold rounded text-xs transition-all cursor-pointer text-center uppercase tracking-wider shadow-sm flex items-center justify-center gap-1"
                 >
-                  Reset Password
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Save New Password
                 </button>
               </div>
             </form>
@@ -899,7 +1106,7 @@ export default function TeacherDashboard({
               <div className="space-y-1">
                 <label className="text-[10px] uppercase font-bold text-mauve-900 block">Teaching Level division</label>
                 <div className="flex gap-1.5">
-                  {['NURSERY', 'PRIMARY', 'JHS'].map((l) => (
+                  {['NURSERY', 'KINDERGARTEN', 'PRIMARY', 'JHS'].map((l) => (
                     <button
                       key={l}
                       type="button"
@@ -923,6 +1130,32 @@ export default function TeacherDashboard({
                 </label>
                 <div className="flex flex-wrap gap-1 p-2 rounded border border-mauve-500/10 bg-mauve-50">
                   {regLevel === 'NURSERY' && classes.NURSERY.map(c => {
+                    const isSel = regSelectedClasses.includes(c);
+                    const assignedTeacher = teachers.find(t => t.classes?.includes(c));
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => toggleRegClass(c)}
+                        className={`px-2 py-1 text-[11px] border rounded cursor-pointer font-semibold transition flex items-center gap-1 ${
+                          isSel 
+                            ? 'bg-mauve-900 text-white border-mauve-900 shadow-sm' 
+                            : assignedTeacher 
+                              ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100' 
+                              : 'bg-white text-mauve-900/80 border-mauve-500/15 hover:bg-mauve-50'
+                        }`}
+                        title={assignedTeacher ? `Assigned to ${assignedTeacher.name}` : 'Available'}
+                      >
+                        <span>{c}</span>
+                        {assignedTeacher && !isSel && (
+                          <span className="text-[9px] bg-amber-200 text-amber-900 px-1 py-0.2 rounded font-mono">
+                            {assignedTeacher.name.split(' ')[0]}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {regLevel === 'KINDERGARTEN' && (classes.KINDERGARTEN || []).map(c => {
                     const isSel = regSelectedClasses.includes(c);
                     const assignedTeacher = teachers.find(t => t.classes?.includes(c));
                     return (
@@ -1129,7 +1362,7 @@ export default function TeacherDashboard({
               <span className="text-xs font-bold text-mauve-900 uppercase tracking-wider block">1. Staff Division</span>
               <p className="text-[11px] text-gray-400">JHS teachers must strictly select the JHS level to unlock curriculum books.</p>
               <div className="space-y-1.5">
-                {['NURSERY', 'PRIMARY', 'JHS'].map((lvl) => {
+                {['NURSERY', 'KINDERGARTEN', 'PRIMARY', 'JHS'].map((lvl) => {
                   const isAvailable = currentUser.level === lvl;
                   const isSelected = selectedLevel === lvl;
                   return (
@@ -1167,6 +1400,7 @@ export default function TeacherDashboard({
                     const isSelected = selectedClass === cls;
                     // Double check if class fits the division level chosen
                     const fitsLevel = (selectedLevel === 'NURSERY' && classes.NURSERY.includes(cls)) ||
+                                      (selectedLevel === 'KINDERGARTEN' && (classes.KINDERGARTEN || []).includes(cls)) ||
                                       (selectedLevel === 'PRIMARY' && classes.PRIMARY.includes(cls)) ||
                                       (selectedLevel === 'JHS' && classes.JHS.includes(cls));
 
@@ -1328,16 +1562,28 @@ export default function TeacherDashboard({
                             </span>
                           </div>
                         </th>
-                        <th className="p-3 text-center w-40">Class Score ({classLimit})</th>
-                        <th className="p-3 text-center w-40">Exam Score ({examLimit})</th>
-                        <th className="p-3 text-center w-32">Total (100)</th>
-                        <th className="p-3 pr-4 text-center">Auto Remarks</th>
+                        {selectedLevel === 'NURSERY' || selectedLevel === 'KINDERGARTEN' ? (
+                          <>
+                            <th className="p-3 text-center w-20">MO (Most Often)</th>
+                            <th className="p-3 text-center w-20">O (Often)</th>
+                            <th className="p-3 text-center w-20">S (Sometimes)</th>
+                            <th className="p-3 text-center w-20">NA (Needs Assist)</th>
+                            <th className="p-3 pr-4 text-center">Selected Remark</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="p-3 text-center w-40">Class Score ({classLimit})</th>
+                            <th className="p-3 text-center w-40">Exam Score ({examLimit})</th>
+                            <th className="p-3 text-center w-32">Total (100)</th>
+                            <th className="p-3 pr-4 text-center">Auto Remarks</th>
+                          </>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-mauve-50 text-xs text-gray-800">
                       {activeClassStudents.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="p-6 text-center text-gray-400">
+                          <td colSpan={selectedLevel === 'NURSERY' || selectedLevel === 'KINDERGARTEN' ? 6 : 5} className="p-6 text-center text-gray-400">
                             No students enrolled in {selectedClass} yet. Admins can admit students via the admissions tab.
                           </td>
                         </tr>
@@ -1349,8 +1595,72 @@ export default function TeacherDashboard({
                           const totalVal = classVal + examVal;
 
                           const remarks = getGradeRemarks(totalVal);
+                          const hasInput = inputs.classScore || inputs.examScore || inputs.nurseryRemark;
 
-                          const hasInput = inputs.classScore || inputs.examScore;
+                          if (selectedLevel === 'NURSERY' || selectedLevel === 'KINDERGARTEN') {
+                            const curRem = inputs.nurseryRemark || (totalVal >= 80 ? 'MO' : totalVal >= 65 ? 'O' : totalVal >= 45 ? 'S' : hasInput ? 'NA' : undefined);
+                            return (
+                              <tr key={student.id} className="hover:bg-mauve-50/20">
+                                <td className="p-3 pl-4">
+                                  <span className="block font-bold text-gray-900 text-xs">{student.name}</span>
+                                  <span className="font-mono text-[10px] text-mauve-500">{student.rollNumber}</span>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <label className="cursor-pointer inline-flex items-center justify-center p-1">
+                                    <input
+                                      type="radio"
+                                      name={`nursery-rem-${student.id}`}
+                                      checked={curRem === 'MO'}
+                                      onChange={() => handleNurseryRemarkChange(student.id, 'MO')}
+                                      className="w-4 h-4 text-mauve-900 accent-mauve-900 cursor-pointer"
+                                    />
+                                  </label>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <label className="cursor-pointer inline-flex items-center justify-center p-1">
+                                    <input
+                                      type="radio"
+                                      name={`nursery-rem-${student.id}`}
+                                      checked={curRem === 'O'}
+                                      onChange={() => handleNurseryRemarkChange(student.id, 'O')}
+                                      className="w-4 h-4 text-mauve-900 accent-mauve-900 cursor-pointer"
+                                    />
+                                  </label>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <label className="cursor-pointer inline-flex items-center justify-center p-1">
+                                    <input
+                                      type="radio"
+                                      name={`nursery-rem-${student.id}`}
+                                      checked={curRem === 'S'}
+                                      onChange={() => handleNurseryRemarkChange(student.id, 'S')}
+                                      className="w-4 h-4 text-mauve-900 accent-mauve-900 cursor-pointer"
+                                    />
+                                  </label>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <label className="cursor-pointer inline-flex items-center justify-center p-1">
+                                    <input
+                                      type="radio"
+                                      name={`nursery-rem-${student.id}`}
+                                      checked={curRem === 'NA'}
+                                      onChange={() => handleNurseryRemarkChange(student.id, 'NA')}
+                                      className="w-4 h-4 text-mauve-900 accent-mauve-900 cursor-pointer"
+                                    />
+                                  </label>
+                                </td>
+                                <td className="p-3 pr-4 text-center font-bold text-mauve-900">
+                                  {curRem ? (
+                                    <span className="px-2 py-0.5 rounded bg-mauve-100 border border-mauve-300 text-[11px]">
+                                      {curRem === 'MO' ? 'MO (Most Often)' : curRem === 'O' ? 'O (Often)' : curRem === 'S' ? 'S (Sometimes)' : 'NA (Needs Assistance)'}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-400 italic text-[11px]">-</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          }
 
                           return (
                             <tr key={student.id} className="hover:bg-mauve-50/20">

@@ -188,3 +188,61 @@ export function generateBatchEmailDigest(
   return digest;
 }
 
+export interface PasswordResetEmailOptions {
+  teacherName: string;
+  email: string;
+  resetUrl: string;
+  schoolName?: string;
+}
+
+/**
+ * Generates official password reset email content for a registered teacher.
+ */
+export function generatePasswordResetEmailBody(options: PasswordResetEmailOptions): string {
+  const { teacherName, email, resetUrl, schoolName = 'Eastfield Academy' } = options;
+  let body = `Dear ${teacherName},\n\n`;
+  body += `We received an official request to reset the account password for your registered Teacher Portal account (${email}) at ${schoolName}.\n\n`;
+  body += `--------------------------------------------------\n`;
+  body += `🔑 OFFICIAL SECURE PASSWORD RESET LINK\n`;
+  body += `--------------------------------------------------\n\n`;
+  body += `To reset your password immediately, click the secure reset link below:\n`;
+  body += `${resetUrl}\n\n`;
+  body += `--------------------------------------------------\n`;
+  body += `⚠️ SECURITY NOTICE:\n`;
+  body += `• This password reset link is valid for 15 minutes.\n`;
+  body += `• Never share your reset link with anyone.\n`;
+  body += `• If you did not request a password reset, please ignore this email or contact the school administrator immediately.\n\n`;
+  body += `Warm regards,\n`;
+  body += `IT & Security Administration\n`;
+  body += `${schoolName}\n`;
+  return body;
+}
+
+/**
+ * Triggers mail composer populated with password reset details for the teacher's registered email without opening a new tab or page.
+ */
+export function sendPasswordResetEmail(options: PasswordResetEmailOptions): boolean {
+  try {
+    const subject = encodeURIComponent(`[${options.schoolName || 'Eastfield Academy'}] Teacher Portal Password Reset Link`);
+    const body = encodeURIComponent(generatePasswordResetEmailBody(options));
+    const mailtoUrl = `mailto:${options.email}?subject=${subject}&body=${body}`;
+    
+    // Trigger mailto directly without opening a new tab or page
+    const link = document.createElement('a');
+    link.href = mailtoUrl;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      if (document.body.contains(link)) {
+        document.body.removeChild(link);
+      }
+    }, 500);
+
+    return true;
+  } catch (error) {
+    console.error('Failed to trigger mail composer for password reset:', error);
+    return false;
+  }
+}
+

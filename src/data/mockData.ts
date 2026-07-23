@@ -6,18 +6,26 @@
 import { Student, Subject, User, GradingScaleRule, ReportConfig, Grade, Attendance } from '../types';
 
 export const INITIAL_CLASSES = {
-  NURSERY: ['Nursery 1', 'Nursery 2', 'Kindergarten 1', 'Kindergarten 2'],
+  NURSERY: ['Nursery 1', 'Nursery 2'],
+  KINDERGARTEN: ['Kindergarten 1', 'Kindergarten 2'],
   PRIMARY: ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6'],
   JHS: ['JHS 1', 'JHS 2', 'JHS 3']
 };
 
 export const INITIAL_SUBJECTS: Subject[] = [
   // Nursery
-  { id: 'sub-n-env', name: 'OWOP', code: 'OWOP', level: 'NURSERY' },
-  { id: 'sub-n-lit', name: 'LITERACY', code: 'LIT', level: 'NURSERY' },
-  { id: 'sub-n-num', name: 'NUMERACY', code: 'NUM', level: 'NURSERY' },
   { id: 'sub-n-cr', name: 'CREATIVITY', code: 'CRT', level: 'NURSERY' },
-  { id: 'sub-n-wri', name: 'WRITING', code: 'WRI', level: 'NURSERY' },
+  { id: 'sub-n-lit', name: 'LITERACY / LANGUAGE', code: 'LIT', level: 'NURSERY' },
+  { id: 'sub-n-num', name: 'NUMERACY', code: 'NUM', level: 'NURSERY' },
+  { id: 'sub-n-pho', name: 'PHONICS', code: 'PHO', level: 'NURSERY' },
+  { id: 'sub-n-psy', name: 'PSYCHOMOTOR SKILLS', code: 'PSY', level: 'NURSERY' },
+
+  // Kindergarten
+  { id: 'sub-k-lit', name: 'LITERACY / LANGUAGE', code: 'LIT', level: 'KINDERGARTEN' },
+  { id: 'sub-k-num', name: 'NUMERACY', code: 'NUM', level: 'KINDERGARTEN' },
+  { id: 'sub-k-owop', name: 'OUR WORLD OUR PEOPLE', code: 'OWOP', level: 'KINDERGARTEN' },
+  { id: 'sub-k-ca', name: 'CREATIVE ARTS', code: 'CA', level: 'KINDERGARTEN' },
+  { id: 'sub-k-wrt', name: 'WRITING', code: 'WRT', level: 'KINDERGARTEN' },
 
   // Primary
   { id: 'sub-p-eng', name: 'English language', code: 'ENG', level: 'PRIMARY' },
@@ -49,7 +57,8 @@ export const INITIAL_STUDENTS: Student[] = [
   { id: "st-102", name: "Ama Boateng", rollNumber: "ST-002", level: "PRIMARY", className: "Primary 1", guardianName: "Kofi Boateng", guardianEmail: "kofi@boateng.com", guardianPhone: "+233501234567" },
   { id: "st-103", name: "Kofi Mensah", rollNumber: "ST-003", level: "JHS", className: "JHS 1", guardianName: "Yao Mensah", guardianEmail: "yao@mensah.com", guardianPhone: "+233271234567" },
   { id: "st-104", name: "Yaa Asantewaa", rollNumber: "ST-004", level: "JHS", className: "JHS 1", guardianName: "Maame Asantewaa", guardianEmail: "maame@asantewaa.com", guardianPhone: "+233201234567" },
-  { id: "st-105", name: "Abena Osei", rollNumber: "ST-005", level: "NURSERY", className: "Nursery 1", guardianName: "Charles Osei", guardianEmail: "charles@osei.com", guardianPhone: "+233551234567" }
+  { id: "st-105", name: "Abena Osei", rollNumber: "ST-005", level: "NURSERY", className: "Nursery 1", guardianName: "Charles Osei", guardianEmail: "charles@osei.com", guardianPhone: "+233551234567" },
+  { id: "st-106", name: "Yaw Ofori", rollNumber: "ST-006", level: "KINDERGARTEN", className: "Kindergarten 1", guardianName: "Seth Ofori", guardianEmail: "seth@ofori.com", guardianPhone: "+233241112233" }
 ];
 
 export const INITIAL_GRADING_SCALE: GradingScaleRule[] = [
