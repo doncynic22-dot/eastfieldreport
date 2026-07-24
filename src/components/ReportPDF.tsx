@@ -172,6 +172,10 @@ export default function ReportPDF({
   const [customRollNumber, setCustomRollNumber] = useState(student.rollNumber);
   const [customClassRoll, setCustomClassRoll] = useState(allClassStudents.length);
 
+  // Check if current config term is Third Term
+  const termLower = (config.term || '').toLowerCase();
+  const isThirdTerm = termLower.includes('3') || termLower.includes('third');
+
   // Promotional Status options
   const initialNextClass = getNextClassAndLevel(student.className, student.level);
   const [showPromotionStatus, setShowPromotionStatus] = useState(true);
@@ -793,68 +797,82 @@ export default function ReportPDF({
               </div>
 
               {/* Promotional Status & Next Level Customizer */}
-              <div className="col-span-1 md:col-span-2 border-t border-mauve-500/10 pt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold text-mauve-900 uppercase tracking-wider flex items-center gap-1">
-                    <GraduationCap className="w-3.5 h-3.5 text-mauve-900" />
-                    3rd Term Promotional Status Indicator
-                  </p>
-                  <div className="flex flex-col gap-2">
-                    <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={showPromotionStatus}
-                        onChange={(e) => setShowPromotionStatus(e.target.checked)}
-                        className="rounded border-mauve-500/20 text-mauve-900 focus:ring-mauve-900 w-3.5 h-3.5"
-                      />
-                      Display Promotional Status Banner on Report Card
-                    </label>
+              {isThirdTerm ? (
+                <div className="col-span-1 md:col-span-2 border-t border-mauve-500/10 pt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold text-mauve-900 uppercase tracking-wider flex items-center gap-1">
+                      <GraduationCap className="w-3.5 h-3.5 text-mauve-900" />
+                      3rd Term Promotional Status Indicator
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showPromotionStatus}
+                          onChange={(e) => setShowPromotionStatus(e.target.checked)}
+                          className="rounded border-mauve-500/20 text-mauve-900 focus:ring-mauve-900 w-3.5 h-3.5"
+                        />
+                        Display Promotional Status Banner on Report Card
+                      </label>
+                      <div>
+                        <label className="text-[10px] text-gray-500 block">Promotional Decision</label>
+                        <select
+                          value={promotionDecision}
+                          onChange={(e) => setPromotionDecision(e.target.value as any)}
+                          className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900 font-bold focus:outline-none focus:ring-1 focus:ring-mauve-900"
+                        >
+                          <option value="PROMOTED">Promoted to Next Class</option>
+                          <option value="RETAINED">Retained in Current Class</option>
+                          <option value="GRADUATED">Graduated from Academy</option>
+                          <option value="CUSTOM">Custom Promotional Message</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {promotionDecision === 'PROMOTED' && (
+                      <div>
+                        <label className="text-[10px] text-gray-500 block">Promoted To Class / Level Number</label>
+                        <input
+                          type="text"
+                          value={promotedToClass}
+                          onChange={(e) => setPromotedToClass(e.target.value)}
+                          placeholder="E.g., Primary 2, Kindergarten 2, JHS 1"
+                          className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-mauve-900"
+                        />
+                        <span className="text-[9px] text-gray-400 block mt-0.5">Specify target promoted class or level number (e.g. Primary 2, Basic 3, JHS 1).</span>
+                      </div>
+                    )}
+
+                    {promotionDecision === 'CUSTOM' && (
+                      <div>
+                        <label className="text-[10px] text-gray-500 block">Custom Promotional Message</label>
+                        <input
+                          type="text"
+                          value={customPromotionText}
+                          onChange={(e) => setCustomPromotionText(e.target.value)}
+                          placeholder="E.g., PROMOTED TO BASIC 4 (LEVEL 4)"
+                          className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900 font-bold focus:outline-none focus:ring-1 focus:ring-mauve-900"
+                        />
+                        <span className="text-[9px] text-gray-400 block mt-0.5">Custom text printed on the report card banner.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="col-span-1 md:col-span-2 border-t border-mauve-500/10 pt-3">
+                  <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center gap-2.5 shadow-xs">
+                    <GraduationCap className="w-5 h-5 text-amber-700 shrink-0" />
                     <div>
-                      <label className="text-[10px] text-gray-500 block">Promotional Decision</label>
-                      <select
-                        value={promotionDecision}
-                        onChange={(e) => setPromotionDecision(e.target.value as any)}
-                        className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900 font-bold focus:outline-none focus:ring-1 focus:ring-mauve-900"
-                      >
-                        <option value="PROMOTED">Promoted to Next Class</option>
-                        <option value="RETAINED">Retained in Current Class</option>
-                        <option value="GRADUATED">Graduated from Academy</option>
-                        <option value="CUSTOM">Custom Promotional Message</option>
-                      </select>
+                      <strong className="block font-bold">Promotional Status Banner Disabled ({config.term || 'First Term'})</strong>
+                      <span className="text-[11px] text-amber-800">
+                        Class promotion banners and status indicators only appear on <strong>Third Term (Term 3)</strong> report card templates. Switch the active academic term in Admin Settings to enable promotion badges.
+                      </span>
                     </div>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  {promotionDecision === 'PROMOTED' && (
-                    <div>
-                      <label className="text-[10px] text-gray-500 block">Promoted To Class / Level Number</label>
-                      <input
-                        type="text"
-                        value={promotedToClass}
-                        onChange={(e) => setPromotedToClass(e.target.value)}
-                        placeholder="E.g., Primary 2, Kindergarten 2, JHS 1"
-                        className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-mauve-900"
-                      />
-                      <span className="text-[9px] text-gray-400 block mt-0.5">Specify target promoted class or level number (e.g. Primary 2, Basic 3, JHS 1).</span>
-                    </div>
-                  )}
-
-                  {promotionDecision === 'CUSTOM' && (
-                    <div>
-                      <label className="text-[10px] text-gray-500 block">Custom Promotional Message</label>
-                      <input
-                        type="text"
-                        value={customPromotionText}
-                        onChange={(e) => setCustomPromotionText(e.target.value)}
-                        placeholder="E.g., PROMOTED TO BASIC 4 (LEVEL 4)"
-                        className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900 font-bold focus:outline-none focus:ring-1 focus:ring-mauve-900"
-                      />
-                      <span className="text-[9px] text-gray-400 block mt-0.5">Custom text printed on the report card banner.</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+              )}
 
               {student.level === 'JHS' && (
                 <div className="col-span-1 md:col-span-2 border-t border-mauve-500/10 pt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1200,22 +1218,26 @@ export default function ReportPDF({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
-                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">SCHOOL YEAR:</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="px-3 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
+                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">TERM:</span>
+                      <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{config.term}</span>
+                    </div>
+                    <div className="px-3 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
+                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">YEAR:</span>
                       <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{config.schoolYear}</span>
                     </div>
-                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
+                    <div className="px-3 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
                       <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">REOPENING:</span>
                       <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{currentReopening}</span>
                     </div>
-                    <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
+                    <div className="px-3 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
                       <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">NO. ON ROLL:</span>
                       <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{customClassRoll}</span>
                     </div>
                   </div>
 
-                  {showPromotionStatus && (
+                  {isThirdTerm && showPromotionStatus && (
                     <div className="px-3.5 py-1.5 border-2 border-[#4A3B94] rounded-2xl bg-[#E8E5FC] flex flex-wrap items-center justify-between gap-2 shadow-sm print:py-1">
                       <span className="font-serif font-black italic text-[#4A3B94] text-[10px] uppercase tracking-wider flex items-center gap-1.5">
                         <GraduationCap className="w-4 h-4 text-[#4A3B94] inline shrink-0" />
@@ -1597,7 +1619,7 @@ export default function ReportPDF({
               </div>
 
               {/* Promotional Status Banner for JHS & Primary */}
-              {showPromotionStatus && (
+              {isThirdTerm && showPromotionStatus && (
                 <div className="p-2 sm:p-2.5 bg-[#1e293b] text-white rounded border-2 border-slate-900 flex flex-wrap items-center justify-between gap-2 shadow-sm my-2">
                   <span className="font-serif font-extrabold uppercase text-[10px] sm:text-[11px] tracking-widest text-amber-300 flex items-center gap-1.5">
                     <GraduationCap className="w-4 h-4 text-amber-300 inline shrink-0" />
@@ -1820,7 +1842,7 @@ export default function ReportPDF({
               </div>
 
               {/* Promotional Status Banner for Default Template */}
-              {showPromotionStatus && (
+              {isThirdTerm && showPromotionStatus && (
                 <div className="p-3 bg-mauve-900 text-white rounded-xl border-2 border-mauve-950 flex flex-wrap items-center justify-between gap-2 shadow-sm">
                   <span className="font-display font-extrabold uppercase text-xs tracking-wider text-mauve-100 flex items-center gap-2">
                     <GraduationCap className="w-4 h-4 text-amber-300 shrink-0" />
@@ -1984,7 +2006,7 @@ export default function ReportPDF({
                     <div className="text-[10px] leading-relaxed">
                       <span className="block font-bold text-gray-800">Head Principal Office</span>
                       <p className="text-[10px] text-gray-500 mt-1 italic leading-normal">
-                        {customPrincipalComment ? `"${customPrincipalComment}"` : 'Excellent terminal outcome. Recommended for promotional pathways with outstanding merit.'}
+                        {customPrincipalComment ? `"${customPrincipalComment}"` : (isThirdTerm ? 'Excellent terminal outcome. Recommended for promotional pathways with outstanding merit.' : 'Exhibiting steady academic growth and active participation in class.')}
                       </p>
                     </div>
                   </div>

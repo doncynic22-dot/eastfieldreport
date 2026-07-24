@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel } from '../types';
-import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles } from 'lucide-react';
+import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2 } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
@@ -58,6 +58,33 @@ export default function AdminDashboard({
   onUpdateAdminPassword = () => {}
 }: AdminDashboardProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('analytics');
+
+  // Config Update State
+  const [configUpdateSuccess, setConfigUpdateSuccess] = useState<string | null>(null);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+
+  const handleUpdateSystemConfig = async () => {
+    setIsSavingConfig(true);
+    try {
+      localStorage.setItem('ea_config', JSON.stringify(config));
+      if (getSupabaseCredentials().isConfigured) {
+        await onPushToSupabase?.();
+      }
+      const isThirdTerm = config.term?.toLowerCase().includes('3') || config.term?.toLowerCase().includes('third');
+      const termNotice = isThirdTerm
+        ? 'Promotional status is active on Third Term report templates.'
+        : 'Promotional status is hidden (only appears on Third Term templates).';
+
+      setConfigUpdateSuccess(`System Settings & Academic Term updated successfully to "${config.term}"! ${termNotice}`);
+      setTimeout(() => {
+        setConfigUpdateSuccess(null);
+      }, 7000);
+    } catch (err) {
+      console.error('Error saving config:', err);
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
 
   // School logo upload states
   const [logoDragActive, setLogoDragActive] = useState(false);
@@ -577,9 +604,6 @@ export default function AdminDashboard({
 
   const toggleSubjectForTeacherForm = (subId: string) => {
     setTeacherForm(prev => {
-      if (prev.level === 'NURSERY' || prev.level === 'KINDERGARTEN' || prev.level === 'PRIMARY') {
-        return prev; // Entitled to all subjects, lock selection
-      }
       const alreadySelected = prev.subjects.includes(subId);
       let updated = [...prev.subjects];
       if (alreadySelected) {
@@ -590,7 +614,7 @@ export default function AdminDashboard({
           alert('Junior High School (JHS) teachers are restricted to a maximum of two subjects.');
           return prev;
         }
-        // Conflict Check with both ID, name, and code
+        // Conflict Check with both ID, name, and code for JHS
         const subObj = subjects.find(s => s.id === subId);
         const conflictingTeacher = teachers.find(t => 
           t.level === 'JHS' && 
@@ -1755,15 +1779,15 @@ export default function AdminDashboard({
                   <div className="space-y-1.5">
                     <div className="flex justify-between items-center">
                       <label className="text-xs font-semibold text-mauve-700 block">
-                        {teacherForm.level === 'JHS' ? 'Syllabus Subject Assignment' : 'Syllabus Subject Assignment (All subjects auto-assigned)'}
+                        Syllabus Subject Assignment (Toggle subjects assigned to teacher)
                       </label>
                       {teacherForm.level === 'JHS' ? (
                         <span className="text-[10px] bg-cyan-100 text-cyan-800 px-2 py-0.5 rounded font-bold font-mono">
                           MAX 2 SUBJECTS FOR JHS
                         </span>
                       ) : (
-                        <span className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded font-bold font-mono uppercase">
-                          All Subjects Entitled
+                        <span className="text-[10px] bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-bold font-mono uppercase">
+                          Toggle Subject Access
                         </span>
                       )}
                     </div>
@@ -1779,15 +1803,15 @@ export default function AdminDashboard({
                           <button
                             key={sub.id}
                             type="button"
-                            disabled={teacherForm.level !== 'JHS' || isUnavailable}
+                            disabled={isUnavailable}
                             onClick={() => toggleSubjectForTeacherForm(sub.id)}
-                            className={`px-2.5 py-1 text-xs border rounded-lg text-left transition flex items-center justify-between ${
+                            className={`px-2.5 py-1 text-xs border rounded-lg text-left transition flex items-center justify-between cursor-pointer ${
                               isSel 
                                 ? 'bg-mauve-600 text-white border-mauve-700 font-bold' 
                                 : isUnavailable
                                   ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed line-through'
                                   : 'bg-white text-mauve-700 border-mauve-200 hover:bg-mauve-50'
-                            } ${teacherForm.level !== 'JHS' ? 'opacity-90 cursor-default font-semibold' : isUnavailable ? 'opacity-60' : 'cursor-pointer'}`}
+                            } ${isUnavailable ? 'opacity-60' : ''}`}
                             title={isUnavailable ? `Assigned to ${assignedTeacher.name}` : undefined}
                           >
                             <span>{sub.name} ({sub.code})</span>
@@ -1828,9 +1852,20 @@ export default function AdminDashboard({
       {/* E. GENERAL REPORT CONFIGURATION VIEW */}
       {activeTab === 'config' && (
         <div className="bg-white p-6 rounded-2xl border border-mauve-100 mauve-glow space-y-6 animate-fadeIn no-print">
-          <div className="border-b border-mauve-100 pb-3">
-            <h3 className="font-display font-bold text-mauve-900 text-lg">System Configurations</h3>
-            <p className="text-xs text-mauve-500 mt-0.5">Edit academic term, continuous assessment weightings, and the global evaluation index.</p>
+          <div className="border-b border-mauve-100 pb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <h3 className="font-display font-bold text-mauve-900 text-lg">System Configurations</h3>
+              <p className="text-xs text-mauve-500 mt-0.5">Edit academic term, continuous assessment weightings, and global evaluation parameters.</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleUpdateSystemConfig}
+              disabled={isSavingConfig}
+              className="px-5 py-2.5 bg-mauve-900 hover:bg-mauve-800 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-sm flex items-center gap-2 shrink-0 active:scale-95"
+            >
+              <Save className="w-4 h-4" />
+              <span>{isSavingConfig ? 'Saving Changes...' : 'Update Changes'}</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-sm">
@@ -2137,7 +2172,26 @@ export default function AdminDashboard({
 
 
 
-          {/* G. ADMINISTRATIVE SECURITY PASSWORD SECTION */}
+          {/* UPDATE SYSTEM CONFIGURATIONS ACTION BAR */}
+          <div className="pt-4 border-t border-mauve-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex-1">
+              {configUpdateSuccess && (
+                <div className="bg-emerald-50 text-emerald-800 border border-emerald-300 px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-fadeIn shadow-xs">
+                  <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600" />
+                  <span>{configUpdateSuccess}</span>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleUpdateSystemConfig}
+              disabled={isSavingConfig}
+              className="px-6 py-3 bg-mauve-900 hover:bg-mauve-800 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95"
+            >
+              <Save className="w-4 h-4" />
+              <span>{isSavingConfig ? 'Saving Changes...' : 'Update Changes'}</span>
+            </button>
+          </div>
           <div className="pt-6 border-t border-mauve-200 space-y-4">
             <div className="flex items-center gap-2">
               <Lock className="w-5 h-5 text-mauve-900" />

@@ -520,16 +520,20 @@ export default function TeacherDashboard({
   };
 
   // Filter list of selectable subjects and classes for current teacher
+  const allLevelClasses = selectedLevel === 'NURSERY' 
+    ? classes.NURSERY 
+    : selectedLevel === 'KINDERGARTEN' 
+      ? (classes.KINDERGARTEN || []) 
+      : selectedLevel === 'PRIMARY' 
+        ? classes.PRIMARY 
+        : classes.JHS;
+
   const teacherAllowedClasses = currentUser 
     ? (currentUser.role === 'ADMIN' || (currentUser.level as string) === 'ALL' || !currentUser.level
-        ? (selectedLevel === 'NURSERY' ? classes.NURSERY : selectedLevel === 'KINDERGARTEN' ? (classes.KINDERGARTEN || []) : selectedLevel === 'PRIMARY' ? classes.PRIMARY : classes.JHS)
-        : (currentUser.level === 'NURSERY' 
-            ? classes.NURSERY 
-            : currentUser.level === 'KINDERGARTEN'
-              ? (classes.KINDERGARTEN || [])
-              : currentUser.level === 'PRIMARY' 
-                ? classes.PRIMARY 
-                : classes.JHS))
+        ? allLevelClasses
+        : (currentUser.classes && currentUser.classes.length > 0
+            ? allLevelClasses.filter(c => currentUser.classes?.includes(c))
+            : allLevelClasses))
     : [];
 
   const nurseryDefaults: Subject[] = [
@@ -565,18 +569,62 @@ export default function TeacherDashboard({
 
   let teacherAllowedSubjects: Subject[] = [];
   if (effectiveLevel) {
-    if (effectiveLevel === 'JHS' && currentUser?.subjects && currentUser.subjects.length > 0 && currentUser.role !== 'ADMIN') {
-      teacherAllowedSubjects = allSubjectsWithDefaults.filter(s => s.level === 'JHS' && currentUser.subjects?.some(sId => sId === s.id || sId === s.name || sId === s.code));
+    if (currentUser?.role !== 'ADMIN' && (currentUser?.level as string) !== 'ALL' && currentUser?.subjects && currentUser.subjects.length > 0) {
+      const filtered = allSubjectsWithDefaults.filter(s => 
+        s.level === effectiveLevel && 
+        currentUser.subjects?.some(sId => 
+          sId === s.id || 
+          sId === s.name || 
+          sId === s.code || 
+          sId.toLowerCase() === s.name.toLowerCase() || 
+          sId.toLowerCase() === s.code.toLowerCase()
+        )
+      );
+      teacherAllowedSubjects = filtered.length > 0 ? filtered : allSubjectsWithDefaults.filter(s => s.level === effectiveLevel);
     } else {
       teacherAllowedSubjects = allSubjectsWithDefaults.filter(s => s.level === effectiveLevel);
     }
   } else if (currentUser) {
     if (currentUser.role === 'ADMIN' || (currentUser.level as string) === 'ALL') {
       teacherAllowedSubjects = allSubjectsWithDefaults;
+    } else if (currentUser.subjects && currentUser.subjects.length > 0) {
+      const filtered = allSubjectsWithDefaults.filter(s => 
+        s.level === currentUser.level && 
+        currentUser.subjects?.some(sId => 
+          sId === s.id || 
+          sId === s.name || 
+          sId === s.code || 
+          sId.toLowerCase() === s.name.toLowerCase() || 
+          sId.toLowerCase() === s.code.toLowerCase()
+        )
+      );
+      teacherAllowedSubjects = filtered.length > 0 ? filtered : allSubjectsWithDefaults.filter(s => s.level === currentUser.level);
     } else {
       teacherAllowedSubjects = allSubjectsWithDefaults.filter(s => s.level === currentUser.level);
     }
   }
+
+  // Auto-set level if teacher has a specific level
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!selectedLevel && currentUser.level && (currentUser.level as string) !== 'ALL' && currentUser.role !== 'ADMIN') {
+      setSelectedLevel(currentUser.level);
+    }
+  }, [currentUser, selectedLevel]);
+
+  // Ensure selectedClass remains valid within teacherAllowedClasses
+  useEffect(() => {
+    if (selectedClass && teacherAllowedClasses.length > 0 && !teacherAllowedClasses.includes(selectedClass)) {
+      setSelectedClass(teacherAllowedClasses[0] || '');
+    }
+  }, [selectedClass, teacherAllowedClasses]);
+
+  // Ensure selectedSubject remains valid within teacherAllowedSubjects
+  useEffect(() => {
+    if (selectedSubject && teacherAllowedSubjects.length > 0 && !teacherAllowedSubjects.some(s => s.id === selectedSubject)) {
+      setSelectedSubject(teacherAllowedSubjects[0]?.id || '');
+    }
+  }, [selectedSubject, teacherAllowedSubjects]);
 
   // 4. LOAD GRADEBOOK & ATTENDANCE ON INTERCEPTOR RESOLUTION
   const activeClassStudents = students
@@ -1509,17 +1557,50 @@ export default function TeacherDashboard({
       ) : (
         /* INTERCEPTORS RESOLVED - GRADE BOOK & ATTENDANCE SHEET */
         <form onSubmit={handleSaveMarksSheet} className="space-y-4">
-          {/* Breadcrumb back navigation to interceptor selection */}
+          {/* Breadcrumb & Quick Selector Bar for registering assessment */}
           <div className="bg-mauve-100 p-3 rounded border border-mauve-500/15 flex flex-wrap justify-between items-center gap-3">
-            <div className="text-xs text-mauve-900 font-bold flex flex-wrap items-center gap-2">
-              <span className="uppercase text-[10px] text-mauve-900/60">Selected Classroom:</span>
-              <span className="bg-white text-mauve-900 border border-mauve-500/15 px-2 py-0.5 rounded font-mono font-bold text-[10px]">{selectedLevel}</span>
-              <span className="text-gray-400">&raquo;</span>
-              <span className="bg-white text-mauve-900 border border-mauve-500/15 px-2 py-0.5 rounded font-mono font-bold text-[10px]">{selectedClass}</span>
-              <span className="text-gray-400">&raquo;</span>
-              <span className="bg-white text-mauve-900 border border-mauve-500/15 px-2 py-0.5 rounded font-bold text-[10px]">
-                {subjects.find(s => s.id === selectedSubject)?.name}
+            <div className="text-xs text-mauve-900 font-bold flex flex-wrap items-center gap-2 sm:gap-3">
+              <span className="uppercase text-[10px] text-mauve-900/60 font-mono tracking-wider shrink-0">Registering Assessment:</span>
+              
+              <span className="bg-white text-mauve-900 border border-mauve-500/15 px-2 py-1 rounded font-mono font-bold text-[10px]">
+                {selectedLevel} DIVISION
               </span>
+              
+              <span className="text-gray-400 font-normal">&raquo;</span>
+
+              {/* Class Selector Dropdown - strictly showing teacher allowed classes */}
+              <div className="flex items-center gap-1.5 bg-white border border-mauve-500/25 px-2.5 py-1 rounded shadow-2xs">
+                <span className="text-[10px] uppercase text-gray-500 font-bold">Class:</span>
+                <select
+                  value={selectedClass}
+                  onChange={(e) => setSelectedClass(e.target.value)}
+                  className="bg-transparent font-mono font-bold text-xs text-mauve-900 focus:outline-none cursor-pointer"
+                >
+                  {teacherAllowedClasses.map((cls) => (
+                    <option key={cls} value={cls}>
+                      {cls}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <span className="text-gray-400 font-normal">&raquo;</span>
+
+              {/* Subject Selector Dropdown - strictly showing teacher allowed subjects */}
+              <div className="flex items-center gap-1.5 bg-white border border-mauve-500/25 px-2.5 py-1 rounded shadow-2xs">
+                <span className="text-[10px] uppercase text-gray-500 font-bold">Subject:</span>
+                <select
+                  value={selectedSubject}
+                  onChange={(e) => setSelectedSubject(e.target.value)}
+                  className="bg-transparent font-bold text-xs text-mauve-900 focus:outline-none cursor-pointer"
+                >
+                  {teacherAllowedSubjects.map((sub) => (
+                    <option key={sub.id} value={sub.id}>
+                      {sub.name} ({sub.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <button
@@ -1531,7 +1612,7 @@ export default function TeacherDashboard({
               }}
               className="text-xs font-bold text-mauve-900 hover:text-mauve-700 underline cursor-pointer uppercase tracking-wider text-[10px]"
             >
-              Change Subject/Classroom
+              Full Selection View
             </button>
           </div>
 
