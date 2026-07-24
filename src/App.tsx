@@ -16,7 +16,7 @@ import {
 } from './data/mockData';
 import AdminDashboard from './components/AdminDashboard';
 import TeacherDashboard from './components/TeacherDashboard';
-import { School, ShieldCheck, GraduationCap, Users2, FileCheck, CheckCircle2, Lock, Sparkles, BookOpen, Eye, EyeOff, Database, AlertTriangle, X } from 'lucide-react';
+import { School, ShieldCheck, GraduationCap, Users2, FileCheck, CheckCircle2, Lock, Sparkles, BookOpen, Eye, EyeOff, Database, AlertTriangle, X, Menu } from 'lucide-react';
 import {
   getSupabaseCredentials,
   testSupabaseConnection,
@@ -38,6 +38,7 @@ import { isAutoPromotionDue, promoteStudents } from './services/promotionService
 
 export default function App() {
   // Master States
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
@@ -614,33 +615,33 @@ export default function App() {
       <header className="bg-white border-b border-mauve-500/20 sticky top-0 z-40 shadow-sm no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           {/* Logo & Academy Name */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActivePortal('hub')}>
+          <div className="flex items-center gap-2.5 sm:gap-3 cursor-pointer shrink-0" onClick={() => { setActivePortal('hub'); setIsMobileMenuOpen(false); }}>
             {config.schoolLogoUrl ? (
               <img 
                 src={config.schoolLogoUrl} 
                 alt={`${config.schoolName} logo`} 
-                className="w-10 h-10 object-contain rounded-lg shadow-sm shrink-0"
+                className="w-9 h-9 sm:w-10 sm:h-10 object-contain rounded-lg shadow-sm shrink-0"
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="w-10 h-10 rounded-lg bg-mauve-900 text-white font-display font-bold text-lg flex items-center justify-center shadow-sm shrink-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-mauve-900 text-white font-display font-bold text-base sm:text-lg flex items-center justify-center shadow-sm shrink-0">
                 {config.schoolLogoText || 'EA'}
               </div>
             )}
-            <div>
+            <div className="truncate max-w-[170px] sm:max-w-none">
               <div className="flex items-center gap-2">
-                <span className="font-display font-extrabold text-sm tracking-tight text-mauve-900 block uppercase">
+                <span className="font-display font-extrabold text-xs sm:text-sm tracking-tight text-mauve-900 block uppercase truncate">
                   {config.schoolName}
                 </span>
               </div>
-              <span className="text-[9px] font-mono tracking-wider text-mauve-600 uppercase block">
+              <span className="text-[8px] sm:text-[9px] font-mono tracking-wider text-mauve-600 uppercase block truncate">
                 Terminal Report Engine v4.0
               </span>
             </div>
           </div>
 
-          {/* Center Navigation Tabs */}
-          <nav className="flex items-center gap-1.5">
+          {/* Desktop Navigation Tabs */}
+          <nav className="hidden md:flex items-center gap-1.5">
             <button
               onClick={() => setActivePortal('hub')}
               className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition cursor-pointer ${
@@ -678,7 +679,70 @@ export default function App() {
               </button>
             )}
           </nav>
+
+          {/* Mobile Menu Toggle Button */}
+          <div className="flex md:hidden items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="p-2 rounded-lg bg-mauve-50 text-mauve-900 hover:bg-mauve-100 transition border border-mauve-500/15"
+              aria-label="Toggle Navigation Menu"
+            >
+              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
+
+        {/* Mobile Dropdown Navigation Menu */}
+        {isMobileMenuOpen && (
+          <div className="md:hidden border-t border-mauve-500/20 bg-white px-4 py-3 space-y-2 shadow-md animate-fadeIn">
+            <button
+              onClick={() => {
+                setActivePortal('hub');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`w-full text-left px-3.5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition ${
+                activePortal === 'hub'
+                  ? 'bg-mauve-900 text-white'
+                  : 'text-mauve-900 bg-mauve-50/50 hover:bg-mauve-100'
+              }`}
+            >
+              Academy Hub
+            </button>
+
+            {!isAdminAuthenticated && (
+              <button
+                onClick={() => {
+                  setActivePortal('teacher');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition ${
+                  activePortal === 'teacher'
+                    ? 'bg-mauve-900 text-white'
+                    : 'text-mauve-900 bg-mauve-50/50 hover:bg-mauve-100'
+                }`}
+              >
+                Teacher Portal
+              </button>
+            )}
+
+            {!currentUser && (
+              <button
+                onClick={() => {
+                  setActivePortal('admin');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full text-left px-3.5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition ${
+                  activePortal === 'admin'
+                    ? 'bg-mauve-900 text-white'
+                    : 'text-mauve-900 bg-mauve-50/50 hover:bg-mauve-100'
+                }`}
+              >
+                Admin Portal
+              </button>
+            )}
+          </div>
+        )}
       </header>
 
       {/* CORE FRAME CONTAINER */}

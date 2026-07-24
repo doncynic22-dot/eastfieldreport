@@ -6,11 +6,11 @@
   --font-display: "Space Grotesk", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-mauve-50: #F3E6F3;
-  --color-mauve-100: #E2BFE2;
-  --color-mauve-200: #CD97CD;
-  --color-mauve-300: #B26EB2;
-  --color-mauve-400: #964A96;
+  --color-mauve-50: #E6CEE6;
+  --color-mauve-100: #D8B2D8;
+  --color-mauve-200: #C590C5;
+  --color-mauve-300: #AD6BAD;
+  --color-mauve-400: #934993;
   --color-mauve-500: #7B307B;
   --color-mauve-600: #642164;
   --color-mauve-700: #4E164E;
@@ -37,7 +37,7 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #f8f2f8;
+  background: #e6cee6;
 }
 
 ::-webkit-scrollbar-thumb {

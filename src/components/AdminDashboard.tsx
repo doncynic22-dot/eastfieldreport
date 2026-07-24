@@ -855,7 +855,7 @@ export default function AdminDashboard({
       </div>
 
       {/* 2. TAB TOGGLES */}
-      <div className="flex flex-wrap gap-1.5 border-b border-mauve-500/10 pb-1.5 no-print">
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 max-w-full border-b border-mauve-500/10 no-print whitespace-nowrap">
         {[
           { id: 'analytics', label: 'Overview Metrics', icon: Users },
           { id: 'transcripts', label: 'Transcript Center', icon: FileSpreadsheet },
@@ -1294,7 +1294,7 @@ export default function AdminDashboard({
           {/* Student Form Modal */}
           {showStudentModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fadeIn">
-              <div className="bg-white rounded-2xl border border-mauve-250 w-full max-w-md p-6 shadow-2xl space-y-5">
+              <div className="bg-white rounded-2xl border border-mauve-250 w-full max-w-md p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center border-b border-mauve-100 pb-3">
                   <h4 className="font-display font-bold text-mauve-900 text-lg">
                     {editingStudent ? 'Modify Student Details' : 'Admit New Pupil'}
@@ -1579,7 +1579,7 @@ export default function AdminDashboard({
           {/* Teacher Form Modal */}
           {showTeacherModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fadeIn">
-              <div className="bg-white rounded-2xl border border-mauve-250 w-full max-w-lg p-6 shadow-2xl space-y-5">
+              <div className="bg-white rounded-2xl border border-mauve-250 w-full max-w-lg p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center border-b border-mauve-100 pb-3">
                   <h4 className="font-display font-bold text-mauve-900 text-lg">
                     {editingTeacher ? 'Modify Staff Profile' : 'Register Academy Staff'}

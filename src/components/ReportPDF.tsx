@@ -1125,11 +1125,12 @@ export default function ReportPDF({
       </div>
 
       {/* TRANSCRIPT A4 SHEET CONTAINER */}
-      <div 
-        ref={printRef}
-        className="bg-white text-gray-900 shadow-sm border-2 border-mauve-900 rounded p-6 sm:p-10 w-full max-w-[850px] mx-auto print-container relative"
-        style={{ contentVisibility: 'auto' }}
-      >
+      <div className="w-full overflow-x-auto pb-4">
+        <div 
+          ref={printRef}
+          className="bg-white text-gray-900 shadow-sm border-2 border-mauve-900 rounded p-4 sm:p-6 md:p-10 w-full min-w-[320px] max-w-[850px] mx-auto print-container relative"
+          style={{ contentVisibility: 'auto' }}
+        >
         {/* Certificate Style Border */}
         <div className="absolute inset-2 border border-mauve-900/15 pointer-events-none rounded opacity-60 print:inset-0" />
         <div className="absolute inset-3 border-2 border-mauve-100 pointer-events-none rounded opacity-35 print:inset-1" />
@@ -2014,5 +2015,6 @@ export default function ReportPDF({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }

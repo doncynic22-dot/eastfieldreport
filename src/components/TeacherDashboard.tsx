@@ -521,18 +521,62 @@ export default function TeacherDashboard({
 
   // Filter list of selectable subjects and classes for current teacher
   const teacherAllowedClasses = currentUser 
-    ? (currentUser.level === 'NURSERY' 
-        ? classes.NURSERY 
-        : currentUser.level === 'KINDERGARTEN'
-          ? (classes.KINDERGARTEN || [])
-          : currentUser.level === 'PRIMARY' 
-            ? classes.PRIMARY 
-            : classes.JHS)
+    ? (currentUser.role === 'ADMIN' || (currentUser.level as string) === 'ALL' || !currentUser.level
+        ? (selectedLevel === 'NURSERY' ? classes.NURSERY : selectedLevel === 'KINDERGARTEN' ? (classes.KINDERGARTEN || []) : selectedLevel === 'PRIMARY' ? classes.PRIMARY : classes.JHS)
+        : (currentUser.level === 'NURSERY' 
+            ? classes.NURSERY 
+            : currentUser.level === 'KINDERGARTEN'
+              ? (classes.KINDERGARTEN || [])
+              : currentUser.level === 'PRIMARY' 
+                ? classes.PRIMARY 
+                : classes.JHS))
     : [];
 
-  const teacherAllowedSubjects = currentUser 
-    ? subjects.filter(sub => sub.level === currentUser.level) 
-    : [];
+  const nurseryDefaults: Subject[] = [
+    { id: 'sub-n-cr', name: 'CREATIVITY', code: 'CRT', level: 'NURSERY' },
+    { id: 'sub-n-lit', name: 'LITERACY / LANGUAGE', code: 'LIT', level: 'NURSERY' },
+    { id: 'sub-n-num', name: 'NUMERACY', code: 'NUM', level: 'NURSERY' },
+    { id: 'sub-n-pho', name: 'PHONICS', code: 'PHO', level: 'NURSERY' },
+    { id: 'sub-n-psy', name: 'PSYCHOMOTOR SKILLS', code: 'PSY', level: 'NURSERY' }
+  ];
+
+  const kgDefaults: Subject[] = [
+    { id: 'sub-k-lit', name: 'LITERACY / LANGUAGE', code: 'LIT', level: 'KINDERGARTEN' },
+    { id: 'sub-k-num', name: 'NUMERACY', code: 'NUM', level: 'KINDERGARTEN' },
+    { id: 'sub-k-owop', name: 'OUR WORLD OUR PEOPLE', code: 'OWOP', level: 'KINDERGARTEN' },
+    { id: 'sub-k-ca', name: 'CREATIVE ARTS', code: 'CA', level: 'KINDERGARTEN' },
+    { id: 'sub-k-wrt', name: 'WRITING', code: 'WRT', level: 'KINDERGARTEN' }
+  ];
+
+  // Merge default subjects if missing from state
+  const allSubjectsWithDefaults = [...subjects];
+  nurseryDefaults.forEach(nd => {
+    if (!allSubjectsWithDefaults.some(s => s.id === nd.id || (s.level === 'NURSERY' && s.name.toUpperCase() === nd.name.toUpperCase()))) {
+      allSubjectsWithDefaults.push(nd);
+    }
+  });
+  kgDefaults.forEach(kd => {
+    if (!allSubjectsWithDefaults.some(s => s.id === kd.id || (s.level === 'KINDERGARTEN' && s.name.toUpperCase() === kd.name.toUpperCase()))) {
+      allSubjectsWithDefaults.push(kd);
+    }
+  });
+
+  const effectiveLevel = selectedLevel || currentUser?.level;
+
+  let teacherAllowedSubjects: Subject[] = [];
+  if (effectiveLevel) {
+    if (effectiveLevel === 'JHS' && currentUser?.subjects && currentUser.subjects.length > 0 && currentUser.role !== 'ADMIN') {
+      teacherAllowedSubjects = allSubjectsWithDefaults.filter(s => s.level === 'JHS' && currentUser.subjects?.some(sId => sId === s.id || sId === s.name || sId === s.code));
+    } else {
+      teacherAllowedSubjects = allSubjectsWithDefaults.filter(s => s.level === effectiveLevel);
+    }
+  } else if (currentUser) {
+    if (currentUser.role === 'ADMIN' || (currentUser.level as string) === 'ALL') {
+      teacherAllowedSubjects = allSubjectsWithDefaults;
+    } else {
+      teacherAllowedSubjects = allSubjectsWithDefaults.filter(s => s.level === currentUser.level);
+    }
+  }
 
   // 4. LOAD GRADEBOOK & ATTENDANCE ON INTERCEPTOR RESOLUTION
   const activeClassStudents = students
@@ -1363,7 +1407,7 @@ export default function TeacherDashboard({
               <p className="text-[11px] text-gray-400">JHS teachers must strictly select the JHS level to unlock curriculum books.</p>
               <div className="space-y-1.5">
                 {['NURSERY', 'KINDERGARTEN', 'PRIMARY', 'JHS'].map((lvl) => {
-                  const isAvailable = currentUser.level === lvl;
+                  const isAvailable = currentUser.role === 'ADMIN' || (currentUser.level as string) === 'ALL' || !currentUser.level || currentUser.level === lvl;
                   const isSelected = selectedLevel === lvl;
                   return (
                     <button
@@ -1491,17 +1535,10 @@ export default function TeacherDashboard({
             </button>
           </div>
 
-          {saveSuccess && (
-            <div id="save-success-msg" className="bg-green-50 text-green-700 border border-green-200 p-3.5 rounded-lg text-xs font-bold flex items-center gap-2.5 animate-fadeIn shadow-sm">
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-green-600" />
-              <span>assessment succesfully saved</span>
-            </div>
-          )}
-
           {/* MAIN GRADE ENTRY SHEET TABLE */}
           {(() => {
-            const classLimit = 50;
-            const examLimit = 50;
+            const classLimit = selectedLevel === 'KINDERGARTEN' ? 50 : 30;
+            const examLimit = selectedLevel === 'KINDERGARTEN' ? 50 : 70;
 
             return (
               <div className="bg-white rounded border border-mauve-500/20 shadow-sm overflow-hidden">
@@ -1562,7 +1599,7 @@ export default function TeacherDashboard({
                             </span>
                           </div>
                         </th>
-                        {selectedLevel === 'NURSERY' || selectedLevel === 'KINDERGARTEN' ? (
+                        {selectedLevel === 'NURSERY' ? (
                           <>
                             <th className="p-3 text-center w-20">MO (Most Often)</th>
                             <th className="p-3 text-center w-20">O (Often)</th>
@@ -1583,7 +1620,7 @@ export default function TeacherDashboard({
                     <tbody className="divide-y divide-mauve-50 text-xs text-gray-800">
                       {activeClassStudents.length === 0 ? (
                         <tr>
-                          <td colSpan={selectedLevel === 'NURSERY' || selectedLevel === 'KINDERGARTEN' ? 6 : 5} className="p-6 text-center text-gray-400">
+                          <td colSpan={selectedLevel === 'NURSERY' ? 6 : 5} className="p-6 text-center text-gray-400">
                             No students enrolled in {selectedClass} yet. Admins can admit students via the admissions tab.
                           </td>
                         </tr>
@@ -1597,7 +1634,7 @@ export default function TeacherDashboard({
                           const remarks = getGradeRemarks(totalVal);
                           const hasInput = inputs.classScore || inputs.examScore || inputs.nurseryRemark;
 
-                          if (selectedLevel === 'NURSERY' || selectedLevel === 'KINDERGARTEN') {
+                          if (selectedLevel === 'NURSERY') {
                             const curRem = inputs.nurseryRemark || (totalVal >= 80 ? 'MO' : totalVal >= 65 ? 'O' : totalVal >= 45 ? 'S' : hasInput ? 'NA' : undefined);
                             return (
                               <tr key={student.id} className="hover:bg-mauve-50/20">
@@ -1703,119 +1740,26 @@ export default function TeacherDashboard({
             );
           })()}
 
-          {/* ATTENDANCE SHEET AND CONDUCT TABLE */}
-          <div className="bg-white rounded border border-mauve-500/20 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-mauve-500/20 bg-mauve-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <div>
-                <h3 className="font-display font-bold text-mauve-900 text-sm flex items-center gap-2 uppercase tracking-wide">
-                  <Calendar className="w-4 h-4 text-mauve-900" />
-                  Attendance Roll & conduct Logbook
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">Record attendance logs and behavioral reviews that sync directly with printed reports.</p>
-              </div>
-              <div>
-                <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded font-bold uppercase text-[9px] tracking-wide shadow-sm">
-                  🔒 Admin-Only Days Opened (Conduct & Present Unlocked)
-                </span>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-mauve-50/50 text-[11px] font-bold text-mauve-900 border-b border-mauve-500/20 uppercase tracking-wider">
-                    <th 
-                      className="p-3 pl-4 cursor-pointer hover:bg-mauve-100 transition select-none"
-                      onClick={() => {
-                        if (studentSortField === 'rollNumber') {
-                          setStudentSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-                        } else {
-                          setStudentSortField('rollNumber');
-                          setStudentSortOrder('asc');
-                        }
-                      }}
-                      title="Click to toggle sorting by Student ID"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>Student Details</span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-mauve-900 text-white font-mono font-bold">
-                          {studentSortField === 'rollNumber' ? (studentSortOrder === 'asc' ? 'ID Asc ↑' : 'ID Desc ↓') : 'Sort ID'}
-                        </span>
-                      </div>
-                    </th>
-                    <th className="p-3 text-center w-40">Days Opened</th>
-                    <th className="p-3 text-center w-40">Days Present</th>
-                    <th className="p-3 text-center w-32">Percentage</th>
-                    <th className="p-3 pr-4">Conduct & Character Evaluation Remarks</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-mauve-50 text-xs text-gray-800">
-                  {activeClassStudents.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="p-6 text-center text-gray-400">No student rosters loaded.</td>
-                    </tr>
-                  ) : (
-                    activeClassStudents.map((student) => {
-                      const inputs = attendanceInputs[student.id] || { totalDays: '60', daysPresent: '60', remarks: '' };
-                      const tot = Number(inputs.totalDays) || 1;
-                      const pres = Number(inputs.daysPresent) || 0;
-                      const percentage = Math.min(100, Math.round((pres / tot) * 100));
-
-                      return (
-                        <tr key={student.id} className="hover:bg-mauve-50/20">
-                          <td className="p-3 pl-4 font-bold text-gray-900 text-xs">{student.name}</td>
-                          <td className="p-3 text-center">
-                            <input
-                              type="number"
-                              required
-                              disabled={true}
-                              value={inputs.totalDays}
-                              onChange={(e) => handleAttInputChange(student.id, 'totalDays', e.target.value)}
-                              className="w-24 px-2 py-1 text-xs border border-mauve-500/20 outline-none rounded text-center font-mono font-bold text-gray-500 bg-gray-100 cursor-not-allowed opacity-75"
-                            />
-                          </td>
-                          <td className="p-3 text-center">
-                            <input
-                              type="number"
-                              required
-                              value={inputs.daysPresent}
-                              onChange={(e) => handleAttInputChange(student.id, 'daysPresent', e.target.value)}
-                              className="w-24 px-2 py-1 text-xs border border-mauve-500/20 outline-none focus:ring-1 focus:ring-mauve-900 rounded text-center font-mono font-bold text-mauve-900 bg-white"
-                            />
-                          </td>
-                          <td className="p-3 text-center font-mono font-bold text-mauve-900">
-                            {percentage}%
-                          </td>
-                          <td className="p-3 pr-4">
-                            <input
-                              type="text"
-                              placeholder="Diligent, respectful, and eager to learn."
-                              value={inputs.remarks}
-                              onChange={(e) => handleAttInputChange(student.id, 'remarks', e.target.value)}
-                              className="w-full px-3 py-1.5 text-xs border border-mauve-500/20 outline-none focus:ring-1 focus:ring-mauve-900 rounded text-mauve-900 bg-white"
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
           {/* Action Trigger Row */}
-          <div className="flex justify-end pt-1">
+          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 pt-1">
+            <div className="flex-1">
+              {saveSuccess && (
+                <div id="save-success-msg" className="bg-emerald-50 text-emerald-800 border border-emerald-300 px-3.5 py-2.5 rounded-lg text-xs font-bold flex items-center gap-2 animate-fadeIn shadow-xs">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span className="uppercase tracking-wider text-[11px]">Assessment successfully saved</span>
+                </div>
+              )}
+            </div>
             <button
               type="submit"
               disabled={activeClassStudents.length === 0}
-              className={`px-5 py-2.5 rounded font-bold text-xs transition duration-200 cursor-pointer flex items-center gap-2 uppercase tracking-wider ${
+              className={`w-full sm:w-auto px-5 py-2.5 rounded font-bold text-xs transition duration-200 cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wider shrink-0 ${
                 activeClassStudents.length === 0
                   ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300'
                   : 'bg-mauve-900 hover:bg-mauve-700 text-white shadow-sm'
               }`}
             >
-              <Save className="w-3.5 h-3.5" /> Save Marksheet & Attendance Rolls
+              <Save className="w-3.5 h-3.5" /> Save Marksheet
             </button>
           </div>
         </form>
