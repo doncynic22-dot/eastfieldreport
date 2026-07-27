@@ -180,3 +180,97 @@ export function isAutoPromotionDue(config: ReportConfig): boolean {
 
   return false;
 }
+
+/**
+ * Determines the previous class and academic level for a given class (Reverse Promotion / Undo).
+ */
+export function getPreviousClassAndLevel(currentClass: string, currentLevel: AcademicLevel): {
+  prevClass: string;
+  prevLevel: AcademicLevel;
+} {
+  const normalizedClass = currentClass.trim().toLowerCase();
+
+  if (normalizedClass.includes('graduated')) {
+    return {
+      prevClass: 'JHS 3',
+      prevLevel: 'JHS'
+    };
+  }
+
+  const index = CLASS_PROGRESSION_SEQUENCE.findIndex(
+    item => item.className.toLowerCase() === normalizedClass
+  );
+
+  if (index > 0) {
+    const prevItem = CLASS_PROGRESSION_SEQUENCE[index - 1];
+    return {
+      prevClass: prevItem.className,
+      prevLevel: prevItem.level
+    };
+  } else if (index === 0) {
+    return {
+      prevClass: 'Nursery 1',
+      prevLevel: 'NURSERY'
+    };
+  } else {
+    // Fallback: try number decrement if numeric
+    const match = currentClass.match(/^(.+?)\s*(\d+)$/);
+    if (match) {
+      const prefix = match[1];
+      const num = parseInt(match[2], 10);
+      if (num > 1) {
+        return {
+          prevClass: `${prefix} ${num - 1}`,
+          prevLevel: currentLevel
+        };
+      }
+    }
+    return {
+      prevClass: currentClass,
+      prevLevel: currentLevel
+    };
+  }
+}
+
+/**
+ * Undoes or reverses student promotion, restoring previous student grade levels.
+ * Uses snapshot if available, or algorithmic decrement as fallback.
+ */
+export function undoPromotion(students: Student[], snapshot?: Student[]): {
+  restoredStudents: Student[];
+  revertedCount: number;
+} {
+  let revertedCount = 0;
+
+  if (snapshot && Array.isArray(snapshot) && snapshot.length > 0) {
+    const snapshotMap = new Map(snapshot.map(s => [s.id, s]));
+    const restoredStudents = students.map(student => {
+      const oldRec = snapshotMap.get(student.id);
+      if (oldRec && (oldRec.className !== student.className || oldRec.level !== student.level)) {
+        revertedCount++;
+        return {
+          ...student,
+          className: oldRec.className,
+          level: oldRec.level
+        };
+      }
+      return student;
+    });
+    return { restoredStudents, revertedCount };
+  }
+
+  // Fallback: reverse class progression index
+  const restoredStudents = students.map(student => {
+    const { prevClass, prevLevel } = getPreviousClassAndLevel(student.className, student.level);
+    if (prevClass !== student.className || prevLevel !== student.level) {
+      revertedCount++;
+    }
+    return {
+      ...student,
+      className: prevClass,
+      level: prevLevel
+    };
+  });
+
+  return { restoredStudents, revertedCount };
+}

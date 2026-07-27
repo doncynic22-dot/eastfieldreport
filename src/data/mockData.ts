@@ -58,7 +58,9 @@ export const INITIAL_STUDENTS: Student[] = [
   { id: "st-103", name: "Kofi Mensah", rollNumber: "ST-003", level: "JHS", className: "JHS 1", guardianName: "Yao Mensah", guardianEmail: "yao@mensah.com", guardianPhone: "+233271234567" },
   { id: "st-104", name: "Yaa Asantewaa", rollNumber: "ST-004", level: "JHS", className: "JHS 1", guardianName: "Maame Asantewaa", guardianEmail: "maame@asantewaa.com", guardianPhone: "+233201234567" },
   { id: "st-105", name: "Abena Osei", rollNumber: "ST-005", level: "NURSERY", className: "Nursery 1", guardianName: "Charles Osei", guardianEmail: "charles@osei.com", guardianPhone: "+233551234567" },
-  { id: "st-106", name: "Yaw Ofori", rollNumber: "ST-006", level: "KINDERGARTEN", className: "Kindergarten 1", guardianName: "Seth Ofori", guardianEmail: "seth@ofori.com", guardianPhone: "+233241112233" }
+  { id: "st-106", name: "Yaw Ofori", rollNumber: "ST-006", level: "KINDERGARTEN", className: "Kindergarten 1", guardianName: "Seth Ofori", guardianEmail: "seth@ofori.com", guardianPhone: "+233241112233" },
+  { id: "st-107", name: "Ebenezer Osei-Kofi", rollNumber: "ST-007", level: "JHS", className: "JHS 2", guardianName: "Daniel Osei-Kofi", guardianEmail: "daniel@osei-kofi.com", guardianPhone: "+233249876543" },
+  { id: "st-108", name: "Akosua Mansah", rollNumber: "ST-008", level: "JHS", className: "JHS 2", guardianName: "Grace Mansah", guardianEmail: "grace@mansah.com", guardianPhone: "+233509876543" }
 ];
 
 export const INITIAL_GRADING_SCALE: GradingScaleRule[] = [
@@ -84,24 +86,35 @@ export const DEFAULT_REPORT_CONFIG: ReportConfig = {
   examScoreWeight: 50,  // 50% Terminal Exams
   selectedTemplate: 'dynamic',
   reopeningDate: '2026-09-15',
-  autoPromoteOnReopening: true
+  autoPromoteOnReopening: true,
+  schoolMotto: 'Knowledge, Character & Excellence',
+  customNoticeNote: '',
+  showPositionInClass: true,
+  showConductColumn: true,
+  showAttendanceSection: true,
+  accentColor: '#1e1b4b',
+  watermarkText: 'EASTFIELD ACADEMY'
 };
 
 export const INITIAL_USERS: User[] = [
   { id: "tch-01", name: "Kojo Mensah (Nursery)", email: "nursery@eastfield.com", role: "TEACHER", password: "password123", level: "NURSERY", classes: ["Nursery 1"], subjects: ["sub-n-lit", "sub-n-num"] },
   { id: "tch-02", name: "Ama Serwaa (Primary)", email: "primary@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 1"], subjects: ["sub-p-math", "sub-p-eng"] },
-  { id: "tch-03", name: "Kwesi Appiah (JHS)", email: "jhs@eastfield.com", role: "TEACHER", password: "password123", level: "JHS", classes: ["JHS 1", "JHS 2"], subjects: ["sub-j-math", "sub-j-sci"] }
+  { id: "tch-03", name: "Kwesi Appiah (JHS)", email: "jhs@eastfield.com", role: "TEACHER", password: "password123", level: "JHS", classes: ["JHS 1", "JHS 2"], subjects: ["sub-j-math", "sub-j-ca"] }
 ];
 
 export const INITIAL_GRADES: Grade[] = [
   { studentId: "st-101", subjectId: "sub-p-eng", classScore: 25, examScore: 60, totalScore: 85, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-02", updatedAt: new Date().toISOString() },
   { studentId: "st-101", subjectId: "sub-p-math", classScore: 20, examScore: 55, totalScore: 75, gradeLetter: "B2", remarks: "VERY GOOD", term: "Term 1", year: "2025/2026", teacherId: "tch-02", updatedAt: new Date().toISOString() },
   { studentId: "st-102", subjectId: "sub-p-eng", classScore: 22, examScore: 50, totalScore: 72, gradeLetter: "B2", remarks: "VERY GOOD", term: "Term 1", year: "2025/2026", teacherId: "tch-02", updatedAt: new Date().toISOString() },
-  { studentId: "st-103", subjectId: "sub-j-math", classScore: 28, examScore: 65, totalScore: 93, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() }
+  { studentId: "st-103", subjectId: "sub-j-math", classScore: 28, examScore: 65, totalScore: 93, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-107", subjectId: "sub-j-ca", classScore: 42, examScore: 45, totalScore: 87, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-108", subjectId: "sub-j-ca", classScore: 38, examScore: 40, totalScore: 78, gradeLetter: "B2", remarks: "VERY GOOD", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() }
 ];
 
 export const INITIAL_ATTENDANCE: Attendance[] = [
   { studentId: "st-101", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 68, remarks: "Very regular and punctual. Keep it up!", teacherId: "tch-02", updatedAt: new Date().toISOString() },
   { studentId: "st-102", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 62, remarks: "Good attendance. Well done.", teacherId: "tch-02", updatedAt: new Date().toISOString() },
-  { studentId: "st-103", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 70, remarks: "Perfect attendance score!", teacherId: "tch-03", updatedAt: new Date().toISOString() }
+  { studentId: "st-103", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 70, remarks: "Perfect attendance score!", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-107", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 69, remarks: "Excellent attendance record.", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-108", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 67, remarks: "Very good attendance.", teacherId: "tch-03", updatedAt: new Date().toISOString() }
 ];

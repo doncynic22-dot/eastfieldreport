@@ -80,10 +80,19 @@ export interface ReportConfig {
   principalSignatureUrl?: string;
   schoolLogoText?: string;
   schoolLogoUrl?: string;
-  classScoreWeight: number; // e.g., 30 for 30%
-  examScoreWeight: number;  // e.g., 70 for 70%
+  classScoreWeight: number; // e.g., 50 for 50%
+  examScoreWeight: number;  // e.g., 50 for 50%
   selectedTemplate?: string; // 'dynamic' | 'compact' | 'high-fidelity' | 'classic'
   reopeningDate?: string; // e.g., '2026-09-15'
   lastPromotedYear?: string; // e.g., '2026/2027'
+  lastPromotionDate?: string;
+  prePromotionSnapshot?: Student[];
   autoPromoteOnReopening?: boolean;
+  schoolMotto?: string;
+  customNoticeNote?: string;
+  showPositionInClass?: boolean;
+  showConductColumn?: boolean;
+  showAttendanceSection?: boolean;
+  accentColor?: string;
+  watermarkText?: string;
 }

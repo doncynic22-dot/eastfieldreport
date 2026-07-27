@@ -93,6 +93,16 @@ ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS class_score_weight INTEGER
 ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS exam_score_weight INTEGER DEFAULT 50;
 ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS grading_scale JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS report_template VARCHAR DEFAULT 'dynamic';
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS reopening_date VARCHAR DEFAULT '2026-09-15';
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS last_promoted_year VARCHAR;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS auto_promote_on_reopening BOOLEAN DEFAULT true;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_motto VARCHAR DEFAULT 'Knowledge, Character & Excellence';
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS custom_notice_note TEXT;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_position_in_class BOOLEAN DEFAULT true;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_conduct_column BOOLEAN DEFAULT true;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_attendance_section BOOLEAN DEFAULT true;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS accent_color VARCHAR DEFAULT '#1e1b4b';
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS watermark_text VARCHAR DEFAULT 'EASTFIELD ACADEMY';
 ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
 
 -- 2. Fix ea_students table columns
@@ -177,6 +187,16 @@ CREATE TABLE IF NOT EXISTS public.ea_config (
   exam_score_weight INTEGER NOT NULL DEFAULT 50,
   grading_scale JSONB NOT NULL DEFAULT '[]'::jsonb,
   report_template VARCHAR DEFAULT 'dynamic',
+  reopening_date VARCHAR DEFAULT '2026-09-15',
+  last_promoted_year VARCHAR,
+  auto_promote_on_reopening BOOLEAN DEFAULT true,
+  school_motto VARCHAR DEFAULT 'Knowledge, Character & Excellence',
+  custom_notice_note TEXT,
+  show_position_in_class BOOLEAN DEFAULT true,
+  show_conduct_column BOOLEAN DEFAULT true,
+  show_attendance_section BOOLEAN DEFAULT true,
+  accent_color VARCHAR DEFAULT '#1e1b4b',
+  watermark_text VARCHAR DEFAULT 'EASTFIELD ACADEMY',
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -251,6 +271,16 @@ ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS class_score_weight INTEGER
 ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS exam_score_weight INTEGER DEFAULT 50;
 ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS grading_scale JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS report_template VARCHAR DEFAULT 'dynamic';
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS reopening_date VARCHAR DEFAULT '2026-09-15';
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS last_promoted_year VARCHAR;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS auto_promote_on_reopening BOOLEAN DEFAULT true;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_motto VARCHAR DEFAULT 'Knowledge, Character & Excellence';
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS custom_notice_note TEXT;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_position_in_class BOOLEAN DEFAULT true;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_conduct_column BOOLEAN DEFAULT true;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_attendance_section BOOLEAN DEFAULT true;
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS accent_color VARCHAR DEFAULT '#1e1b4b';
+ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS watermark_text VARCHAR DEFAULT 'EASTFIELD ACADEMY';
 ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
 
 -- B. Fix ea_students table columns
@@ -537,13 +567,14 @@ export async function testSupabaseConnection(): Promise<{ success: boolean; mess
 }
 
 // Helper to perform upserts that dynamically heal when columns are missing from the database schema cache
-async function safeUpsert(table: string, payload: any, client: SupabaseClient): Promise<{ data: any; error: any }> {
+async function safeUpsert(table: string, payload: any, client: SupabaseClient, onConflict?: string): Promise<{ data: any; error: any }> {
   let currentPayload = JSON.parse(JSON.stringify(payload));
   let attempts = 0;
   const maxAttempts = 15; // safety limit to prevent infinite loops
 
   while (attempts < maxAttempts) {
-    const { data, error } = await client.from(table).upsert(currentPayload);
+    const upsertOptions = onConflict ? { onConflict } : undefined;
+    const { data, error } = await client.from(table).upsert(currentPayload, upsertOptions);
     if (!error) {
       return { data, error: null };
     }
@@ -664,16 +695,23 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
       schoolYear: data.school_year || '2025/2026',
       term: data.term || 'Term 1',
       principalName: data.principal_name || 'Dr. Evelyn Asare-Bediako',
-      principalSignatureUrl: data.principal_signature_url || null,
+      principalSignatureUrl: data.principal_signature_url || undefined,
       schoolLogoText: data.school_logo_text || 'EA',
-      schoolLogoUrl: data.school_logo_url || null,
+      schoolLogoUrl: data.school_logo_url || undefined,
       classScoreWeight: data.class_score_weight !== undefined && data.class_score_weight !== null ? data.class_score_weight : 50,
       examScoreWeight: data.exam_score_weight !== undefined && data.exam_score_weight !== null ? data.exam_score_weight : 50,
       gradingScale: data.grading_scale || [],
       selectedTemplate: data.report_template || 'dynamic',
       reopeningDate: data.reopening_date || undefined,
       lastPromotedYear: data.last_promoted_year || undefined,
-      autoPromoteOnReopening: data.auto_promote_on_reopening !== undefined ? data.auto_promote_on_reopening : true
+      autoPromoteOnReopening: data.auto_promote_on_reopening !== undefined ? data.auto_promote_on_reopening : true,
+      schoolMotto: data.school_motto || 'Knowledge, Character & Excellence',
+      customNoticeNote: data.custom_notice_note || undefined,
+      showPositionInClass: data.show_position_in_class !== undefined ? data.show_position_in_class : true,
+      showConductColumn: data.show_conduct_column !== undefined ? data.show_conduct_column : true,
+      showAttendanceSection: data.show_attendance_section !== undefined ? data.show_attendance_section : true,
+      accentColor: data.accent_color || '#1e1b4b',
+      watermarkText: data.watermark_text || undefined
     };
   } catch (err: any) {
     if (isMissingTableOrConnectionError(err)) {
@@ -685,8 +723,12 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
 }
 
 export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean> {
+  // Always persist to local storage immediately
+  localStorage.setItem('mock_supabase_ea_config', JSON.stringify(config));
+  localStorage.setItem('ea_config', JSON.stringify(config));
+
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) return true;
   try {
     const payload = {
       id: 'global_config',
@@ -704,6 +746,13 @@ export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean>
       reopening_date: config.reopeningDate || null,
       last_promoted_year: config.lastPromotedYear || null,
       auto_promote_on_reopening: config.autoPromoteOnReopening !== undefined ? config.autoPromoteOnReopening : true,
+      school_motto: config.schoolMotto || null,
+      custom_notice_note: config.customNoticeNote || null,
+      show_position_in_class: config.showPositionInClass !== undefined ? config.showPositionInClass : true,
+      show_conduct_column: config.showConductColumn !== undefined ? config.showConductColumn : true,
+      show_attendance_section: config.showAttendanceSection !== undefined ? config.showAttendanceSection : true,
+      accent_color: config.accentColor || null,
+      watermark_text: config.watermarkText || null,
       updated_at: new Date().toISOString()
     };
     let { error } = await safeUpsert('ea_config', payload, client);
@@ -987,8 +1036,12 @@ export async function fetchSupabaseGrades(): Promise<Grade[] | null> {
 }
 
 export async function saveSupabaseGrades(grades: Grade[]): Promise<boolean> {
+  // Always persist to local cache immediately to guarantee offline/local persistence
+  localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(grades));
+  localStorage.setItem('ea_grades', JSON.stringify(grades));
+
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) return true;
   try {
     const payloads = grades.map(g => ({
       student_id: g.studentId,
@@ -998,26 +1051,19 @@ export async function saveSupabaseGrades(grades: Grade[]): Promise<boolean> {
       total_score: g.totalScore,
       grade_letter: g.gradeLetter,
       remarks: g.remarks,
-      term: g.term,
-      year: g.year,
+      term: g.term || 'Term 1',
+      year: g.year || '2025/2026',
       teacher_id: g.teacherId,
       updated_at: g.updatedAt || new Date().toISOString()
     }));
-    const { error } = await safeUpsert('ea_grades', payloads, client);
+    const { error } = await safeUpsert('ea_grades', payloads, client, 'student_id,subject_id,term,year');
     if (error) {
-      if (isMissingTableOrConnectionError(error)) {
-        localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(grades));
-        return true;
-      }
-      return false;
+      console.warn('Supabase saveSupabaseGrades sync error, fallback to local storage preserved:', error);
+      return true;
     }
     return true;
   } catch (err: any) {
-    if (isMissingTableOrConnectionError(err)) {
-      localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(grades));
-      return true;
-    }
-    localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(grades));
+    console.warn('Supabase saveSupabaseGrades exception, fallback to local storage preserved:', err);
     return true;
   }
 }
@@ -1056,34 +1102,31 @@ export async function fetchSupabaseAttendance(): Promise<Attendance[] | null> {
 }
 
 export async function saveSupabaseAttendance(attendance: Attendance[]): Promise<boolean> {
+  // Always persist to local cache immediately to guarantee offline/local persistence
+  localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
+  localStorage.setItem('ea_attendance', JSON.stringify(attendance));
+
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) return true;
   try {
     const payloads = attendance.map(a => ({
       student_id: a.studentId,
-      term: a.term,
-      year: a.year,
+      term: a.term || 'Term 1',
+      year: a.year || '2025/2026',
       total_days: a.totalDays,
       days_present: a.daysPresent,
       remarks: a.remarks,
       teacher_id: a.teacherId,
       updated_at: a.updatedAt || new Date().toISOString()
     }));
-    const { error } = await safeUpsert('ea_attendance', payloads, client);
+    const { error } = await safeUpsert('ea_attendance', payloads, client, 'student_id,term,year');
     if (error) {
-      if (isMissingTableOrConnectionError(error)) {
-        localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
-        return true;
-      }
-      return false;
+      console.warn('Supabase saveSupabaseAttendance sync error, fallback to local storage preserved:', error);
+      return true;
     }
     return true;
   } catch (err: any) {
-    if (isMissingTableOrConnectionError(err)) {
-      localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
-      return true;
-    }
-    localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
+    console.warn('Supabase saveSupabaseAttendance exception, fallback to local storage preserved:', err);
     return true;
   }
 }

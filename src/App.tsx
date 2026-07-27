@@ -269,19 +269,32 @@ export default function App() {
         console.warn("Failed fetching grades from Supabase. Falling back to local cache.", err);
       }
 
+      let activeGrades = localGrades;
       if (gradesFetchSuccess && sGrades !== null) {
-        if (sGrades.length === 0 && localGrades.length > 0) {
-          try {
-            await saveSupabaseGrades(localGrades);
-            setGrades(localGrades);
-          } catch (seedErr) {
-            console.error("Failed seeding grades to Supabase:", seedErr);
-            setGrades(localGrades);
+        // Smart merge local and Supabase grades so no local records are wiped out
+        const gradeMap = new Map<string, Grade>();
+        sGrades.forEach(g => {
+          const key = `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
+          gradeMap.set(key, g);
+        });
+        localGrades.forEach(g => {
+          const key = `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
+          const existing = gradeMap.get(key);
+          if (!existing) {
+            gradeMap.set(key, g);
+          } else {
+            const localTime = g.updatedAt ? new Date(g.updatedAt).getTime() : 0;
+            const remoteTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+            if (localTime >= remoteTime) {
+              gradeMap.set(key, g);
+            }
           }
-        } else {
-          setGrades(sGrades);
-          localStorage.setItem('ea_grades', JSON.stringify(sGrades));
-        }
+        });
+        activeGrades = Array.from(gradeMap.values());
+        setGrades(activeGrades);
+        localStorage.setItem('ea_grades', JSON.stringify(activeGrades));
+        localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(activeGrades));
+        saveSupabaseGrades(activeGrades).catch(e => console.warn("Background sync grades failed", e));
       } else {
         setGrades(localGrades);
       }
@@ -296,19 +309,31 @@ export default function App() {
         console.warn("Failed fetching attendance from Supabase. Falling back to local cache.", err);
       }
 
+      let activeAttendance = localAttendance;
       if (attendanceFetchSuccess && sAttendance !== null) {
-        if (sAttendance.length === 0 && localAttendance.length > 0) {
-          try {
-            await saveSupabaseAttendance(localAttendance);
-            setAttendance(localAttendance);
-          } catch (seedErr) {
-            console.error("Failed seeding attendance to Supabase:", seedErr);
-            setAttendance(localAttendance);
+        const attMap = new Map<string, Attendance>();
+        sAttendance.forEach(a => {
+          const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+          attMap.set(key, a);
+        });
+        localAttendance.forEach(a => {
+          const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+          const existing = attMap.get(key);
+          if (!existing) {
+            attMap.set(key, a);
+          } else {
+            const localTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+            const remoteTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+            if (localTime >= remoteTime) {
+              attMap.set(key, a);
+            }
           }
-        } else {
-          setAttendance(sAttendance);
-          localStorage.setItem('ea_attendance', JSON.stringify(sAttendance));
-        }
+        });
+        activeAttendance = Array.from(attMap.values());
+        setAttendance(activeAttendance);
+        localStorage.setItem('ea_attendance', JSON.stringify(activeAttendance));
+        localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(activeAttendance));
+        saveSupabaseAttendance(activeAttendance).catch(e => console.warn("Background sync attendance failed", e));
       } else {
         setAttendance(localAttendance);
       }
@@ -323,7 +348,13 @@ export default function App() {
   };
 
   // Push all local states to Supabase
-  const handlePushToSupabase = async () => {
+  const handlePushToSupabase = async (
+    customStudents?: Student[],
+    customConfig?: ReportConfig,
+    customTeachers?: User[],
+    customGrades?: Grade[],
+    customAttendance?: Attendance[]
+  ) => {
     setIsSupabaseSyncing(true);
     try {
       const active = await checkSupabaseStatus();
@@ -332,11 +363,17 @@ export default function App() {
         return false;
       }
 
-      const okConfig = await saveSupabaseConfig(config);
-      const okStudents = await saveSupabaseStudents(students);
-      const okTeachers = await saveSupabaseTeachers(teachers);
-      const okGrades = await saveSupabaseGrades(grades);
-      const okAttendance = await saveSupabaseAttendance(attendance);
+      const targetConfig = customConfig || config;
+      const targetStudents = customStudents || students;
+      const targetTeachers = customTeachers || teachers;
+      const targetGrades = customGrades || grades;
+      const targetAttendance = customAttendance || attendance;
+
+      const okConfig = await saveSupabaseConfig(targetConfig);
+      const okStudents = await saveSupabaseStudents(targetStudents);
+      const okTeachers = await saveSupabaseTeachers(targetTeachers);
+      const okGrades = await saveSupabaseGrades(targetGrades);
+      const okAttendance = await saveSupabaseAttendance(targetAttendance);
 
       setIsSupabaseSyncing(false);
       return okConfig && okStudents && okTeachers && okGrades && okAttendance;
@@ -457,12 +494,27 @@ export default function App() {
   useEffect(() => {
     if (!isInitialized || students.length === 0) return;
     if (config.autoPromoteOnReopening !== false && isAutoPromotionDue(config)) {
+      const preSnapshot = JSON.parse(JSON.stringify(students));
       const result = promoteStudents(students, config.schoolYear);
+      const updatedConfig: ReportConfig = {
+        ...config,
+        lastPromotedYear: config.schoolYear,
+        lastPromotionDate: new Date().toISOString(),
+        prePromotionSnapshot: preSnapshot
+      };
+
       setStudents(result.promotedStudents);
-      const updatedConfig = { ...config, lastPromotedYear: config.schoolYear };
       setConfig(updatedConfig);
+
       localStorage.setItem('ea_students', JSON.stringify(result.promotedStudents));
       localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+      localStorage.setItem('ea_pre_promotion_students', JSON.stringify(preSnapshot));
+
+      const creds = getSupabaseCredentials();
+      if (creds.isConfigured) {
+        saveSupabaseStudents(result.promotedStudents);
+        saveSupabaseConfig(updatedConfig);
+      }
     }
   }, [isInitialized, config, students.length]);
 
@@ -937,6 +989,7 @@ export default function App() {
                 setTeachers={setTeachers}
                 subjects={INITIAL_SUBJECTS}
                 grades={grades}
+                setGrades={setGrades}
                 attendance={attendance}
                 setAttendance={setAttendance}
                 config={config}

@@ -228,7 +228,21 @@
   }
 
   .page-break {
-    page-break-after: always;
-    break-after: page;
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+
+  /* Bulk Print Report Cards */
+  .bulk-report-card {
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .bulk-report-card:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
   }
 }

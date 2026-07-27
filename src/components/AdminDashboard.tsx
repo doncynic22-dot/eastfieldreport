@@ -5,11 +5,11 @@
 
 import React, { useState } from 'react';
 import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel } from '../types';
-import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2 } from 'lucide-react';
+import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink } from 'lucide-react';
 import ReportPDF from './ReportPDF';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
-import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue } from '../services/promotionService';
+import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion } from '../services/promotionService';
 
 interface AdminDashboardProps {
   students: Student[];
@@ -18,6 +18,7 @@ interface AdminDashboardProps {
   setTeachers: React.Dispatch<React.SetStateAction<User[]>>;
   subjects: Subject[];
   grades: Grade[];
+  setGrades?: React.Dispatch<React.SetStateAction<Grade[]>>;
   attendance: Attendance[];
   setAttendance: React.Dispatch<React.SetStateAction<Attendance[]>>;
   config: ReportConfig;
@@ -27,7 +28,7 @@ interface AdminDashboardProps {
   supabaseStatus?: { isConfigured: boolean; isConnected: boolean; message: string };
   isSupabaseSyncing?: boolean;
   onPullFromSupabase?: () => Promise<boolean>;
-  onPushToSupabase?: () => Promise<boolean>;
+  onPushToSupabase?: (customStudents?: Student[], customConfig?: ReportConfig) => Promise<boolean>;
   onCheckSupabaseStatus?: () => Promise<boolean>;
   storedAdminPassword?: string;
   onUpdateAdminPassword?: (newPass: string) => void;
@@ -43,6 +44,7 @@ export default function AdminDashboard({
   setTeachers,
   subjects,
   grades,
+  setGrades,
   attendance,
   setAttendance,
   config,
@@ -135,6 +137,38 @@ export default function AdminDashboard({
   const [bulkDispatchStatus, setBulkDispatchStatus] = useState<Record<string, 'SENT' | 'SKIPPED' | 'PENDING'>>({});
   const [showCopiedDigestMsg, setShowCopiedDigestMsg] = useState(false);
 
+  // Bulk Printing states
+  const [showBulkPrintModal, setShowBulkPrintModal] = useState(false);
+  const [bulkPrintClass, setBulkPrintClass] = useState<string>('Primary 4');
+  const [selectedBulkStudentIds, setSelectedBulkStudentIds] = useState<string[]>([]);
+  const [bulkStudentSearch, setBulkStudentSearch] = useState<string>('');
+
+  const handleOpenBulkPrintModal = (targetClass?: string) => {
+    const cls = targetClass || selectedClass || 'Primary 4';
+    setBulkPrintClass(cls);
+    const clsStudents = cls === 'ALL' ? students : students.filter(s => s.className === cls);
+    setSelectedBulkStudentIds(clsStudents.map(s => s.id));
+    setBulkStudentSearch('');
+    setShowBulkPrintModal(true);
+  };
+
+  const handleToggleStudentBulkSelection = (studentId: string) => {
+    setSelectedBulkStudentIds(prev =>
+      prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]
+    );
+  };
+
+  const handleToggleSelectAllBulkStudents = (currentList: Student[]) => {
+    const currentIds = currentList.map(s => s.id);
+    const allSelected = currentIds.every(id => selectedBulkStudentIds.includes(id));
+    if (allSelected) {
+      setSelectedBulkStudentIds(prev => prev.filter(id => !currentIds.includes(id)));
+    } else {
+      const newSelected = Array.from(new Set([...selectedBulkStudentIds, ...currentIds]));
+      setSelectedBulkStudentIds(newSelected);
+    }
+  };
+
   // First Term Promotion states
   const [showPromotionModal, setShowPromotionModal] = useState(false);
   const [promotionSuccessMsg, setPromotionSuccessMsg] = useState('');
@@ -142,24 +176,70 @@ export default function AdminDashboard({
 
   const handleExecutePromotion = (targetYear?: string) => {
     const activeYear = targetYear || config.schoolYear;
+    const preSnapshot = JSON.parse(JSON.stringify(students));
     const result = promoteStudents(students, activeYear);
     
     setStudents(result.promotedStudents);
     
     const updatedConfig: ReportConfig = {
       ...config,
-      lastPromotedYear: activeYear
+      lastPromotedYear: activeYear,
+      lastPromotionDate: new Date().toISOString(),
+      prePromotionSnapshot: preSnapshot
     };
     setConfig(updatedConfig);
     
     localStorage.setItem('ea_students', JSON.stringify(result.promotedStudents));
     localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+    localStorage.setItem('ea_pre_promotion_students', JSON.stringify(preSnapshot));
+
     if (getSupabaseCredentials().isConfigured) {
-      onPushToSupabase?.();
+      onPushToSupabase?.(result.promotedStudents, updatedConfig);
     }
 
     setPromotionSuccessMsg(`🎓 Promotion complete! Migrated ${result.promotedCount} pupils (${result.graduatedCount} JHS graduates) for ${activeYear}.`);
-    setTimeout(() => setPromotionSuccessMsg(''), 8000);
+    setTimeout(() => setPromotionSuccessMsg(''), 10000);
+    setShowPromotionModal(false);
+  };
+
+  const handleUndoPromotion = () => {
+    if (!confirm('Are you sure you want to REVERSE / UNDO student promotion? This will restore all pupils back to their previous grade levels before promotion.')) {
+      return;
+    }
+
+    let snapshot = config.prePromotionSnapshot;
+    if (!snapshot || !Array.isArray(snapshot) || snapshot.length === 0) {
+      const cached = localStorage.getItem('ea_pre_promotion_students');
+      if (cached) {
+        try {
+          snapshot = JSON.parse(cached);
+        } catch (e) {
+          console.warn('Failed parsing cached pre-promotion snapshot', e);
+        }
+      }
+    }
+
+    const { restoredStudents, revertedCount } = undoPromotion(students, snapshot);
+
+    setStudents(restoredStudents);
+
+    const updatedConfig: ReportConfig = {
+      ...config,
+      lastPromotedYear: undefined,
+      prePromotionSnapshot: undefined
+    };
+    setConfig(updatedConfig);
+
+    localStorage.setItem('ea_students', JSON.stringify(restoredStudents));
+    localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+    localStorage.removeItem('ea_pre_promotion_students');
+
+    if (getSupabaseCredentials().isConfigured) {
+      onPushToSupabase?.(restoredStudents, updatedConfig);
+    }
+
+    setPromotionSuccessMsg(`↺ Promotion successfully reversed! Restored ${revertedCount} pupils to their pre-promotion class levels.`);
+    setTimeout(() => setPromotionSuccessMsg(''), 10000);
     setShowPromotionModal(false);
   };
 
@@ -342,6 +422,48 @@ export default function AdminDashboard({
       return copy;
     });
     setLogoUploadError('');
+  };
+
+  const [signatureUploadError, setSignatureUploadError] = useState<string>('');
+
+  const handleSignatureFile = async (file: File) => {
+    setSignatureUploadError('');
+    if (!file.type.startsWith('image/')) {
+      setSignatureUploadError('Unsupported file type. Please upload an image file (PNG, JPG, or SVG).');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setSignatureUploadError('Signature file too large. Please upload an image under 2MB.');
+      return;
+    }
+    try {
+      const resizedBase64 = await resizeImage(file, 250, 100);
+      if (resizedBase64) {
+        setConfig(prev => ({
+          ...prev,
+          principalSignatureUrl: resizedBase64
+        }));
+      } else {
+        setSignatureUploadError('Failed to read and process signature image.');
+      }
+    } catch (err) {
+      setSignatureUploadError('Failed to process signature image.');
+    }
+  };
+
+  const handleSignatureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleSignatureFile(e.target.files[0]);
+    }
+  };
+
+  const handleClearSignature = () => {
+    setConfig(prev => {
+      const copy = { ...prev };
+      delete copy.principalSignatureUrl;
+      return copy;
+    });
+    setSignatureUploadError('');
   };
 
   // 1. CALCULATE ANALYTICS
@@ -835,14 +957,24 @@ export default function AdminDashboard({
 
       {/* Promotion Success Message */}
       {promotionSuccessMsg && (
-        <div className="p-3.5 bg-green-600 text-white rounded-xl text-xs font-semibold flex items-center justify-between gap-2 shadow-md animate-fadeIn no-print">
+        <div className="p-3.5 bg-green-700 text-white rounded-xl text-xs font-semibold flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md animate-fadeIn no-print">
           <div className="flex items-center gap-2">
-            <Check className="w-4 h-4 text-green-200 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-green-200 shrink-0" />
             <span>{promotionSuccessMsg}</span>
           </div>
-          <button onClick={() => setPromotionSuccessMsg('')} className="text-white hover:text-green-100 font-bold p-1 cursor-pointer">
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleUndoPromotion}
+              className="px-2.5 py-1 bg-amber-400 hover:bg-amber-300 text-amber-950 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition cursor-pointer"
+              title="Reverse student promotion"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Undo Promotion</span>
+            </button>
+            <button onClick={() => setPromotionSuccessMsg('')} className="text-white hover:text-green-100 font-bold p-1 cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -869,13 +1001,26 @@ export default function AdminDashboard({
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setShowPromotionModal(true)}
-          className="px-3.5 py-2 bg-yellow-400 hover:bg-yellow-300 text-blue-950 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 shrink-0 shadow-sm cursor-pointer w-full sm:w-auto"
-        >
-          <GraduationCap className="w-4 h-4" />
-          <span>Review & Execute Student Promotion</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
+          <button
+            onClick={() => setShowPromotionModal(true)}
+            className="px-3.5 py-2 bg-yellow-400 hover:bg-yellow-300 text-blue-950 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 shrink-0 shadow-sm cursor-pointer flex-1 sm:flex-none"
+          >
+            <GraduationCap className="w-4 h-4" />
+            <span>Review & Execute Promotion</span>
+          </button>
+
+          {(config.lastPromotedYear === config.schoolYear || config.prePromotionSnapshot || localStorage.getItem('ea_pre_promotion_students')) && (
+            <button
+              onClick={handleUndoPromotion}
+              className="px-3 py-2 bg-rose-600/90 hover:bg-rose-600 text-white font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 shrink-0 shadow-sm cursor-pointer border border-rose-400/40 flex-1 sm:flex-none"
+              title="Undo / Reverse promotion and restore pupils to pre-promotion classes"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-yellow-300" />
+              <span>Undo Promotion</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 2. TAB TOGGLES */}
@@ -1025,6 +1170,18 @@ export default function AdminDashboard({
               </button>
             </div>
 
+            {/* Hardcopy Bulk Print Button */}
+            <div className="pt-2 border-t border-mauve-500/10 space-y-1">
+              <label className="text-[10px] uppercase font-bold text-mauve-900 block">4. Hardcopy Bulk Print</label>
+              <button
+                onClick={() => handleOpenBulkPrintModal(selectedClass)}
+                className="w-full bg-mauve-900 hover:bg-mauve-800 active:scale-[0.98] text-white font-bold py-2 px-3 rounded text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shadow-sm uppercase tracking-wider"
+              >
+                <Printer className="w-3.5 h-3.5 shrink-0" />
+                <span>Bulk Print Class ({studentsInSelectedClass.length})</span>
+              </button>
+            </div>
+
             <div className="pt-2 border-t border-mauve-500/10 text-[11px] text-gray-500 space-y-1 bg-mauve-100/50 p-2.5 rounded border border-mauve-500/10 leading-relaxed">
               <span className="font-bold text-mauve-900 uppercase block text-[10px]">System Assistant</span>
               <p>Selecting a student dynamically loads their term marks, calculated class rank, and attendance review sheets into the A4 viewer.</p>
@@ -1036,16 +1193,70 @@ export default function AdminDashboard({
             {selectedStudent ? (
               <ReportPDF
                 student={selectedStudent}
-                grades={grades.filter((g) => g.studentId === selectedStudent.id)}
-                attendance={attendance.find((a) => a.studentId === selectedStudent.id)}
+                grades={
+                  grades.filter((g) => g.studentId === selectedStudent.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear)).length > 0
+                    ? grades.filter((g) => g.studentId === selectedStudent.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear))
+                    : grades.filter((g) => g.studentId === selectedStudent.id)
+                }
+                attendance={
+                  attendance.find((a) => a.studentId === selectedStudent.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear)) ||
+                  attendance.find((a) => a.studentId === selectedStudent.id)
+                }
                 subjects={subjects}
                 config={config}
                 allClassStudents={students.filter((s) => s.className === selectedStudent.className)}
                 allGrades={grades}
+                onUpdateGrade={(subjectId, classScore, examScore, nurseryRemark) => {
+                  const studentId = selectedStudent.id;
+                  const totalScore = Math.min(100, Math.max(0, classScore + examScore));
+                  const rule = config.gradingScale?.find((r) => totalScore >= r.minScore && totalScore <= r.maxScore);
+                  const gradeLetter = rule ? rule.grade : (totalScore >= 80 ? 'A' : totalScore >= 70 ? 'B' : totalScore >= 60 ? 'C' : totalScore >= 50 ? 'D' : totalScore >= 40 ? 'E' : 'F');
+                  const remarks = rule ? rule.remarks : (totalScore >= 80 ? 'Excellent' : totalScore >= 70 ? 'Very Good' : totalScore >= 60 ? 'Good' : totalScore >= 50 ? 'Credit' : totalScore >= 40 ? 'Pass' : 'Fail');
+
+                  const updatedGrades = [...grades];
+                  const existingIndex = updatedGrades.findIndex(
+                    (g) => g.studentId === studentId && g.subjectId === subjectId && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear)
+                  );
+
+                  const gradeRecord: Grade = {
+                    studentId,
+                    subjectId,
+                    classScore,
+                    examScore,
+                    totalScore,
+                    gradeLetter,
+                    remarks,
+                    nurseryRemark,
+                    term: config.term || 'Term 1',
+                    year: config.schoolYear || '2025/2026',
+                    teacherId: 'admin',
+                    updatedAt: new Date().toISOString()
+                  };
+
+                  if (existingIndex !== -1) {
+                    updatedGrades[existingIndex] = {
+                      ...updatedGrades[existingIndex],
+                      ...gradeRecord
+                    };
+                  } else {
+                    updatedGrades.push(gradeRecord);
+                  }
+
+                  if (setGrades) {
+                    setGrades(updatedGrades);
+                  }
+
+                  localStorage.setItem('ea_grades', JSON.stringify(updatedGrades));
+                  localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(updatedGrades));
+
+                  if (getSupabaseCredentials().isConfigured) {
+                    saveSupabaseGrades(updatedGrades).catch((err) => console.warn('Supabase save grade error', err));
+                  }
+                }}
                 onUpdateAttendance={(daysPresent, totalDays, remarks) => {
                   const studentId = selectedStudent.id;
                   setAttendance((prev) => {
-                    const existingIndex = prev.findIndex((a) => a.studentId === studentId);
+                    const existingIndex = prev.findIndex((a) => a.studentId === studentId && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear));
                     const newRecord: Attendance = {
                       studentId,
                       term: config.term || 'Term 1',
@@ -1056,8 +1267,10 @@ export default function AdminDashboard({
                       teacherId: 'admin',
                       updatedAt: new Date().toISOString()
                     };
+
+                    let updated: Attendance[];
                     if (existingIndex !== -1) {
-                      const updated = [...prev];
+                      updated = [...prev];
                       updated[existingIndex] = {
                         ...updated[existingIndex],
                         totalDays,
@@ -1065,10 +1278,18 @@ export default function AdminDashboard({
                         remarks: remarks ?? updated[existingIndex].remarks,
                         updatedAt: new Date().toISOString()
                       };
-                      return updated;
                     } else {
-                      return [...prev, newRecord];
+                      updated = [...prev, newRecord];
                     }
+
+                    localStorage.setItem('ea_attendance', JSON.stringify(updated));
+                    localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(updated));
+
+                    if (getSupabaseCredentials().isConfigured) {
+                      saveSupabaseAttendance(updated).catch((err) => console.warn('Supabase save attendance error', err));
+                    }
+
+                    return updated;
                   });
                 }}
               />
@@ -1087,6 +1308,13 @@ export default function AdminDashboard({
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <h3 className="font-display font-bold text-mauve-900 text-base uppercase tracking-wide">Student Admissions Registry</h3>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleOpenBulkPrintModal(studentClassFilter !== 'ALL' ? studentClassFilter : 'ALL')}
+                className="bg-mauve-900 hover:bg-mauve-800 text-white font-bold px-3.5 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
+                title="Bulk print academic report cards for selected class"
+              >
+                <Printer className="w-3.5 h-3.5" /> Bulk Print Reports
+              </button>
               <button
                 onClick={() => setShowPromotionModal(true)}
                 className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold px-3.5 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
@@ -2102,6 +2330,144 @@ export default function AdminDashboard({
                   </div>
                 </div>
               </div>
+
+              {/* ADVANCE CUSTOMISATION OPTIONS */}
+              <div className="space-y-4 pt-4 border-t border-mauve-200">
+                <div className="flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-mauve-900" />
+                  <h4 className="text-xs font-bold text-mauve-900 uppercase tracking-widest">
+                    Advance Customisation Options & Branding
+                  </h4>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  {/* School Motto */}
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-mauve-800 block">School Motto</label>
+                    <input
+                      type="text"
+                      value={config.schoolMotto || ''}
+                      onChange={(e) => setConfig(prev => ({ ...prev, schoolMotto: e.target.value }))}
+                      placeholder="e.g. Knowledge, Character & Excellence"
+                      className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
+                    />
+                    <span className="text-[10px] text-gray-500 block">Displayed prominently below the school title on PDF report cards.</span>
+                  </div>
+
+                  {/* Watermark Text */}
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-mauve-800 block">Transcript Watermark Text</label>
+                    <input
+                      type="text"
+                      value={config.watermarkText || ''}
+                      onChange={(e) => setConfig(prev => ({ ...prev, watermarkText: e.target.value }))}
+                      placeholder="e.g. EASTFIELD ACADEMY"
+                      className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white font-mono"
+                    />
+                    <span className="text-[10px] text-gray-500 block">Subtle diagonal watermark overlay rendered on official transcripts.</span>
+                  </div>
+
+                  {/* Custom Administrative Notice Note */}
+                  <div className="md:col-span-2 space-y-1.5">
+                    <label className="font-semibold text-mauve-800 block">Custom Administrative Notice / Remarks</label>
+                    <textarea
+                      rows={2}
+                      value={config.customNoticeNote || ''}
+                      onChange={(e) => setConfig(prev => ({ ...prev, customNoticeNote: e.target.value }))}
+                      placeholder="e.g. Next term fees are due on reopening date. All students are requested to be in full ceremonial uniform."
+                      className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
+                    />
+                    <span className="text-[10px] text-gray-500 block">Broadcasting note displayed in a dedicated callout on report cards and parent emails.</span>
+                  </div>
+
+                  {/* Digital Principal Signature Upload */}
+                  <div className="md:col-span-2 p-3.5 bg-mauve-50/40 border border-mauve-200/80 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-mauve-900 block">Head Principal Digital Authentication Signature</span>
+                      {config.principalSignatureUrl && (
+                        <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          Signature Synced
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                      {config.principalSignatureUrl ? (
+                        <div className="flex items-center gap-3 bg-white p-2.5 rounded-lg border border-mauve-200 shrink-0">
+                          <img
+                            src={config.principalSignatureUrl}
+                            alt="Principal Signature"
+                            className="h-10 object-contain max-w-[140px]"
+                            referrerPolicy="no-referrer"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleClearSignature}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition"
+                            title="Remove Signature"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="w-32 h-10 border border-dashed border-mauve-300 rounded flex items-center justify-center text-gray-400 text-[10px] italic bg-white shrink-0">
+                          No signature image
+                        </div>
+                      )}
+
+                      <div className="flex-1 space-y-1">
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-mauve-900 hover:bg-mauve-800 text-white font-bold rounded-lg text-xs cursor-pointer transition shadow-xs">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Signature Image</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleSignatureChange}
+                          />
+                        </label>
+                        <p className="text-[10px] text-gray-500">PNG or JPG signature on transparent or white background. Auto-embeds in PDF Principal Endorsement block.</p>
+                        {signatureUploadError && (
+                          <p className="text-[10px] text-red-600">{signatureUploadError}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Display & Layout Toggles */}
+                  <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-white rounded-xl border border-mauve-200">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={config.showPositionInClass !== false}
+                        onChange={(e) => setConfig(prev => ({ ...prev, showPositionInClass: e.target.checked }))}
+                        className="w-4 h-4 rounded text-mauve-900 focus:ring-mauve-500"
+                      />
+                      <span className="font-medium text-mauve-900">Show Class Rank / Position</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={config.showConductColumn !== false}
+                        onChange={(e) => setConfig(prev => ({ ...prev, showConductColumn: e.target.checked }))}
+                        className="w-4 h-4 rounded text-mauve-900 focus:ring-mauve-500"
+                      />
+                      <span className="font-medium text-mauve-900">Show Behavioral Conduct</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={config.showAttendanceSection !== false}
+                        onChange={(e) => setConfig(prev => ({ ...prev, showAttendanceSection: e.target.checked }))}
+                        className="w-4 h-4 rounded text-mauve-900 focus:ring-mauve-500"
+                      />
+                      <span className="font-medium text-mauve-900">Show Attendance Section</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -2623,7 +2989,18 @@ export default function AdminDashboard({
                 ℹ️ Promotion migrates student class levels. Historical grades & attendance for prior terms are preserved in past transcripts.
               </span>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
+                {(config.lastPromotedYear === config.schoolYear || config.prePromotionSnapshot || localStorage.getItem('ea_pre_promotion_students')) && (
+                  <button
+                    type="button"
+                    onClick={handleUndoPromotion}
+                    className="flex-1 sm:flex-none px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    title="Reverse promotion and return pupils to pre-promotion class levels"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Undo Promotion</span>
+                  </button>
+                )}
                 <button
                   onClick={() => setShowPromotionModal(false)}
                   className="flex-1 sm:flex-none px-4 py-2 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 font-bold rounded-xl text-xs transition cursor-pointer"
@@ -2636,6 +3013,267 @@ export default function AdminDashboard({
                 >
                   <GraduationCap className="w-4 h-4" />
                   <span>Execute First Term Promotion ({students.length} Pupils)</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* BULK PRINTING PORTAL MODAL */}
+      {showBulkPrintModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm p-2 sm:p-4 animate-fadeIn print:p-0 print:bg-white print:static print:inset-auto print:overflow-visible">
+          <div className="bg-white rounded-2xl border border-mauve-250 w-full max-w-6xl mx-auto p-4 sm:p-6 shadow-2xl space-y-4 text-mauve-900 my-4 print:shadow-none print:border-none print:p-0 print:my-0 print:max-w-none print:w-full">
+            
+            {/* Modal Header Controls - HIDE IN PRINT */}
+            <div className="no-print space-y-4 border-b border-mauve-150 pb-4">
+              <div className="flex justify-between items-start sm:items-center gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 bg-mauve-900 text-white rounded-xl shadow-sm">
+                    <Printer className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-display font-bold text-mauve-900 text-base sm:text-lg flex flex-wrap items-center gap-2">
+                      <span>Bulk Academic Report Printing Center</span>
+                      <span className="text-xs bg-mauve-100 text-mauve-900 border border-mauve-200 font-mono px-2.5 py-0.5 rounded-full font-bold">
+                        {bulkPrintClass === 'ALL' ? 'All Classes' : bulkPrintClass}
+                      </span>
+                    </h4>
+                    <p className="text-xs text-gray-500">
+                      Batch generate and hardcopy print official A4 report cards for pupils in <strong>{config.schoolName}</strong> ({config.term} {config.schoolYear}).
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowBulkPrintModal(false)}
+                  className="text-gray-400 hover:text-gray-600 font-bold cursor-pointer p-1.5 rounded-xl hover:bg-gray-100 transition shrink-0"
+                  title="Close Bulk Print Center"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Top Controls Bar */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 bg-mauve-50/60 p-3.5 rounded-xl border border-mauve-200/80 items-center">
+                {/* Class Selector */}
+                <div className="md:col-span-3 space-y-1">
+                  <label className="text-[10px] font-bold text-mauve-800 uppercase tracking-wider block">Target Class Roll</label>
+                  <select
+                    value={bulkPrintClass}
+                    onChange={(e) => {
+                      const newCls = e.target.value;
+                      setBulkPrintClass(newCls);
+                      const clsStudents = newCls === 'ALL' ? students : students.filter(s => s.className === newCls);
+                      setSelectedBulkStudentIds(clsStudents.map(s => s.id));
+                    }}
+                    className="w-full text-xs p-2 rounded-lg border border-mauve-200 bg-white text-mauve-900 font-bold focus:ring-2 focus:ring-mauve-900 outline-none"
+                  >
+                    <option value="ALL">-- All Classes Roll ({students.length} Pupils) --</option>
+                    {[...classes.NURSERY, ...(classes.KINDERGARTEN || []), ...classes.PRIMARY, ...classes.JHS].map((c) => {
+                      const cCount = students.filter(s => s.className === c).length;
+                      return (
+                        <option key={c} value={c}>{c} ({cCount} pupils)</option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                {/* Pupil Search */}
+                <div className="md:col-span-4 space-y-1">
+                  <label className="text-[10px] font-bold text-mauve-800 uppercase tracking-wider block">Filter Pupil Checklist</label>
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      value={bulkStudentSearch}
+                      onChange={(e) => setBulkStudentSearch(e.target.value)}
+                      placeholder="Search pupil name or roll number..."
+                      className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-mauve-200 bg-white text-mauve-900 focus:ring-2 focus:ring-mauve-900 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Actions & Print Exec */}
+                <div className="md:col-span-5 flex items-center justify-end gap-2 pt-2 md:pt-0">
+                  <button
+                    onClick={() => {
+                      const targetList = (bulkPrintClass === 'ALL' ? students : students.filter(s => s.className === bulkPrintClass))
+                        .filter(s => !bulkStudentSearch || s.name.toLowerCase().includes(bulkStudentSearch.toLowerCase()) || s.rollNumber.toLowerCase().includes(bulkStudentSearch.toLowerCase()));
+                      handleToggleSelectAllBulkStudents(targetList);
+                    }}
+                    className="px-3 py-2 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 font-bold text-xs rounded-lg transition cursor-pointer border border-mauve-200/60"
+                  >
+                    Toggle Select All
+                  </button>
+
+                  <button
+                    onClick={() => window.print()}
+                    disabled={selectedBulkStudentIds.length === 0}
+                    className="px-4 py-2 bg-mauve-900 hover:bg-mauve-800 active:scale-[0.98] disabled:opacity-50 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-md uppercase tracking-wider"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Print Hardcopies ({selectedBulkStudentIds.length})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Iframe warning notice if inside AI Studio preview iframe */}
+              {window.self !== window.top && (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs animate-fadeIn">
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-amber-900 flex items-center gap-1.5 uppercase text-[10px] tracking-wide">
+                      ⚠️ Secure Preview Frame Notice
+                    </span>
+                    <p className="text-[11px] text-amber-800">
+                      Browser preview iframes block direct `window.print()`. Click below to open in a new browser tab for full multi-page batch printing!
+                    </p>
+                  </div>
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider transition cursor-pointer shrink-0"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Open Bulk Print Window in New Tab</span>
+                  </a>
+                </div>
+              )}
+
+              {/* Student Checklist Selection Tray */}
+              {(() => {
+                const availableList = (bulkPrintClass === 'ALL' ? students : students.filter(s => s.className === bulkPrintClass))
+                  .filter(s => !bulkStudentSearch || s.name.toLowerCase().includes(bulkStudentSearch.toLowerCase()) || s.rollNumber.toLowerCase().includes(bulkStudentSearch.toLowerCase()));
+
+                return (
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-mauve-900 uppercase text-[10px] tracking-wider">
+                        Pupil Selection Checklist ({selectedBulkStudentIds.length} of {availableList.length} Checked)
+                      </span>
+                      <span className="text-gray-500 text-[11px]">
+                        Uncheck any pupil you do not wish to include in this print batch.
+                      </span>
+                    </div>
+
+                    {availableList.length === 0 ? (
+                      <div className="p-4 text-center text-gray-500 bg-gray-50 rounded-xl border border-dashed text-xs">
+                        No pupils match the selected class or search filter.
+                      </div>
+                    ) : (
+                      <div className="max-h-36 overflow-y-auto p-2 bg-white rounded-xl border border-mauve-200 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 text-xs">
+                        {availableList.map((st) => {
+                          const isSelected = selectedBulkStudentIds.includes(st.id);
+                          return (
+                            <label
+                              key={st.id}
+                              className={`flex items-center gap-2 p-1.5 rounded-lg border cursor-pointer transition select-none ${
+                                isSelected
+                                  ? 'bg-mauve-50 border-mauve-300 text-mauve-900 font-semibold'
+                                  : 'bg-gray-50/50 border-gray-200 text-gray-500 opacity-60'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleStudentBulkSelection(st.id)}
+                                className="rounded text-mauve-900 focus:ring-mauve-900 w-3.5 h-3.5 shrink-0"
+                              />
+                              <span className="truncate text-[11px]" title={`${st.name} (${st.rollNumber})`}>
+                                {st.name}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* MAIN BULK REPORT CARDS PRINT CONTAINER */}
+            <div className="bulk-print-container space-y-8 print:space-y-0">
+              {(() => {
+                const targetStudents = students.filter(s => selectedBulkStudentIds.includes(s.id));
+
+                if (targetStudents.length === 0) {
+                  return (
+                    <div className="p-12 text-center text-gray-500 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 space-y-3 no-print">
+                      <AlertCircle className="w-8 h-8 text-mauve-400 mx-auto" />
+                      <p className="font-semibold text-sm">No pupils selected for bulk printing.</p>
+                      <p className="text-xs text-gray-400">Select pupils from the checklist above to load their A4 report cards here.</p>
+                    </div>
+                  );
+                }
+
+                return targetStudents.map((st, idx) => {
+                  const stGrades = grades.filter(
+                    (g) => g.studentId === st.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear)
+                  ).length > 0
+                    ? grades.filter((g) => g.studentId === st.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear))
+                    : grades.filter((g) => g.studentId === st.id);
+
+                  const stAttendance = attendance.find(
+                    (a) => a.studentId === st.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear)
+                  ) || attendance.find((a) => a.studentId === st.id);
+
+                  const stClassList = students.filter((s) => s.className === st.className);
+
+                  return (
+                    <div
+                      key={st.id}
+                      className="bulk-report-card page-break relative bg-white rounded-xl shadow-md p-2 sm:p-4 print:shadow-none print:p-0 border border-mauve-200 print:border-none"
+                    >
+                      {/* Screen-Only Header Ribbon */}
+                      <div className="no-print flex justify-between items-center bg-mauve-900 text-white text-xs font-bold px-4 py-2 rounded-t-lg mb-3">
+                        <span className="flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5" />
+                          PAGE {idx + 1} OF {targetStudents.length}: {st.name} ({st.rollNumber})
+                        </span>
+                        <span className="bg-white/20 text-white px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-mono">
+                          {st.className}
+                        </span>
+                      </div>
+
+                      <ReportPDF
+                        student={st}
+                        grades={stGrades}
+                        attendance={stAttendance}
+                        subjects={subjects}
+                        config={config}
+                        allClassStudents={stClassList}
+                        allGrades={grades}
+                        isBulkMode={true}
+                      />
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Modal Bottom Footer Actions - HIDE IN PRINT */}
+            <div className="no-print pt-4 border-t border-mauve-150 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <span className="text-gray-500 text-[11px]">
+                💡 Tip: Use your browser's Print dialog to save all selected report cards as a single multi-page PDF document!
+              </span>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                <button
+                  onClick={() => setShowBulkPrintModal(false)}
+                  className="w-full sm:w-auto px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition cursor-pointer"
+                >
+                  Close Portal
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  disabled={selectedBulkStudentIds.length === 0}
+                  className="w-full sm:w-auto px-5 py-2.5 bg-mauve-900 hover:bg-mauve-800 text-white font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md uppercase tracking-wider disabled:opacity-50"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print All ({selectedBulkStudentIds.length})</span>
                 </button>
               </div>
             </div>

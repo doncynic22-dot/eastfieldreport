@@ -6,8 +6,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Student, Grade, Attendance, Subject, ReportConfig } from '../types';
 import { getNextClassAndLevel } from '../services/promotionService';
-import { Printer, Check, Settings2, FileText, Sparkles, ExternalLink, Sliders, GraduationCap, Download, Mail, MessageSquare, Share2, Copy, CheckCircle2, Phone, X } from 'lucide-react';
+import { Printer, Check, Settings2, FileText, Sparkles, ExternalLink, Sliders, GraduationCap, Download, Mail, MessageSquare, Share2, Copy, CheckCircle2, Phone, X, Edit2 } from 'lucide-react';
 import { generateEmailReportBody, sendGuardianEmail, sendWhatsAppReport } from '../services/emailDispatcher';
+import { findMatchingGrade, matchesSubject } from '../utils/subjectUtils';
 
 interface ReportPDFProps {
   student: Student;
@@ -18,6 +19,8 @@ interface ReportPDFProps {
   allClassStudents: Student[];
   allGrades: Grade[]; // Used for rank calculation
   onUpdateAttendance?: (daysPresent: number, totalDays: number, remarks?: string) => void;
+  onUpdateGrade?: (subjectId: string, classScore: number, examScore: number, nurseryRemark?: 'MO' | 'O' | 'S' | 'NA') => void;
+  isBulkMode?: boolean;
 }
 
 // High-fidelity pure SVG illustrations for Nursery/KG reports
@@ -159,7 +162,9 @@ export default function ReportPDF({
   config,
   allClassStudents,
   allGrades,
-  onUpdateAttendance
+  onUpdateAttendance,
+  onUpdateGrade,
+  isBulkMode = false
 }: ReportPDFProps) {
   // Customization options state
   const [showLogo, setShowLogo] = useState(true);
@@ -168,6 +173,7 @@ export default function ReportPDF({
   const [showSignature, setShowSignature] = useState(true);
   const [customPrincipalComment, setCustomPrincipalComment] = useState('');
   const [isCustomizing, setIsCustomizing] = useState(false);
+  const [isEditingAssessments, setIsEditingAssessments] = useState(false);
 
   const [customRollNumber, setCustomRollNumber] = useState(student.rollNumber);
   const [customClassRoll, setCustomClassRoll] = useState(allClassStudents.length);
@@ -215,7 +221,8 @@ export default function ReportPDF({
   }, [allClassStudents.length]);
 
   // JHS Customization options
-  const [jhsReopening, setJhsReopening] = useState('15th September, 2026');
+  const defaultReopening = config.reopeningDate || '15th September, 2026';
+  const [jhsReopening, setJhsReopening] = useState(defaultReopening);
   const [jhsContact, setJhsContact] = useState('0249321874');
   const [jhsArrears, setJhsArrears] = useState('825.00');
   const [jhsTuition, setJhsTuition] = useState('730.00');
@@ -225,7 +232,7 @@ export default function ReportPDF({
   const [jhsPta, setJhsPta] = useState('20.00');
 
   // Primary Customization options
-  const [primaryReopening, setPrimaryReopening] = useState('15th September, 2026');
+  const [primaryReopening, setPrimaryReopening] = useState(defaultReopening);
   const [primaryContact, setPrimaryContact] = useState('0249321874');
   const [primaryArrears, setPrimaryArrears] = useState('0.00');
   const [primaryTuition, setPrimaryTuition] = useState('600.00');
@@ -235,7 +242,7 @@ export default function ReportPDF({
   const [primaryPta, setPrimaryPta] = useState('20.00');
 
   // Nursery/KG Customization options
-  const [nurseryReopening, setNurseryReopening] = useState('15th September, 2026');
+  const [nurseryReopening, setNurseryReopening] = useState(defaultReopening);
   const [nurseryContact, setNurseryContact] = useState('0249321874');
   const [nurseryArrears, setNurseryArrears] = useState('0.00');
   const [nurseryTuition, setNurseryTuition] = useState('450.00');
@@ -243,6 +250,14 @@ export default function ReportPDF({
   const [nurseryUtility, setNurseryUtility] = useState('15.00');
   const [nurseryStationery, setNurseryStationery] = useState('20.00');
   const [nurseryPta, setNurseryPta] = useState('10.00');
+
+  useEffect(() => {
+    if (config.reopeningDate) {
+      setJhsReopening(config.reopeningDate);
+      setPrimaryReopening(config.reopeningDate);
+      setNurseryReopening(config.reopeningDate);
+    }
+  }, [config.reopeningDate]);
 
   const clsUpper = (student.className || '').toUpperCase();
   const isKg = student.level === 'KINDERGARTEN' || clsUpper.includes('KG') || clsUpper.includes('KINDERGARTEN');
@@ -359,7 +374,8 @@ export default function ReportPDF({
   }, []);
 
   // 1. Calculate Grade Details
-  const studentGrades = grades.filter((g) => g.studentId === student.id);
+  const matchedTermGrades = grades.filter((g) => g.studentId === student.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear));
+  const studentGrades = matchedTermGrades.length > 0 ? matchedTermGrades : grades.filter((g) => g.studentId === student.id);
   const totalSubjectsCount = studentGrades.length;
 
   const totalSum = studentGrades.reduce((sum, g) => sum + g.totalScore, 0);
@@ -367,7 +383,8 @@ export default function ReportPDF({
 
   // 2. Class Rank Calculation (dynamic!)
   const rankList = allClassStudents.map((s) => {
-    const sGrades = allGrades.filter((g) => g.studentId === s.id);
+    const termGrades = allGrades.filter((g) => g.studentId === s.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear));
+    const sGrades = termGrades.length > 0 ? termGrades : allGrades.filter((g) => g.studentId === s.id);
     const sCount = sGrades.length;
     const sSum = sGrades.reduce((sum, g) => sum + g.totalScore, 0);
     const sAvg = sCount > 0 ? (sSum / sCount) : 0;
@@ -406,7 +423,9 @@ export default function ReportPDF({
 
   return (
     <div className="w-full flex flex-col gap-4 text-xs" id={`transcript-${student.id}`}>
-      {/* Mobile Floating Print Button - no-print, only visible on small screens when scrolled down */}
+      {!isBulkMode && (
+        <>
+          {/* Mobile Floating Print Button - no-print, only visible on small screens when scrolled down */}
       <button
         onClick={handlePrint}
         className="fixed bottom-6 right-6 z-50 md:hidden bg-mauve-900 hover:bg-mauve-700 active:scale-95 text-white p-4 rounded-full shadow-lg transition-all duration-150 flex items-center justify-center cursor-pointer no-print border border-white/20"
@@ -475,6 +494,21 @@ export default function ReportPDF({
               <Share2 className="w-3.5 h-3.5 shrink-0" />
               <span>Send Softcopy</span>
             </button>
+
+            {onUpdateGrade && (
+              <button
+                onClick={() => setIsEditingAssessments(!isEditingAssessments)}
+                className={`flex-1 md:flex-none font-bold text-xs px-3.5 py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm uppercase tracking-wider ${
+                  isEditingAssessments
+                    ? 'bg-amber-500 hover:bg-amber-600 text-white ring-2 ring-amber-300'
+                    : 'bg-indigo-700 hover:bg-indigo-800 text-white'
+                }`}
+                title="Edit subject assessment scores directly on this report card template"
+              >
+                <Edit2 className="w-3.5 h-3.5 shrink-0" />
+                <span>{isEditingAssessments ? 'Lock / Finish Editing Scores' : 'Edit Assessment Scores'}</span>
+              </button>
+            )}
 
             <button
               onClick={handlePrint}
@@ -1137,10 +1171,148 @@ export default function ReportPDF({
                   </div>
                 </div>
               )}
+
+              {/* Subject Assessment & Marks Customizer - Admin manual sync */}
+              {onUpdateGrade && (
+                <div className="col-span-1 md:col-span-2 border-t border-mauve-500/10 pt-3 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <p className="text-[10px] font-bold text-mauve-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-mauve-900" />
+                      Subject Assessment Marks Sheet (Manual Database Sync)
+                    </p>
+                    <span className="text-[9px] font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      Auto-syncs to Local & Cloud Database
+                    </span>
+                  </div>
+
+                  <div className="border border-mauve-500/20 rounded-lg overflow-hidden bg-white shadow-xs">
+                    <div className="max-h-64 overflow-y-auto">
+                      <table className="w-full text-left text-xs border-collapse font-sans">
+                        <thead className="bg-mauve-900 text-white font-bold text-[10px] uppercase tracking-wider sticky top-0 z-10">
+                          <tr>
+                            <th className="p-2 pl-3">Subject Name</th>
+                            {student.level === 'NURSERY' || student.level === 'KINDERGARTEN' ? (
+                              <th className="p-2 text-center">Nursery/KG Rating (MO / O / S / NA)</th>
+                            ) : (
+                              <>
+                                <th className="p-2 text-center w-28">Class Score (50%)</th>
+                                <th className="p-2 text-center w-28">Exam Score (50%)</th>
+                                <th className="p-2 text-center w-24">Total (100%)</th>
+                                <th className="p-2 text-center pr-3">Grade & Remarks</th>
+                              </>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-mauve-100 text-xs">
+                          {(() => {
+                            const levelSubs = subjects.filter((sub) => sub.level === student.level);
+                            const extraG = studentGrades.filter((g) => !levelSubs.some((sub) => matchesSubject(g.subjectId, sub)));
+                            const allSubjectRows = [
+                              ...levelSubs.map((sub) => ({ id: sub.id, name: sub.name, code: sub.code, subjectObj: sub })),
+                              ...extraG.map((g) => {
+                                const sObj = subjects.find((sub) => matchesSubject(g.subjectId, sub));
+                                return { id: g.subjectId, name: sObj ? sObj.name : 'Recorded Subject', code: sObj ? sObj.code : 'SUB', subjectObj: sObj };
+                              })
+                            ];
+
+                            if (allSubjectRows.length === 0) {
+                              return (
+                                <tr>
+                                  <td colSpan={5} className="p-4 text-center text-gray-400 italic">
+                                    No subjects configured for this grade level.
+                                  </td>
+                                </tr>
+                              );
+                            }
+
+                            return allSubjectRows.map((subItem) => {
+                              const matchedGrade = subItem.subjectObj
+                                ? findMatchingGrade(studentGrades, subItem.subjectObj, config.term, config.schoolYear)
+                                : studentGrades.find((g) => matchesSubject(g.subjectId, { id: subItem.id, name: subItem.name, code: subItem.code, level: student.level }));
+                              const classVal = matchedGrade ? matchedGrade.classScore : 0;
+                              const examVal = matchedGrade ? matchedGrade.examScore : 0;
+                              const totalVal = matchedGrade ? matchedGrade.totalScore : (classVal + examVal);
+                              const currentRemark = matchedGrade?.nurseryRemark || 'MO';
+
+                              return (
+                                <tr key={subItem.id} className="hover:bg-mauve-50/20 transition-colors">
+                                  <td className="p-2 pl-3 font-bold text-mauve-950">
+                                    {subItem.name} <span className="text-[10px] text-gray-400 font-mono font-normal">({subItem.code})</span>
+                                  </td>
+                                  {student.level === 'NURSERY' || student.level === 'KINDERGARTEN' ? (
+                                    <td className="p-2 text-center">
+                                      <div className="flex items-center justify-center gap-1.5">
+                                        {(['MO', 'O', 'S', 'NA'] as const).map((code) => (
+                                          <button
+                                            key={code}
+                                            type="button"
+                                            onClick={() => {
+                                              onUpdateGrade(subItem.id, classVal, examVal, code);
+                                            }}
+                                            className={`px-2.5 py-1 rounded text-[10px] font-bold transition cursor-pointer ${
+                                              currentRemark === code
+                                                ? 'bg-mauve-900 text-white shadow-xs scale-105'
+                                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`}
+                                          >
+                                            {code}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </td>
+                                  ) : (
+                                    <>
+                                      <td className="p-2 text-center">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="50"
+                                          value={classVal}
+                                          onChange={(e) => {
+                                            const val = Math.min(50, Math.max(0, parseInt(e.target.value) || 0));
+                                            onUpdateGrade(subItem.id, val, examVal, matchedGrade?.nurseryRemark);
+                                          }}
+                                          className="w-16 text-center font-mono font-bold p-1 border border-mauve-500/20 rounded bg-white text-mauve-900 text-xs focus:ring-1 focus:ring-mauve-900 outline-none"
+                                        />
+                                      </td>
+                                      <td className="p-2 text-center">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="50"
+                                          value={examVal}
+                                          onChange={(e) => {
+                                            const val = Math.min(50, Math.max(0, parseInt(e.target.value) || 0));
+                                            onUpdateGrade(subItem.id, classVal, val, matchedGrade?.nurseryRemark);
+                                          }}
+                                          className="w-16 text-center font-mono font-bold p-1 border border-mauve-500/20 rounded bg-white text-mauve-900 text-xs focus:ring-1 focus:ring-mauve-900 outline-none"
+                                        />
+                                      </td>
+                                      <td className="p-2 text-center font-mono font-black text-blue-900">
+                                        {totalVal}
+                                      </td>
+                                      <td className="p-2 text-center pr-3 text-gray-600 font-medium text-[11px] italic">
+                                        {getGradeDetails(totalVal).grade} ({getGradeDetails(totalVal).remarks})
+                                      </td>
+                                    </>
+                                  )}
+                                </tr>
+                              );
+                            });
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       </div>
+      </>
+      )}
 
       {/* TRANSCRIPT A4 SHEET CONTAINER */}
       <div className="w-full overflow-x-auto pb-4">
@@ -1350,22 +1522,24 @@ export default function ReportPDF({
                         let levelSubjects = subjects.filter(sub => sub.level === student.level);
 
                         const rows = levelSubjects.map((sub) => {
-                          const matchedGrade = studentGrades.find((g) => g.subjectId === sub.id);
+                          const matchedGrade = findMatchingGrade(studentGrades, sub, config.term, config.schoolYear);
                           return {
+                            subjectId: sub.id,
                             name: sub.name,
                             grade: matchedGrade
                           };
                         });
 
                         const extraGrades = studentGrades.filter((g) => {
-                          return !levelSubjects.some((sub) => sub.id === g.subjectId);
+                          return !levelSubjects.some((sub) => matchesSubject(g.subjectId, sub));
                         });
 
                         const allRows = [
                           ...rows,
                           ...extraGrades.map((g) => {
-                            const sObj = subjects.find((sub) => sub.id === g.subjectId);
+                            const sObj = subjects.find((sub) => matchesSubject(g.subjectId, sub));
                             return {
+                              subjectId: g.subjectId,
                               name: sObj ? sObj.name : "Other Subject",
                               grade: g
                             };
@@ -1387,17 +1561,30 @@ export default function ReportPDF({
                           }
 
                           const renderRadioDot = (key: 'MO' | 'O' | 'S' | 'NA') => {
-                            if (!g) {
-                              return <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 mx-auto opacity-40"></div>;
-                            }
-                            if (selectedKey === key) {
+                            const isSelected = selectedKey === key && !!g;
+                            const dotVisual = isSelected ? (
+                              <div className="w-4 h-4 rounded-full bg-[#3B4CA3] border-2 border-[#3B4CA3] mx-auto flex items-center justify-center shadow-xs">
+                                <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+                              </div>
+                            ) : (
+                              <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 mx-auto hover:border-[#3B4CA3]"></div>
+                            );
+
+                            if (onUpdateGrade && row.subjectId) {
                               return (
-                                <div className="w-4 h-4 rounded-full bg-[#3B4CA3] border-2 border-[#3B4CA3] mx-auto flex items-center justify-center shadow-xs">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
-                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onUpdateGrade(row.subjectId, g ? g.classScore : 50, g ? g.examScore : 50, key);
+                                  }}
+                                  className="w-full h-full p-1 flex items-center justify-center cursor-pointer hover:bg-indigo-50/50 rounded transition-colors"
+                                  title={`Click to set rating for ${row.name} to ${key}`}
+                                >
+                                  {dotVisual}
+                                </button>
                               );
                             }
-                            return <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 mx-auto"></div>;
+                            return dotVisual;
                           };
 
                           return (
@@ -1650,8 +1837,9 @@ export default function ReportPDF({
 
                       // Map the student's actual grades to these subjects
                       const rows = levelSubjects.map((sub) => {
-                        const matchedGrade = studentGrades.find((g) => g.subjectId === sub.id);
+                        const matchedGrade = findMatchingGrade(studentGrades, sub, config.term, config.schoolYear);
                         return {
+                          subjectId: sub.id,
                           name: sub.name,
                           grade: matchedGrade
                         };
@@ -1659,14 +1847,15 @@ export default function ReportPDF({
 
                       // Also find any grades that didn't match the level subjects
                       const extraGrades = studentGrades.filter((g) => {
-                        return !levelSubjects.some((sub) => sub.id === g.subjectId);
+                        return !levelSubjects.some((sub) => matchesSubject(g.subjectId, sub));
                       });
 
                       const allRows = [
                         ...rows,
                         ...extraGrades.map((g) => {
-                          const sObj = subjects.find((sub) => sub.id === g.subjectId);
+                          const sObj = subjects.find((sub) => matchesSubject(g.subjectId, sub));
                           return {
+                            subjectId: g.subjectId,
                             name: sObj ? sObj.name : "Other Subject",
                             grade: g
                           };
@@ -1682,10 +1871,38 @@ export default function ReportPDF({
                               {row.name}
                             </td>
                             <td className="p-1.5 sm:p-2 print:p-0.5 text-center border-r border-slate-900 font-mono text-slate-800 font-bold text-[11px] print:text-[10px] bg-white">
-                              {g ? g.classScore : ''}
+                              {isEditingAssessments && onUpdateGrade ? (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="50"
+                                  value={g ? g.classScore : 0}
+                                  onChange={(e) => {
+                                    const val = Math.min(50, Math.max(0, parseInt(e.target.value) || 0));
+                                    onUpdateGrade(row.subjectId, val, g ? g.examScore : 0, g?.nurseryRemark);
+                                  }}
+                                  className="w-14 text-center font-mono font-bold text-xs p-0.5 border border-amber-400 bg-amber-50 text-amber-950 rounded outline-none no-print"
+                                />
+                              ) : (
+                                g ? g.classScore : ''
+                              )}
                             </td>
                             <td className="p-1.5 sm:p-2 print:p-0.5 text-center border-r border-slate-900 font-mono text-slate-800 font-bold text-[11px] print:text-[10px] bg-white">
-                              {g ? g.examScore : ''}
+                              {isEditingAssessments && onUpdateGrade ? (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="50"
+                                  value={g ? g.examScore : 0}
+                                  onChange={(e) => {
+                                    const val = Math.min(50, Math.max(0, parseInt(e.target.value) || 0));
+                                    onUpdateGrade(row.subjectId, g ? g.classScore : 0, val, g?.nurseryRemark);
+                                  }}
+                                  className="w-14 text-center font-mono font-bold text-xs p-0.5 border border-amber-400 bg-amber-50 text-amber-950 rounded outline-none no-print"
+                                />
+                              ) : (
+                                g ? g.examScore : ''
+                              )}
                             </td>
                             <td className="p-1.5 sm:p-2 print:p-0.5 text-center border-r border-slate-900 font-mono font-extrabold text-blue-900 text-[11px] print:text-[10px] bg-white">
                               {g ? g.totalScore : ''}
@@ -1909,8 +2126,40 @@ export default function ReportPDF({
                                 {matchedSub ? matchedSub.code : 'SUB'}
                               </span>
                             </td>
-                            <td className="p-3 text-center font-mono text-gray-700 font-bold bg-white">{g.classScore}</td>
-                            <td className="p-3 text-center font-mono text-gray-700 font-bold bg-white">{g.examScore}</td>
+                            <td className="p-3 text-center font-mono text-gray-700 font-bold bg-white">
+                              {isEditingAssessments && onUpdateGrade ? (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="50"
+                                  value={g.classScore}
+                                  onChange={(e) => {
+                                    const val = Math.min(50, Math.max(0, parseInt(e.target.value) || 0));
+                                    onUpdateGrade(g.subjectId, val, g.examScore, g.nurseryRemark);
+                                  }}
+                                  className="w-16 text-center font-mono font-bold p-1 border border-amber-400 bg-amber-50 text-amber-950 rounded outline-none no-print"
+                                />
+                              ) : (
+                                g.classScore
+                              )}
+                            </td>
+                            <td className="p-3 text-center font-mono text-gray-700 font-bold bg-white">
+                              {isEditingAssessments && onUpdateGrade ? (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="50"
+                                  value={g.examScore}
+                                  onChange={(e) => {
+                                    const val = Math.min(50, Math.max(0, parseInt(e.target.value) || 0));
+                                    onUpdateGrade(g.subjectId, g.classScore, val, g.nurseryRemark);
+                                  }}
+                                  className="w-16 text-center font-mono font-bold p-1 border border-amber-400 bg-amber-50 text-amber-950 rounded outline-none no-print"
+                                />
+                              ) : (
+                                g.examScore
+                              )}
+                            </td>
                             <td className="p-3 text-center font-mono font-bold text-mauve-900 bg-white">{g.totalScore}</td>
                             <td className="p-3 pr-4 text-center text-gray-500 italic text-[11px] bg-white">
                               {gradeInfo.remarks}
@@ -1994,13 +2243,22 @@ export default function ReportPDF({
                       Principal's Endorsement & Stamp
                     </span>
                     <div className="h-12 flex items-end">
-                      <div className="border-b border-gray-300 w-full pb-1 text-xs text-gray-500 italic relative">
+                      <div className="border-b border-gray-300 w-full pb-1 text-xs text-gray-500 italic relative flex items-center justify-between">
+                        {config.principalSignatureUrl ? (
+                          <img
+                            src={config.principalSignatureUrl}
+                            alt="Principal Signature"
+                            className="h-10 object-contain max-w-[130px] mb-0.5"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <span className="font-serif text-mauve-900 font-bold text-sm tracking-wider">
+                            {config.principalName}
+                          </span>
+                        )}
                         <div className="absolute right-2 bottom-2 px-2 py-0.5 border border-rose-500/30 text-rose-500 text-[8px] uppercase tracking-wider font-mono font-bold rounded rotate-[-4deg] opacity-70">
                           Eastfield Approved
                         </div>
-                        <span className="font-serif text-mauve-900 font-bold text-sm tracking-wider">
-                          {config.principalName}
-                        </span>
                       </div>
                     </div>
                     <div className="text-[10px] leading-relaxed">

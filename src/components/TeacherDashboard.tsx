@@ -8,6 +8,8 @@ import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel 
 import { BookOpen, UserCheck, Search, CheckCircle2, Save, Users, Calendar, Award, LogIn, UserPlus, ShieldAlert, School, Eye, EyeOff, KeyRound, Lock, Mail, Send, Copy, Check, ExternalLink, ShieldCheck, RefreshCw } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { sendPasswordResetEmail } from '../services/emailDispatcher';
+import { getSupabaseCredentials, saveSupabaseGrades, saveSupabaseAttendance } from '../lib/supabase';
+import { matchesSubject, findMatchingGrade } from '../utils/subjectUtils';
 
 interface TeacherDashboardProps {
   students: Student[];
@@ -572,13 +574,7 @@ export default function TeacherDashboard({
     if (currentUser?.role !== 'ADMIN' && (currentUser?.level as string) !== 'ALL' && currentUser?.subjects && currentUser.subjects.length > 0) {
       const filtered = allSubjectsWithDefaults.filter(s => 
         s.level === effectiveLevel && 
-        currentUser.subjects?.some(sId => 
-          sId === s.id || 
-          sId === s.name || 
-          sId === s.code || 
-          sId.toLowerCase() === s.name.toLowerCase() || 
-          sId.toLowerCase() === s.code.toLowerCase()
-        )
+        currentUser.subjects?.some(sId => matchesSubject(sId, s))
       );
       teacherAllowedSubjects = filtered.length > 0 ? filtered : allSubjectsWithDefaults.filter(s => s.level === effectiveLevel);
     } else {
@@ -590,13 +586,7 @@ export default function TeacherDashboard({
     } else if (currentUser.subjects && currentUser.subjects.length > 0) {
       const filtered = allSubjectsWithDefaults.filter(s => 
         s.level === currentUser.level && 
-        currentUser.subjects?.some(sId => 
-          sId === s.id || 
-          sId === s.name || 
-          sId === s.code || 
-          sId.toLowerCase() === s.name.toLowerCase() || 
-          sId.toLowerCase() === s.code.toLowerCase()
-        )
+        currentUser.subjects?.some(sId => matchesSubject(sId, s))
       );
       teacherAllowedSubjects = filtered.length > 0 ? filtered : allSubjectsWithDefaults.filter(s => s.level === currentUser.level);
     } else {
@@ -647,8 +637,13 @@ export default function TeacherDashboard({
     const initialAttendance: Record<string, { totalDays: string; daysPresent: string; remarks: string }> = {};
 
     activeClassStudents.forEach(student => {
-      // Load grades
-      const matchedGrade = grades.find(g => g.studentId === student.id && g.subjectId === selectedSubject);
+      // Load grades using robust subject alias and term matching
+      const selSubjectObj = subjects.find(s => s.id === selectedSubject || s.name === selectedSubject);
+      const studentTermGrades = grades.filter(g => g.studentId === student.id);
+      const matchedGrade = selSubjectObj
+        ? findMatchingGrade(studentTermGrades, selSubjectObj, config.term, config.schoolYear)
+        : grades.find(g => g.studentId === student.id && (g.subjectId === selectedSubject || g.subjectId.toLowerCase() === selectedSubject.toLowerCase()));
+
       let loadedNurseryRemark = matchedGrade?.nurseryRemark;
       if (!loadedNurseryRemark && matchedGrade) {
         const remUpper = matchedGrade.remarks?.toUpperCase() || '';
@@ -667,7 +662,12 @@ export default function TeacherDashboard({
       };
 
       // Load attendance
-      const matchedAtt = attendance.find(a => a.studentId === student.id);
+      const matchedAtt = attendance.find(
+        a => a.studentId === student.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear)
+      ) || attendance.find(
+        a => a.studentId === student.id
+      );
+
       initialAttendance[student.id] = {
         totalDays: matchedAtt ? matchedAtt.totalDays.toString() : '60',
         daysPresent: matchedAtt ? matchedAtt.daysPresent.toString() : '60',
@@ -677,7 +677,7 @@ export default function TeacherDashboard({
 
     setGradeInputs(initialGrades);
     setAttendanceInputs(initialAttendance);
-  }, [selectedClass, selectedSubject, currentUser]);
+  }, [selectedClass, selectedSubject, currentUser, config.term, config.schoolYear, grades, attendance]);
 
   // Automated Grading Formula (maps raw scores to code index letters)
   const getGradeLetter = (total: number) => {
@@ -708,7 +708,14 @@ export default function TeacherDashboard({
       const totalNum = classNum + examNum;
 
       if (sGrade && (sGrade.classScore || sGrade.examScore || sGrade.nurseryRemark)) {
-        const gradeIndex = updatedGrades.findIndex(g => g.studentId === student.id && g.subjectId === selectedSubject);
+        const selSubjectObj = subjects.find(s => s.id === selectedSubject || s.name === selectedSubject);
+        const gradeIndex = updatedGrades.findIndex(
+          g => g.studentId === student.id &&
+               (selSubjectObj ? matchesSubject(g.subjectId, selSubjectObj) : (g.subjectId === selectedSubject || g.subjectId.toLowerCase() === selectedSubject.toLowerCase())) &&
+               (!g.term || g.term === config.term) &&
+               (!g.year || g.year === config.schoolYear)
+        );
+
         const gradeRecord: Grade = {
           studentId: student.id,
           subjectId: selectedSubject,
@@ -733,13 +740,17 @@ export default function TeacherDashboard({
 
       // Save Attendance
       if (sAtt) {
-        const attIndex = updatedAttendance.findIndex(a => a.studentId === student.id);
-        const existingAtt = attendance.find(a => a.studentId === student.id);
+        const attIndex = updatedAttendance.findIndex(
+          a => a.studentId === student.id && a.term === config.term && a.year === config.schoolYear
+        );
+        const existingAtt = attendance.find(
+          a => a.studentId === student.id && a.term === config.term && a.year === config.schoolYear
+        ) || attendance.find(a => a.studentId === student.id);
+
         const attRecord: Attendance = {
           studentId: student.id,
           term: config.term,
           year: config.schoolYear,
-          // Keep existing totalDays or default to 60
           totalDays: existingAtt?.totalDays || Number(sAtt.totalDays) || 60,
           daysPresent: sAtt.daysPresent ? Number(sAtt.daysPresent) : 60,
           remarks: sAtt.remarks,
@@ -757,6 +768,18 @@ export default function TeacherDashboard({
 
     setGrades(updatedGrades);
     setAttendance(updatedAttendance);
+
+    // Immediately persist to LocalStorage to guarantee local durability
+    localStorage.setItem('ea_grades', JSON.stringify(updatedGrades));
+    localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(updatedGrades));
+    localStorage.setItem('ea_attendance', JSON.stringify(updatedAttendance));
+    localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(updatedAttendance));
+
+    // Async push to Supabase Cloud if configured
+    if (getSupabaseCredentials().isConfigured) {
+      saveSupabaseGrades(updatedGrades).catch(e => console.warn('Cloud save grades error', e));
+      saveSupabaseAttendance(updatedAttendance).catch(e => console.warn('Cloud save attendance error', e));
+    }
 
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
