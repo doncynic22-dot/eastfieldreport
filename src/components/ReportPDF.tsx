@@ -294,15 +294,16 @@ export default function ReportPDF({
 
   const clsUpper = (student.className || '').toUpperCase();
   const isKg = student.level === 'KINDERGARTEN' || clsUpper.includes('KG') || clsUpper.includes('KINDERGARTEN');
-  const isNurseryLevel = student.level === 'NURSERY' || clsUpper.includes('NURSERY');
+  const isNurseryLevel = !isKg && (student.level === 'NURSERY' || clsUpper.includes('NURSERY'));
+  const effectiveLevel = isKg ? 'KINDERGARTEN' : (isNurseryLevel ? 'NURSERY' : (student.level === 'JHS' ? 'JHS' : 'PRIMARY'));
 
   const templateStyle = config.selectedTemplate || 'dynamic';
-  const isCompactTemplate = templateStyle === 'compact' || (templateStyle === 'dynamic' && (isNurseryLevel || isKg));
-  const isHighFidelityTemplate = templateStyle === 'high-fidelity' || (templateStyle === 'dynamic' && (student.level === 'JHS' || (student.level === 'PRIMARY' && !isKg && !isNurseryLevel)));
+  const isCompactTemplate = templateStyle === 'compact' || (templateStyle === 'dynamic' && isNurseryLevel);
+  const isHighFidelityTemplate = templateStyle === 'high-fidelity' || (templateStyle === 'dynamic' && (student.level === 'JHS' || student.level === 'PRIMARY' || isKg));
 
-  const isJHS = student.level === 'JHS';
-  const isPrimary = student.level === 'PRIMARY' && !isKg && !isNurseryLevel;
-  const isNursery = isNurseryLevel || isKg;
+  const isJHS = effectiveLevel === 'JHS';
+  const isPrimary = effectiveLevel === 'PRIMARY';
+  const isNursery = isNurseryLevel;
 
   const currentReopening = isJHS ? jhsReopening : (isPrimary ? primaryReopening : nurseryReopening);
   const currentContact = isJHS ? jhsContact : (isPrimary ? primaryContact : nurseryContact);
@@ -1296,9 +1297,9 @@ export default function ReportPDF({
                         </thead>
                         <tbody className="divide-y divide-mauve-100 text-xs">
                           {(() => {
-                            const rawLevelSubs = subjects.filter((sub) => sub.level === student.level);
+                            const rawLevelSubs = subjects.filter((sub) => sub.level === effectiveLevel);
                             const levelSubs = [...rawLevelSubs];
-                            if (student.level === 'JHS') {
+                            if (effectiveLevel === 'JHS') {
                               const defaultJhs = [
                                 { id: 'sub-j-eng', name: 'English language', code: 'ENG', level: 'JHS' },
                                 { id: 'sub-j-math', name: 'Mathematics', code: 'MAT', level: 'JHS' },
@@ -1314,6 +1315,37 @@ export default function ReportPDF({
                               defaultJhs.forEach(dj => {
                                 if (!levelSubs.some(s => matchesSubject(dj.id, s))) {
                                   levelSubs.push(dj as any);
+                                }
+                              });
+                            } else if (effectiveLevel === 'KINDERGARTEN') {
+                              const defaultKg = [
+                                { id: 'sub-k-lit', name: 'LITERACY / LANGUAGE', code: 'LIT', level: 'KINDERGARTEN' },
+                                { id: 'sub-k-num', name: 'NUMERACY', code: 'NUM', level: 'KINDERGARTEN' },
+                                { id: 'sub-k-owop', name: 'OUR WORLD OUR PEOPLE', code: 'OWOP', level: 'KINDERGARTEN' },
+                                { id: 'sub-k-ca', name: 'CREATIVE ARTS', code: 'CA', level: 'KINDERGARTEN' },
+                                { id: 'sub-k-wrt', name: 'WRITING', code: 'WRT', level: 'KINDERGARTEN' }
+                              ];
+                              defaultKg.forEach(dk => {
+                                if (!levelSubs.some(s => matchesSubject(dk.id, s))) {
+                                  levelSubs.push(dk as any);
+                                }
+                              });
+                            } else if (effectiveLevel === 'PRIMARY') {
+                              const defaultPrimary = [
+                                { id: 'sub-p-eng', name: 'English language', code: 'ENG', level: 'PRIMARY' },
+                                { id: 'sub-p-math', name: 'Mathematics', code: 'MAT', level: 'PRIMARY' },
+                                { id: 'sub-p-sci', name: 'Science', code: 'SCI', level: 'PRIMARY' },
+                                { id: 'sub-p-his', name: 'History', code: 'HIS', level: 'PRIMARY' },
+                                { id: 'sub-p-rme', name: 'Religious and Moral Education', code: 'RME', level: 'PRIMARY' },
+                                { id: 'sub-p-gh', name: 'Akuapem Twi', code: 'TWI', level: 'PRIMARY' },
+                                { id: 'sub-p-art', name: 'Creative Arts', code: 'ART', level: 'PRIMARY' },
+                                { id: 'sub-p-soc', name: 'Our World Our People', code: 'OWOP', level: 'PRIMARY' },
+                                { id: 'sub-p-ict', name: 'Computing', code: 'COMP', level: 'PRIMARY' },
+                                { id: 'sub-p-fr', name: 'French', code: 'FRE', level: 'PRIMARY' }
+                              ];
+                              defaultPrimary.forEach(dp => {
+                                if (!levelSubs.some(s => matchesSubject(dp.id, s))) {
+                                  levelSubs.push(dp as any);
                                 }
                               });
                             }
@@ -1604,7 +1636,7 @@ export default function ReportPDF({
 
                             const g = matchedGrade;
                             const commentText = g
-                              ? (g.remarks || (g.totalScore >= 80 ? 'HIGHEST' : g.totalScore >= 70 ? 'HIGHER' : g.totalScore >= 60 ? 'HIGH' : g.totalScore >= 50 ? 'AVERAGE' : 'GOOD'))
+                              ? (g.remarks || getGradeDetails(g.totalScore).remarks)
                               : '';
 
                             return (
@@ -1629,8 +1661,8 @@ export default function ReportPDF({
                           });
                         }
 
-                        let levelSubjects = subjects.filter(sub => sub.level === student.level);
-                        if (student.level === 'JHS') {
+                        let levelSubjects = subjects.filter(sub => sub.level === effectiveLevel);
+                        if (effectiveLevel === 'JHS') {
                           const defaultJhs = [
                             { id: 'sub-j-eng', name: 'English language', code: 'ENG', level: 'JHS' },
                             { id: 'sub-j-math', name: 'Mathematics', code: 'MAT', level: 'JHS' },
@@ -1646,6 +1678,37 @@ export default function ReportPDF({
                           defaultJhs.forEach(dj => {
                             if (!levelSubjects.some(s => matchesSubject(dj.id, s))) {
                               levelSubjects.push(dj as any);
+                            }
+                          });
+                        } else if (effectiveLevel === 'KINDERGARTEN') {
+                          const defaultKg = [
+                            { id: 'sub-k-lit', name: 'LITERACY / LANGUAGE', code: 'LIT', level: 'KINDERGARTEN' },
+                            { id: 'sub-k-num', name: 'NUMERACY', code: 'NUM', level: 'KINDERGARTEN' },
+                            { id: 'sub-k-owop', name: 'OUR WORLD OUR PEOPLE', code: 'OWOP', level: 'KINDERGARTEN' },
+                            { id: 'sub-k-ca', name: 'CREATIVE ARTS', code: 'CA', level: 'KINDERGARTEN' },
+                            { id: 'sub-k-wrt', name: 'WRITING', code: 'WRT', level: 'KINDERGARTEN' }
+                          ];
+                          defaultKg.forEach(dk => {
+                            if (!levelSubjects.some(s => matchesSubject(dk.id, s))) {
+                              levelSubjects.push(dk as any);
+                            }
+                          });
+                        } else if (effectiveLevel === 'PRIMARY') {
+                          const defaultPrimary = [
+                            { id: 'sub-p-eng', name: 'English language', code: 'ENG', level: 'PRIMARY' },
+                            { id: 'sub-p-math', name: 'Mathematics', code: 'MAT', level: 'PRIMARY' },
+                            { id: 'sub-p-sci', name: 'Science', code: 'SCI', level: 'PRIMARY' },
+                            { id: 'sub-p-his', name: 'History', code: 'HIS', level: 'PRIMARY' },
+                            { id: 'sub-p-rme', name: 'Religious and Moral Education', code: 'RME', level: 'PRIMARY' },
+                            { id: 'sub-p-gh', name: 'Akuapem Twi', code: 'TWI', level: 'PRIMARY' },
+                            { id: 'sub-p-art', name: 'Creative Arts', code: 'ART', level: 'PRIMARY' },
+                            { id: 'sub-p-soc', name: 'Our World Our People', code: 'OWOP', level: 'PRIMARY' },
+                            { id: 'sub-p-ict', name: 'Computing', code: 'COMP', level: 'PRIMARY' },
+                            { id: 'sub-p-fr', name: 'French', code: 'FRE', level: 'PRIMARY' }
+                          ];
+                          defaultPrimary.forEach(dp => {
+                            if (!levelSubjects.some(s => matchesSubject(dp.id, s))) {
+                              levelSubjects.push(dp as any);
                             }
                           });
                         }
@@ -1962,8 +2025,8 @@ export default function ReportPDF({
                   <tbody className="divide-y divide-slate-400 text-xs text-slate-800">
                     {(() => {
                       // Dynamically choose standard subjects based on academic level from the database/teachers portal
-                      const levelSubjects = subjects.filter(sub => sub.level === student.level);
-                      if (student.level === 'JHS') {
+                      const levelSubjects = subjects.filter(sub => sub.level === effectiveLevel);
+                      if (effectiveLevel === 'JHS') {
                         const defaultJhs = [
                           { id: 'sub-j-eng', name: 'English language', code: 'ENG', level: 'JHS' },
                           { id: 'sub-j-math', name: 'Mathematics', code: 'MAT', level: 'JHS' },
@@ -1979,6 +2042,37 @@ export default function ReportPDF({
                         defaultJhs.forEach(dj => {
                           if (!levelSubjects.some(s => matchesSubject(dj.id, s))) {
                             levelSubjects.push(dj as any);
+                          }
+                        });
+                      } else if (effectiveLevel === 'KINDERGARTEN') {
+                        const defaultKg = [
+                          { id: 'sub-k-lit', name: 'LITERACY / LANGUAGE', code: 'LIT', level: 'KINDERGARTEN' },
+                          { id: 'sub-k-num', name: 'NUMERACY', code: 'NUM', level: 'KINDERGARTEN' },
+                          { id: 'sub-k-owop', name: 'OUR WORLD OUR PEOPLE', code: 'OWOP', level: 'KINDERGARTEN' },
+                          { id: 'sub-k-ca', name: 'CREATIVE ARTS', code: 'CA', level: 'KINDERGARTEN' },
+                          { id: 'sub-k-wrt', name: 'WRITING', code: 'WRT', level: 'KINDERGARTEN' }
+                        ];
+                        defaultKg.forEach(dk => {
+                          if (!levelSubjects.some(s => matchesSubject(dk.id, s))) {
+                            levelSubjects.push(dk as any);
+                          }
+                        });
+                      } else if (effectiveLevel === 'PRIMARY') {
+                        const defaultPrimary = [
+                          { id: 'sub-p-eng', name: 'English language', code: 'ENG', level: 'PRIMARY' },
+                          { id: 'sub-p-math', name: 'Mathematics', code: 'MAT', level: 'PRIMARY' },
+                          { id: 'sub-p-sci', name: 'Science', code: 'SCI', level: 'PRIMARY' },
+                          { id: 'sub-p-his', name: 'History', code: 'HIS', level: 'PRIMARY' },
+                          { id: 'sub-p-rme', name: 'Religious and Moral Education', code: 'RME', level: 'PRIMARY' },
+                          { id: 'sub-p-gh', name: 'Akuapem Twi', code: 'TWI', level: 'PRIMARY' },
+                          { id: 'sub-p-art', name: 'Creative Arts', code: 'ART', level: 'PRIMARY' },
+                          { id: 'sub-p-soc', name: 'Our World Our People', code: 'OWOP', level: 'PRIMARY' },
+                          { id: 'sub-p-ict', name: 'Computing', code: 'COMP', level: 'PRIMARY' },
+                          { id: 'sub-p-fr', name: 'French', code: 'FRE', level: 'PRIMARY' }
+                        ];
+                        defaultPrimary.forEach(dp => {
+                          if (!levelSubjects.some(s => matchesSubject(dp.id, s))) {
+                            levelSubjects.push(dp as any);
                           }
                         });
                       }
