@@ -9,6 +9,7 @@ import { getNextClassAndLevel } from '../services/promotionService';
 import { Printer, Check, Settings2, FileText, Sparkles, ExternalLink, Sliders, GraduationCap, Download, Mail, MessageSquare, Share2, Copy, CheckCircle2, Phone, X, Edit2 } from 'lucide-react';
 import { generateEmailReportBody, sendGuardianEmail, sendWhatsAppReport } from '../services/emailDispatcher';
 import { findMatchingGrade, matchesSubject } from '../utils/subjectUtils';
+import { formatReopeningDate } from '../utils/dateUtils';
 
 interface ReportPDFProps {
   student: Student;
@@ -257,7 +258,11 @@ export default function ReportPDF({
 
   useEffect(() => {
     const saved = bills?.find(b => b.studentId === student.id);
-    const defaultReopening = config.reopeningDate || '15th September, 2026';
+    const globalReopening = config.reopeningDate || '15th September, 2026';
+    const savedReopening = saved?.reopeningDate;
+    const effectiveReopening = (savedReopening && savedReopening !== '15th September, 2026' && savedReopening !== '2026-09-15')
+      ? savedReopening
+      : globalReopening;
 
     setJhsArrears(saved?.arrears ?? '825.00');
     setJhsTuition(saved?.tuition ?? '730.00');
@@ -265,7 +270,7 @@ export default function ReportPDF({
     setJhsUtility(saved?.utility ?? '25.00');
     setJhsStationery(saved?.stationery ?? '30.00');
     setJhsPta(saved?.pta ?? '20.00');
-    setJhsReopening(saved?.reopeningDate || config.reopeningDate || defaultReopening);
+    setJhsReopening(effectiveReopening);
     setJhsContact(saved?.contactNumber || '0249321874');
 
     setPrimaryArrears(saved?.arrears ?? '0.00');
@@ -274,7 +279,7 @@ export default function ReportPDF({
     setPrimaryUtility(saved?.utility ?? '25.00');
     setPrimaryStationery(saved?.stationery ?? '30.00');
     setPrimaryPta(saved?.pta ?? '20.00');
-    setPrimaryReopening(saved?.reopeningDate || config.reopeningDate || defaultReopening);
+    setPrimaryReopening(effectiveReopening);
     setPrimaryContact(saved?.contactNumber || '0249321874');
 
     setNurseryArrears(saved?.arrears ?? '0.00');
@@ -283,7 +288,7 @@ export default function ReportPDF({
     setNurseryUtility(saved?.utility ?? '15.00');
     setNurseryStationery(saved?.stationery ?? '20.00');
     setNurseryPta(saved?.pta ?? '10.00');
-    setNurseryReopening(saved?.reopeningDate || config.reopeningDate || defaultReopening);
+    setNurseryReopening(effectiveReopening);
     setNurseryContact(saved?.contactNumber || '0249321874');
   }, [student.id, bills, config.reopeningDate, student.level]);
 
@@ -1277,8 +1282,8 @@ export default function ReportPDF({
                         <thead className="bg-mauve-900 text-white font-bold text-[10px] uppercase tracking-wider sticky top-0 z-10">
                           <tr>
                             <th className="p-2 pl-3">Subject Name</th>
-                            {student.level === 'NURSERY' || student.level === 'KINDERGARTEN' ? (
-                              <th className="p-2 text-center">Nursery/KG Rating (MO / O / S / NA)</th>
+                            {isNursery ? (
+                              <th className="p-2 text-center">Nursery Rating (MO / O / S / NA)</th>
                             ) : (
                               <>
                                 <th className="p-2 text-center w-28">Class Score (50%)</th>
@@ -1291,7 +1296,27 @@ export default function ReportPDF({
                         </thead>
                         <tbody className="divide-y divide-mauve-100 text-xs">
                           {(() => {
-                            const levelSubs = subjects.filter((sub) => sub.level === student.level);
+                            const rawLevelSubs = subjects.filter((sub) => sub.level === student.level);
+                            const levelSubs = [...rawLevelSubs];
+                            if (student.level === 'JHS') {
+                              const defaultJhs = [
+                                { id: 'sub-j-eng', name: 'English language', code: 'ENG', level: 'JHS' },
+                                { id: 'sub-j-math', name: 'Mathematics', code: 'MAT', level: 'JHS' },
+                                { id: 'sub-j-sci', name: 'Science', code: 'SCI', level: 'JHS' },
+                                { id: 'sub-j-soc', name: 'Social Studies', code: 'SOC', level: 'JHS' },
+                                { id: 'sub-j-car', name: 'Career Technology', code: 'CAR', level: 'JHS' },
+                                { id: 'sub-j-rme', name: 'Religious and Moral Education', code: 'RME', level: 'JHS' },
+                                { id: 'sub-j-gh', name: 'Akuapem Twi', code: 'TWI', level: 'JHS' },
+                                { id: 'sub-j-ca', name: 'Creative Arts and Design', code: 'CAD', level: 'JHS' },
+                                { id: 'sub-j-fr', name: 'French', code: 'FRE', level: 'JHS' },
+                                { id: 'sub-j-ict', name: 'Computing', code: 'COMP', level: 'JHS' }
+                              ];
+                              defaultJhs.forEach(dj => {
+                                if (!levelSubs.some(s => matchesSubject(dj.id, s))) {
+                                  levelSubs.push(dj as any);
+                                }
+                              });
+                            }
                             const extraG = studentGrades.filter((g) => !levelSubs.some((sub) => matchesSubject(g.subjectId, sub)));
                             const allSubjectRows = [
                               ...levelSubs.map((sub) => ({ id: sub.id, name: sub.name, code: sub.code, subjectObj: sub })),
@@ -1325,7 +1350,7 @@ export default function ReportPDF({
                                   <td className="p-2 pl-3 font-bold text-mauve-950">
                                     {subItem.name} <span className="text-[10px] text-gray-400 font-mono font-normal">({subItem.code})</span>
                                   </td>
-                                  {student.level === 'NURSERY' || student.level === 'KINDERGARTEN' ? (
+                                  {isNursery ? (
                                     <td className="p-2 text-center">
                                       <div className="flex items-center justify-center gap-1.5">
                                         {(['MO', 'O', 'S', 'NA'] as const).map((code) => (
@@ -1454,7 +1479,7 @@ export default function ReportPDF({
                     {config.schoolName}
                   </h1>
                   <h2 className="font-serif font-extrabold text-[12px] tracking-wider text-slate-800 uppercase mt-1.5 italic print:text-[10px]">
-                    REPORT CARD FOR {student.className.toUpperCase().includes('KG') ? 'KINDERGARTEN' : 'NURSERY'}
+                    REPORT CARD FOR {isKg ? 'KINDERGARTEN' : 'NURSERY'}
                   </h2>
                 </div>
 
@@ -1466,7 +1491,7 @@ export default function ReportPDF({
                       <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{student.name}</span>
                     </div>
                     <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm shrink-0 print:py-0.5">
-                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">{student.className.toUpperCase().includes('KG') ? 'KG' : 'NURSERY'}:</span>
+                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">{isKg ? 'KG' : 'NURSERY'}:</span>
                       <span className="font-serif font-black text-slate-950 text-[11px] uppercase px-1 print:text-[10px]">{student.className}</span>
                     </div>
                     <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm shrink-0 print:py-0.5">
@@ -1486,7 +1511,7 @@ export default function ReportPDF({
                     </div>
                     <div className="px-3 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
                       <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">REOPENING:</span>
-                      <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{currentReopening}</span>
+                      <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{formatReopeningDate(currentReopening)}</span>
                     </div>
                     <div className="px-3 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm print:py-0.5">
                       <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">NO. ON ROLL:</span>
@@ -1605,6 +1630,25 @@ export default function ReportPDF({
                         }
 
                         let levelSubjects = subjects.filter(sub => sub.level === student.level);
+                        if (student.level === 'JHS') {
+                          const defaultJhs = [
+                            { id: 'sub-j-eng', name: 'English language', code: 'ENG', level: 'JHS' },
+                            { id: 'sub-j-math', name: 'Mathematics', code: 'MAT', level: 'JHS' },
+                            { id: 'sub-j-sci', name: 'Science', code: 'SCI', level: 'JHS' },
+                            { id: 'sub-j-soc', name: 'Social Studies', code: 'SOC', level: 'JHS' },
+                            { id: 'sub-j-car', name: 'Career Technology', code: 'CAR', level: 'JHS' },
+                            { id: 'sub-j-rme', name: 'Religious and Moral Education', code: 'RME', level: 'JHS' },
+                            { id: 'sub-j-gh', name: 'Akuapem Twi', code: 'TWI', level: 'JHS' },
+                            { id: 'sub-j-ca', name: 'Creative Arts and Design', code: 'CAD', level: 'JHS' },
+                            { id: 'sub-j-fr', name: 'French', code: 'FRE', level: 'JHS' },
+                            { id: 'sub-j-ict', name: 'Computing', code: 'COMP', level: 'JHS' }
+                          ];
+                          defaultJhs.forEach(dj => {
+                            if (!levelSubjects.some(s => matchesSubject(dj.id, s))) {
+                              levelSubjects.push(dj as any);
+                            }
+                          });
+                        }
 
                         const rows = levelSubjects.map((sub) => {
                           const matchedGrade = findMatchingGrade(studentGrades, sub, config.term, config.schoolYear);
@@ -1882,7 +1926,7 @@ export default function ReportPDF({
                 </div>
                 <div className="flex items-baseline gap-1.5">
                   <span className="font-black text-slate-950 whitespace-nowrap uppercase tracking-wider">REOPENING:</span>
-                  <span className="border-b-2 border-dashed border-slate-900 grow font-black text-slate-950 uppercase px-1">{currentReopening}</span>
+                  <span className="border-b-2 border-dashed border-slate-900 grow font-black text-slate-950 uppercase px-1">{formatReopeningDate(currentReopening)}</span>
                 </div>
                 <div className="flex items-baseline gap-1.5">
                   <span className="font-black text-slate-950 whitespace-nowrap uppercase tracking-wider">NO. ON ROLL:</span>
@@ -1919,6 +1963,25 @@ export default function ReportPDF({
                     {(() => {
                       // Dynamically choose standard subjects based on academic level from the database/teachers portal
                       const levelSubjects = subjects.filter(sub => sub.level === student.level);
+                      if (student.level === 'JHS') {
+                        const defaultJhs = [
+                          { id: 'sub-j-eng', name: 'English language', code: 'ENG', level: 'JHS' },
+                          { id: 'sub-j-math', name: 'Mathematics', code: 'MAT', level: 'JHS' },
+                          { id: 'sub-j-sci', name: 'Science', code: 'SCI', level: 'JHS' },
+                          { id: 'sub-j-soc', name: 'Social Studies', code: 'SOC', level: 'JHS' },
+                          { id: 'sub-j-car', name: 'Career Technology', code: 'CAR', level: 'JHS' },
+                          { id: 'sub-j-rme', name: 'Religious and Moral Education', code: 'RME', level: 'JHS' },
+                          { id: 'sub-j-gh', name: 'Akuapem Twi', code: 'TWI', level: 'JHS' },
+                          { id: 'sub-j-ca', name: 'Creative Arts and Design', code: 'CAD', level: 'JHS' },
+                          { id: 'sub-j-fr', name: 'French', code: 'FRE', level: 'JHS' },
+                          { id: 'sub-j-ict', name: 'Computing', code: 'COMP', level: 'JHS' }
+                        ];
+                        defaultJhs.forEach(dj => {
+                          if (!levelSubjects.some(s => matchesSubject(dj.id, s))) {
+                            levelSubjects.push(dj as any);
+                          }
+                        });
+                      }
 
                       // Map the student's actual grades to these subjects
                       const rows = levelSubjects.map((sub) => {

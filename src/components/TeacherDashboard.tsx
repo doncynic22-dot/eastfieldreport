@@ -554,16 +554,37 @@ export default function TeacherDashboard({
     { id: 'sub-k-wrt', name: 'WRITING', code: 'WRT', level: 'KINDERGARTEN' }
   ];
 
+  const primaryDefaults: Subject[] = [
+    { id: 'sub-p-eng', name: 'English language', code: 'ENG', level: 'PRIMARY' },
+    { id: 'sub-p-math', name: 'Mathematics', code: 'MAT', level: 'PRIMARY' },
+    { id: 'sub-p-sci', name: 'Science', code: 'SCI', level: 'PRIMARY' },
+    { id: 'sub-p-his', name: 'History', code: 'HIS', level: 'PRIMARY' },
+    { id: 'sub-p-rme', name: 'Religious and Moral Education', code: 'RME', level: 'PRIMARY' },
+    { id: 'sub-p-gh', name: 'Akuapem Twi', code: 'TWI', level: 'PRIMARY' },
+    { id: 'sub-p-art', name: 'Creative Arts', code: 'ART', level: 'PRIMARY' },
+    { id: 'sub-p-soc', name: 'Our World Our People', code: 'OWOP', level: 'PRIMARY' },
+    { id: 'sub-p-ict', name: 'Computing', code: 'COMP', level: 'PRIMARY' },
+    { id: 'sub-p-fr', name: 'French', code: 'FRE', level: 'PRIMARY' }
+  ];
+
+  const jhsDefaults: Subject[] = [
+    { id: 'sub-j-eng', name: 'English language', code: 'ENG', level: 'JHS' },
+    { id: 'sub-j-math', name: 'Mathematics', code: 'MAT', level: 'JHS' },
+    { id: 'sub-j-sci', name: 'Science', code: 'SCI', level: 'JHS' },
+    { id: 'sub-j-soc', name: 'Social Studies', code: 'SOC', level: 'JHS' },
+    { id: 'sub-j-car', name: 'Career Technology', code: 'CAR', level: 'JHS' },
+    { id: 'sub-j-rme', name: 'Religious and Moral Education', code: 'RME', level: 'JHS' },
+    { id: 'sub-j-gh', name: 'Akuapem Twi', code: 'TWI', level: 'JHS' },
+    { id: 'sub-j-ca', name: 'Creative Arts and Design', code: 'CAD', level: 'JHS' },
+    { id: 'sub-j-fr', name: 'French', code: 'FRE', level: 'JHS' },
+    { id: 'sub-j-ict', name: 'Computing', code: 'COMP', level: 'JHS' }
+  ];
+
   // Merge default subjects if missing from state
   const allSubjectsWithDefaults = [...subjects];
-  nurseryDefaults.forEach(nd => {
-    if (!allSubjectsWithDefaults.some(s => s.id === nd.id || (s.level === 'NURSERY' && s.name.toUpperCase() === nd.name.toUpperCase()))) {
-      allSubjectsWithDefaults.push(nd);
-    }
-  });
-  kgDefaults.forEach(kd => {
-    if (!allSubjectsWithDefaults.some(s => s.id === kd.id || (s.level === 'KINDERGARTEN' && s.name.toUpperCase() === kd.name.toUpperCase()))) {
-      allSubjectsWithDefaults.push(kd);
+  [...nurseryDefaults, ...kgDefaults, ...primaryDefaults, ...jhsDefaults].forEach(defSub => {
+    if (!allSubjectsWithDefaults.some(s => s.id === defSub.id || (s.level === defSub.level && matchesSubject(defSub.id, s)))) {
+      allSubjectsWithDefaults.push(defSub);
     }
   });
 
@@ -638,7 +659,7 @@ export default function TeacherDashboard({
 
     activeClassStudents.forEach(student => {
       // Load grades using robust subject alias and term matching
-      const selSubjectObj = subjects.find(s => s.id === selectedSubject || s.name === selectedSubject);
+      const selSubjectObj = allSubjectsWithDefaults.find(s => s.id === selectedSubject || s.name === selectedSubject || matchesSubject(selectedSubject, s));
       const studentTermGrades = grades.filter(g => g.studentId === student.id);
       const matchedGrade = selSubjectObj
         ? findMatchingGrade(studentTermGrades, selSubjectObj, config.term, config.schoolYear)
@@ -708,7 +729,9 @@ export default function TeacherDashboard({
       const totalNum = classNum + examNum;
 
       if (sGrade && (sGrade.classScore || sGrade.examScore || sGrade.nurseryRemark)) {
-        const selSubjectObj = subjects.find(s => s.id === selectedSubject || s.name === selectedSubject);
+        const selSubjectObj = allSubjectsWithDefaults.find(s => s.id === selectedSubject || s.name === selectedSubject || matchesSubject(selectedSubject, s));
+        const canonicalSubjectId = selSubjectObj ? selSubjectObj.id : selectedSubject;
+
         const gradeIndex = updatedGrades.findIndex(
           g => g.studentId === student.id &&
                (selSubjectObj ? matchesSubject(g.subjectId, selSubjectObj) : (g.subjectId === selectedSubject || g.subjectId.toLowerCase() === selectedSubject.toLowerCase())) &&
@@ -718,7 +741,7 @@ export default function TeacherDashboard({
 
         const gradeRecord: Grade = {
           studentId: student.id,
-          subjectId: selectedSubject,
+          subjectId: canonicalSubjectId,
           classScore: classNum,
           examScore: examNum,
           totalScore: totalNum,
@@ -1641,8 +1664,8 @@ export default function TeacherDashboard({
 
           {/* MAIN GRADE ENTRY SHEET TABLE */}
           {(() => {
-            const classLimit = (selectedLevel === 'KINDERGARTEN' || selectedLevel === 'PRIMARY') ? 50 : (config?.classScoreWeight || 50);
-            const examLimit = (selectedLevel === 'KINDERGARTEN' || selectedLevel === 'PRIMARY') ? 50 : (config?.examScoreWeight || 50);
+            const classLimit = 50;
+            const examLimit = 50;
 
             return (
               <div className="bg-white rounded border border-mauve-500/20 shadow-sm overflow-hidden">

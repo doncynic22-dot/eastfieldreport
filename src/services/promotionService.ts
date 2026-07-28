@@ -172,7 +172,14 @@ export function isAutoPromotionDue(config: ReportConfig): boolean {
   if (config.reopeningDate) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const reopening = new Date(config.reopeningDate);
+    const cleanStr = config.reopeningDate.trim();
+    const ymdMatch = cleanStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    let reopening: Date;
+    if (ymdMatch) {
+      reopening = new Date(parseInt(ymdMatch[1], 10), parseInt(ymdMatch[2], 10) - 1, parseInt(ymdMatch[3], 10));
+    } else {
+      reopening = new Date(cleanStr);
+    }
     reopening.setHours(0, 0, 0, 0);
 
     return today >= reopening;

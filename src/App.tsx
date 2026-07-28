@@ -36,6 +36,7 @@ import {
   SUPABASE_SQL_REPAIR
 } from './lib/supabase';
 import { isAutoPromotionDue, promoteStudents } from './services/promotionService';
+import { getCanonicalSubjectId } from './utils/subjectUtils';
 
 
 export default function App() {
@@ -291,20 +292,29 @@ export default function App() {
       if (gradesFetchSuccess && sGrades !== null) {
         // Smart merge local and Supabase grades so no local records are wiped out
         const gradeMap = new Map<string, Grade>();
+        const studentLevelMap = new Map<string, string>();
+        localStudents.forEach(s => studentLevelMap.set(s.id, s.level));
+
         sGrades.forEach(g => {
-          const key = `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
-          gradeMap.set(key, g);
+          const stLevel = studentLevelMap.get(g.studentId);
+          const cSubId = getCanonicalSubjectId(g.subjectId, stLevel);
+          const normalizedG = { ...g, subjectId: cSubId };
+          const key = `${g.studentId}_${cSubId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
+          gradeMap.set(key, normalizedG);
         });
         localGrades.forEach(g => {
-          const key = `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
+          const stLevel = studentLevelMap.get(g.studentId);
+          const cSubId = getCanonicalSubjectId(g.subjectId, stLevel);
+          const normalizedG = { ...g, subjectId: cSubId };
+          const key = `${g.studentId}_${cSubId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
           const existing = gradeMap.get(key);
           if (!existing) {
-            gradeMap.set(key, g);
+            gradeMap.set(key, normalizedG);
           } else {
             const localTime = g.updatedAt ? new Date(g.updatedAt).getTime() : 0;
             const remoteTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
             if (localTime >= remoteTime) {
-              gradeMap.set(key, g);
+              gradeMap.set(key, normalizedG);
             }
           }
         });
@@ -954,7 +964,7 @@ export default function App() {
               {[
                 {
                   title: 'Automated Marking Engine',
-                  desc: 'Weighs continuous class assignments at 30% and term examinations at 70%, dynamically outputting standard letter codes and contextual performance evaluations.',
+                  desc: 'Weighs continuous class assignments at 50% and term examinations at 50%, dynamically outputting standard letter codes and contextual performance evaluations.',
                   icon: FileCheck,
                   badge: 'Standardized'
                 },

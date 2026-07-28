@@ -10,6 +10,9 @@ import ReportPDF from './ReportPDF';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion } from '../services/promotionService';
+import { formatReopeningDate } from '../utils/dateUtils';
+import { INITIAL_SUBJECTS } from '../data/mockData';
+import { matchesSubject } from '../utils/subjectUtils';
 
 interface AdminDashboardProps {
   students: Student[];
@@ -998,7 +1001,7 @@ export default function AdminDashboard({
               </span>
             </div>
             <p className="text-xs text-blue-100 leading-relaxed">
-              Reopening Date: <strong>{config.reopeningDate ? new Date(config.reopeningDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '15th Sept 2026'}</strong>.
+              Reopening Date: <strong>{formatReopeningDate(config.reopeningDate)}</strong>.
               {config.lastPromotedYear === config.schoolYear ? (
                 <span className="text-green-300 font-bold ml-1"> ✓ All enrolled pupils promoted for {config.schoolYear}.</span>
               ) : (
@@ -1216,6 +1219,10 @@ export default function AdminDashboard({
                 allGrades={grades}
                 onUpdateGrade={(subjectId, classScore, examScore, nurseryRemark) => {
                   const studentId = selectedStudent.id;
+                  const targetSubObj = subjects.find(s => s.id === subjectId || s.name === subjectId || s.code === subjectId) ||
+                                       INITIAL_SUBJECTS.find(s => matchesSubject(subjectId, s));
+                  const canonicalSubjectId = targetSubObj ? targetSubObj.id : subjectId;
+
                   const totalScore = Math.min(100, Math.max(0, classScore + examScore));
                   const rule = config.gradingScale?.find((r) => totalScore >= r.minScore && totalScore <= r.maxScore);
                   const gradeLetter = rule ? rule.grade : (totalScore >= 80 ? 'A' : totalScore >= 70 ? 'B' : totalScore >= 60 ? 'C' : totalScore >= 50 ? 'D' : totalScore >= 40 ? 'E' : 'F');
@@ -1223,12 +1230,15 @@ export default function AdminDashboard({
 
                   const updatedGrades = [...grades];
                   const existingIndex = updatedGrades.findIndex(
-                    (g) => g.studentId === studentId && g.subjectId === subjectId && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear)
+                    (g) => g.studentId === studentId &&
+                           (g.subjectId === canonicalSubjectId || (targetSubObj && matchesSubject(g.subjectId, targetSubObj))) &&
+                           (!g.term || g.term === config.term) &&
+                           (!g.year || g.year === config.schoolYear)
                   );
 
                   const gradeRecord: Grade = {
                     studentId,
-                    subjectId,
+                    subjectId: canonicalSubjectId,
                     classScore,
                     examScore,
                     totalScore,
@@ -2171,6 +2181,7 @@ export default function AdminDashboard({
                           const updated = { ...prev, reopeningDate: val };
                           localStorage.setItem('ea_config', JSON.stringify(updated));
                           localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updated));
+                          saveSupabaseConfig(updated).catch(err => console.warn('Supabase config sync error', err));
                           return updated;
                         });
                       }}
@@ -2875,7 +2886,7 @@ export default function AdminDashboard({
                     First Term Student Promotion & Class Migration
                   </h4>
                   <p className="text-xs text-mauve-500">
-                    Automated grade level progression roll for <strong>{config.schoolYear}</strong> (Reopening Date: {config.reopeningDate || '15th Sept 2026'}).
+                    Automated grade level progression roll for <strong>{config.schoolYear}</strong> (Reopening Date: {formatReopeningDate(config.reopeningDate)}).
                   </p>
                 </div>
               </div>
@@ -2924,6 +2935,7 @@ export default function AdminDashboard({
                       const updated = { ...prev, reopeningDate: val };
                       localStorage.setItem('ea_config', JSON.stringify(updated));
                       localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updated));
+                      saveSupabaseConfig(updated).catch(err => console.warn('Supabase config sync error', err));
                       return updated;
                     });
                   }}

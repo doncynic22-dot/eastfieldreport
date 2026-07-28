@@ -24,6 +24,17 @@ export function isCreativeArtsSubject(subjectIdOrNameOrCode: string): boolean {
   return CREATIVE_ARTS_ALIASES.some(alias => clean === alias || clean.includes('creative') || clean.includes('creativity'));
 }
 
+export function getCanonicalSubjectId(subjectRef: string, studentLevel?: string): string {
+  if (!subjectRef) return subjectRef;
+  if (isCreativeArtsSubject(subjectRef)) {
+    if (studentLevel === 'PRIMARY') return 'sub-p-art';
+    if (studentLevel === 'KINDERGARTEN') return 'sub-k-ca';
+    if (studentLevel === 'NURSERY') return 'sub-n-cr';
+    return 'sub-j-ca';
+  }
+  return subjectRef;
+}
+
 /**
  * Robust check if a given subject reference (ID, name, or code) matches a target Subject object.
  */

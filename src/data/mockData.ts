@@ -108,6 +108,8 @@ export const INITIAL_GRADES: Grade[] = [
   { studentId: "st-101", subjectId: "sub-p-math", classScore: 20, examScore: 55, totalScore: 75, gradeLetter: "B2", remarks: "VERY GOOD", term: "Term 1", year: "2025/2026", teacherId: "tch-02", updatedAt: new Date().toISOString() },
   { studentId: "st-102", subjectId: "sub-p-eng", classScore: 22, examScore: 50, totalScore: 72, gradeLetter: "B2", remarks: "VERY GOOD", term: "Term 1", year: "2025/2026", teacherId: "tch-02", updatedAt: new Date().toISOString() },
   { studentId: "st-103", subjectId: "sub-j-math", classScore: 28, examScore: 65, totalScore: 93, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-103", subjectId: "sub-j-ca", classScore: 41, examScore: 44, totalScore: 85, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-104", subjectId: "sub-j-ca", classScore: 39, examScore: 42, totalScore: 81, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
   { studentId: "st-107", subjectId: "sub-j-ca", classScore: 42, examScore: 45, totalScore: 87, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
   { studentId: "st-108", subjectId: "sub-j-ca", classScore: 38, examScore: 40, totalScore: 78, gradeLetter: "B2", remarks: "VERY GOOD", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
   // Restored grades for Aboagye Messiah (st-109) - JHS 1
