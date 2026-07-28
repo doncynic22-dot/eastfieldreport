@@ -63,6 +63,21 @@ export interface Attendance {
   updatedAt: string;
 }
 
+export interface StudentBill {
+  studentId: string;
+  arrears: string;
+  tuition: string;
+  computing: string;
+  utility: string;
+  stationery: string;
+  pta: string;
+  reopeningDate?: string;
+  contactNumber?: string;
+  term?: string;
+  year?: string;
+  updatedAt?: string;
+}
+
 export interface GradingScaleRule {
   grade: string;
   minScore: number;

@@ -60,7 +60,8 @@ export const INITIAL_STUDENTS: Student[] = [
   { id: "st-105", name: "Abena Osei", rollNumber: "ST-005", level: "NURSERY", className: "Nursery 1", guardianName: "Charles Osei", guardianEmail: "charles@osei.com", guardianPhone: "+233551234567" },
   { id: "st-106", name: "Yaw Ofori", rollNumber: "ST-006", level: "KINDERGARTEN", className: "Kindergarten 1", guardianName: "Seth Ofori", guardianEmail: "seth@ofori.com", guardianPhone: "+233241112233" },
   { id: "st-107", name: "Ebenezer Osei-Kofi", rollNumber: "ST-007", level: "JHS", className: "JHS 2", guardianName: "Daniel Osei-Kofi", guardianEmail: "daniel@osei-kofi.com", guardianPhone: "+233249876543" },
-  { id: "st-108", name: "Akosua Mansah", rollNumber: "ST-008", level: "JHS", className: "JHS 2", guardianName: "Grace Mansah", guardianEmail: "grace@mansah.com", guardianPhone: "+233509876543" }
+  { id: "st-108", name: "Akosua Mansah", rollNumber: "ST-008", level: "JHS", className: "JHS 2", guardianName: "Grace Mansah", guardianEmail: "grace@mansah.com", guardianPhone: "+233509876543" },
+  { id: "st-109", name: "Aboagye Messiah", rollNumber: "ST-009", level: "JHS", className: "JHS 1", guardianName: "Mr. Aboagye", guardianEmail: "aboagye@eastfield.com", guardianPhone: "+233241234568" }
 ];
 
 export const INITIAL_GRADING_SCALE: GradingScaleRule[] = [
@@ -108,7 +109,18 @@ export const INITIAL_GRADES: Grade[] = [
   { studentId: "st-102", subjectId: "sub-p-eng", classScore: 22, examScore: 50, totalScore: 72, gradeLetter: "B2", remarks: "VERY GOOD", term: "Term 1", year: "2025/2026", teacherId: "tch-02", updatedAt: new Date().toISOString() },
   { studentId: "st-103", subjectId: "sub-j-math", classScore: 28, examScore: 65, totalScore: 93, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
   { studentId: "st-107", subjectId: "sub-j-ca", classScore: 42, examScore: 45, totalScore: 87, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
-  { studentId: "st-108", subjectId: "sub-j-ca", classScore: 38, examScore: 40, totalScore: 78, gradeLetter: "B2", remarks: "VERY GOOD", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() }
+  { studentId: "st-108", subjectId: "sub-j-ca", classScore: 38, examScore: 40, totalScore: 78, gradeLetter: "B2", remarks: "VERY GOOD", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  // Restored grades for Aboagye Messiah (st-109) - JHS 1
+  { studentId: "st-109", subjectId: "sub-j-eng", classScore: 42, examScore: 46, totalScore: 88, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-109", subjectId: "sub-j-math", classScore: 45, examScore: 48, totalScore: 93, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-109", subjectId: "sub-j-sci", classScore: 44, examScore: 45, totalScore: 89, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-109", subjectId: "sub-j-soc", classScore: 40, examScore: 43, totalScore: 83, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-109", subjectId: "sub-j-car", classScore: 41, examScore: 44, totalScore: 85, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-109", subjectId: "sub-j-rme", classScore: 43, examScore: 47, totalScore: 90, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-109", subjectId: "sub-j-gh", classScore: 39, examScore: 42, totalScore: 81, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-109", subjectId: "sub-j-ca", classScore: 44, examScore: 46, totalScore: 90, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-109", subjectId: "sub-j-fr", classScore: 38, examScore: 40, totalScore: 78, gradeLetter: "B2", remarks: "VERY GOOD", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-109", subjectId: "sub-j-ict", classScore: 45, examScore: 47, totalScore: 92, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() }
 ];
 
 export const INITIAL_ATTENDANCE: Attendance[] = [
@@ -116,5 +128,6 @@ export const INITIAL_ATTENDANCE: Attendance[] = [
   { studentId: "st-102", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 62, remarks: "Good attendance. Well done.", teacherId: "tch-02", updatedAt: new Date().toISOString() },
   { studentId: "st-103", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 70, remarks: "Perfect attendance score!", teacherId: "tch-03", updatedAt: new Date().toISOString() },
   { studentId: "st-107", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 69, remarks: "Excellent attendance record.", teacherId: "tch-03", updatedAt: new Date().toISOString() },
-  { studentId: "st-108", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 67, remarks: "Very good attendance.", teacherId: "tch-03", updatedAt: new Date().toISOString() }
+  { studentId: "st-108", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 67, remarks: "Very good attendance.", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-109", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 70, remarks: "Outstanding academic performance and perfect attendance.", teacherId: "tch-03", updatedAt: new Date().toISOString() }
 ];

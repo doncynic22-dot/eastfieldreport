@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Student, Grade, Attendance, Subject, ReportConfig } from '../types';
+import { Student, Grade, Attendance, Subject, ReportConfig, StudentBill } from '../types';
 import { getNextClassAndLevel } from '../services/promotionService';
 import { Printer, Check, Settings2, FileText, Sparkles, ExternalLink, Sliders, GraduationCap, Download, Mail, MessageSquare, Share2, Copy, CheckCircle2, Phone, X, Edit2 } from 'lucide-react';
 import { generateEmailReportBody, sendGuardianEmail, sendWhatsAppReport } from '../services/emailDispatcher';
@@ -12,6 +12,8 @@ import { findMatchingGrade, matchesSubject } from '../utils/subjectUtils';
 
 interface ReportPDFProps {
   student: Student;
+  bills?: StudentBill[];
+  onUpdateBill?: (bill: StudentBill) => void;
   grades: Grade[];
   attendance?: Attendance;
   subjects: Subject[];
@@ -156,6 +158,8 @@ function SchoolSealSVG({ className }: { className?: string }) {
 
 export default function ReportPDF({
   student,
+  bills,
+  onUpdateBill,
   grades,
   attendance,
   subjects,
@@ -252,12 +256,36 @@ export default function ReportPDF({
   const [nurseryPta, setNurseryPta] = useState('10.00');
 
   useEffect(() => {
-    if (config.reopeningDate) {
-      setJhsReopening(config.reopeningDate);
-      setPrimaryReopening(config.reopeningDate);
-      setNurseryReopening(config.reopeningDate);
-    }
-  }, [config.reopeningDate]);
+    const saved = bills?.find(b => b.studentId === student.id);
+    const defaultReopening = config.reopeningDate || '15th September, 2026';
+
+    setJhsArrears(saved?.arrears ?? '825.00');
+    setJhsTuition(saved?.tuition ?? '730.00');
+    setJhsComputing(saved?.computing ?? '20.00');
+    setJhsUtility(saved?.utility ?? '25.00');
+    setJhsStationery(saved?.stationery ?? '30.00');
+    setJhsPta(saved?.pta ?? '20.00');
+    setJhsReopening(saved?.reopeningDate || config.reopeningDate || defaultReopening);
+    setJhsContact(saved?.contactNumber || '0249321874');
+
+    setPrimaryArrears(saved?.arrears ?? '0.00');
+    setPrimaryTuition(saved?.tuition ?? '600.00');
+    setPrimaryComputing(saved?.computing ?? '20.00');
+    setPrimaryUtility(saved?.utility ?? '25.00');
+    setPrimaryStationery(saved?.stationery ?? '30.00');
+    setPrimaryPta(saved?.pta ?? '20.00');
+    setPrimaryReopening(saved?.reopeningDate || config.reopeningDate || defaultReopening);
+    setPrimaryContact(saved?.contactNumber || '0249321874');
+
+    setNurseryArrears(saved?.arrears ?? '0.00');
+    setNurseryTuition(saved?.tuition ?? '450.00');
+    setNurseryComputing(saved?.computing ?? '15.00');
+    setNurseryUtility(saved?.utility ?? '15.00');
+    setNurseryStationery(saved?.stationery ?? '20.00');
+    setNurseryPta(saved?.pta ?? '10.00');
+    setNurseryReopening(saved?.reopeningDate || config.reopeningDate || defaultReopening);
+    setNurseryContact(saved?.contactNumber || '0249321874');
+  }, [student.id, bills, config.reopeningDate, student.level]);
 
   const clsUpper = (student.className || '').toUpperCase();
   const isKg = student.level === 'KINDERGARTEN' || clsUpper.includes('KG') || clsUpper.includes('KINDERGARTEN');
@@ -279,6 +307,63 @@ export default function ReportPDF({
   const currentUtility = isJHS ? jhsUtility : (isPrimary ? primaryUtility : nurseryUtility);
   const currentStationery = isJHS ? jhsStationery : (isPrimary ? primaryStationery : nurseryStationery);
   const currentPta = isJHS ? jhsPta : (isPrimary ? primaryPta : nurseryPta);
+
+  const handleBillFieldChange = (field: keyof StudentBill, value: string) => {
+    if (student.level === 'JHS') {
+      if (field === 'arrears') setJhsArrears(value);
+      if (field === 'tuition') setJhsTuition(value);
+      if (field === 'computing') setJhsComputing(value);
+      if (field === 'utility') setJhsUtility(value);
+      if (field === 'stationery') setJhsStationery(value);
+      if (field === 'pta') setJhsPta(value);
+      if (field === 'reopeningDate') setJhsReopening(value);
+      if (field === 'contactNumber') setJhsContact(value);
+    } else if (student.level === 'PRIMARY') {
+      if (field === 'arrears') setPrimaryArrears(value);
+      if (field === 'tuition') setPrimaryTuition(value);
+      if (field === 'computing') setPrimaryComputing(value);
+      if (field === 'utility') setPrimaryUtility(value);
+      if (field === 'stationery') setPrimaryStationery(value);
+      if (field === 'pta') setPrimaryPta(value);
+      if (field === 'reopeningDate') setPrimaryReopening(value);
+      if (field === 'contactNumber') setPrimaryContact(value);
+    } else {
+      if (field === 'arrears') setNurseryArrears(value);
+      if (field === 'tuition') setNurseryTuition(value);
+      if (field === 'computing') setNurseryComputing(value);
+      if (field === 'utility') setNurseryUtility(value);
+      if (field === 'stationery') setNurseryStationery(value);
+      if (field === 'pta') setNurseryPta(value);
+      if (field === 'reopeningDate') setNurseryReopening(value);
+      if (field === 'contactNumber') setNurseryContact(value);
+    }
+
+    if (onUpdateBill) {
+      const curArrears = field === 'arrears' ? value : currentArrears;
+      const curTuition = field === 'tuition' ? value : currentTuition;
+      const curComputing = field === 'computing' ? value : currentComputing;
+      const curUtility = field === 'utility' ? value : currentUtility;
+      const curStationery = field === 'stationery' ? value : currentStationery;
+      const curPta = field === 'pta' ? value : currentPta;
+      const curReopening = field === 'reopeningDate' ? value : currentReopening;
+      const curContact = field === 'contactNumber' ? value : currentContact;
+
+      onUpdateBill({
+        studentId: student.id,
+        arrears: curArrears,
+        tuition: curTuition,
+        computing: curComputing,
+        utility: curUtility,
+        stationery: curStationery,
+        pta: curPta,
+        reopeningDate: curReopening,
+        contactNumber: curContact,
+        term: config.term || 'Term 1',
+        year: config.schoolYear || '2025/2026',
+        updatedAt: new Date().toISOString()
+      });
+    }
+  };
 
   const parsedArrears = parseFloat(currentArrears) || 0;
   const parsedTuition = parseFloat(currentTuition) || 0;
@@ -918,7 +1003,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={jhsReopening}
-                          onChange={(e) => setJhsReopening(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('reopeningDate', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -927,7 +1012,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={jhsContact}
-                          onChange={(e) => setJhsContact(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('contactNumber', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -942,7 +1027,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={jhsArrears}
-                          onChange={(e) => setJhsArrears(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('arrears', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -951,7 +1036,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={jhsTuition}
-                          onChange={(e) => setJhsTuition(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('tuition', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -960,7 +1045,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={jhsComputing}
-                          onChange={(e) => setJhsComputing(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('computing', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -969,7 +1054,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={jhsUtility}
-                          onChange={(e) => setJhsUtility(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('utility', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -978,7 +1063,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={jhsStationery}
-                          onChange={(e) => setJhsStationery(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('stationery', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -987,7 +1072,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={jhsPta}
-                          onChange={(e) => setJhsPta(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('pta', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1006,7 +1091,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={primaryReopening}
-                          onChange={(e) => setPrimaryReopening(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('reopeningDate', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1015,7 +1100,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={primaryContact}
-                          onChange={(e) => setPrimaryContact(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('contactNumber', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1030,7 +1115,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={primaryArrears}
-                          onChange={(e) => setPrimaryArrears(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('arrears', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1039,7 +1124,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={primaryTuition}
-                          onChange={(e) => setPrimaryTuition(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('tuition', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1048,7 +1133,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={primaryComputing}
-                          onChange={(e) => setPrimaryComputing(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('computing', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1057,7 +1142,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={primaryUtility}
-                          onChange={(e) => setPrimaryUtility(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('utility', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1066,7 +1151,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={primaryStationery}
-                          onChange={(e) => setPrimaryStationery(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('stationery', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1075,7 +1160,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={primaryPta}
-                          onChange={(e) => setPrimaryPta(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('pta', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1094,7 +1179,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={nurseryReopening}
-                          onChange={(e) => setNurseryReopening(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('reopeningDate', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1103,7 +1188,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={nurseryContact}
-                          onChange={(e) => setNurseryContact(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('contactNumber', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1118,7 +1203,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={nurseryArrears}
-                          onChange={(e) => setNurseryArrears(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('arrears', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1127,7 +1212,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={nurseryTuition}
-                          onChange={(e) => setNurseryTuition(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('tuition', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1136,7 +1221,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={nurseryComputing}
-                          onChange={(e) => setNurseryComputing(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('computing', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1145,7 +1230,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={nurseryUtility}
-                          onChange={(e) => setNurseryUtility(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('utility', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1154,7 +1239,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={nurseryStationery}
-                          onChange={(e) => setNurseryStationery(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('stationery', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>
@@ -1163,7 +1248,7 @@ export default function ReportPDF({
                         <input
                           type="text"
                           value={nurseryPta}
-                          onChange={(e) => setNurseryPta(e.target.value)}
+                          onChange={(e) => handleBillFieldChange('pta', e.target.value)}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900"
                         />
                       </div>

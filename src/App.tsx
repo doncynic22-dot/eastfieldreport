@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Student, User, Subject, ReportConfig, Grade, Attendance } from './types';
+import { Student, User, Subject, ReportConfig, Grade, Attendance, StudentBill } from './types';
 import { 
   INITIAL_CLASSES, 
   INITIAL_SUBJECTS, 
@@ -25,11 +25,13 @@ import {
   fetchSupabaseTeachers,
   fetchSupabaseGrades,
   fetchSupabaseAttendance,
+  fetchSupabaseBills,
   saveSupabaseConfig,
   saveSupabaseStudents,
   saveSupabaseTeachers,
   saveSupabaseGrades,
   saveSupabaseAttendance,
+  saveSupabaseBills,
   SUPABASE_SQL_SCHEMA,
   SUPABASE_SQL_REPAIR
 } from './lib/supabase';
@@ -43,8 +45,19 @@ export default function App() {
   const [teachers, setTeachers] = useState<User[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [bills, setBills] = useState<StudentBill[]>([]);
   const [config, setConfig] = useState<ReportConfig>(DEFAULT_REPORT_CONFIG);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  const handleUpdateBill = (updatedBill: StudentBill) => {
+    setBills(prev => {
+      const next = [...prev.filter(b => b.studentId !== updatedBill.studentId), updatedBill];
+      localStorage.setItem('ea_bills', JSON.stringify(next));
+      localStorage.setItem('mock_supabase_ea_bills', JSON.stringify(next));
+      saveSupabaseBills(next).catch(e => console.warn('Background sync bills error', e));
+      return next;
+    });
+  };
 
   // Nav State: 'hub' | 'admin' | 'teacher'
   const [activePortal, setActivePortal] = useState<'hub' | 'admin' | 'teacher'>(() => {
@@ -167,8 +180,13 @@ export default function App() {
 
       if (configFetchSuccess) {
         if (sConfig) {
-          setConfig(sConfig);
-          localStorage.setItem('ea_config', JSON.stringify(sConfig));
+          const mergedConfig: ReportConfig = {
+            ...localConfig,
+            ...sConfig,
+            reopeningDate: sConfig.reopeningDate || localConfig.reopeningDate || DEFAULT_REPORT_CONFIG.reopeningDate
+          };
+          setConfig(mergedConfig);
+          localStorage.setItem('ea_config', JSON.stringify(mergedConfig));
         } else {
           // Row does not exist on Supabase, but query worked -> safe to seed
           try {
@@ -338,6 +356,47 @@ export default function App() {
         setAttendance(localAttendance);
       }
 
+      // 6. Fetch & Sync Bills
+      let sBills: StudentBill[] | null = null;
+      let billsFetchSuccess = false;
+      try {
+        sBills = await fetchSupabaseBills();
+        billsFetchSuccess = true;
+      } catch (err: any) {
+        console.warn("Failed fetching bills from Supabase. Falling back to local cache.", err);
+      }
+
+      const cachedBillsStr = localStorage.getItem('ea_bills');
+      let localBills: StudentBill[] = [];
+      if (cachedBillsStr) {
+        try { localBills = JSON.parse(cachedBillsStr); } catch (e) { localBills = []; }
+      }
+
+      let activeBills = localBills;
+      if (billsFetchSuccess && sBills !== null) {
+        const billMap = new Map<string, StudentBill>();
+        sBills.forEach(b => billMap.set(b.studentId, b));
+        localBills.forEach(b => {
+          const existing = billMap.get(b.studentId);
+          if (!existing) {
+            billMap.set(b.studentId, b);
+          } else {
+            const localTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+            const remoteTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+            if (localTime >= remoteTime) {
+              billMap.set(b.studentId, b);
+            }
+          }
+        });
+        activeBills = Array.from(billMap.values());
+        setBills(activeBills);
+        localStorage.setItem('ea_bills', JSON.stringify(activeBills));
+        localStorage.setItem('mock_supabase_ea_bills', JSON.stringify(activeBills));
+        saveSupabaseBills(activeBills).catch(e => console.warn("Background sync bills failed", e));
+      } else {
+        setBills(localBills);
+      }
+
       setIsSupabaseSyncing(false);
       return true;
     } catch (e: any) {
@@ -353,7 +412,8 @@ export default function App() {
     customConfig?: ReportConfig,
     customTeachers?: User[],
     customGrades?: Grade[],
-    customAttendance?: Attendance[]
+    customAttendance?: Attendance[],
+    customBills?: StudentBill[]
   ) => {
     setIsSupabaseSyncing(true);
     try {
@@ -368,15 +428,17 @@ export default function App() {
       const targetTeachers = customTeachers || teachers;
       const targetGrades = customGrades || grades;
       const targetAttendance = customAttendance || attendance;
+      const targetBills = customBills || bills;
 
       const okConfig = await saveSupabaseConfig(targetConfig);
       const okStudents = await saveSupabaseStudents(targetStudents);
       const okTeachers = await saveSupabaseTeachers(targetTeachers);
       const okGrades = await saveSupabaseGrades(targetGrades);
       const okAttendance = await saveSupabaseAttendance(targetAttendance);
+      const okBills = await saveSupabaseBills(targetBills);
 
       setIsSupabaseSyncing(false);
-      return okConfig && okStudents && okTeachers && okGrades && okAttendance;
+      return okConfig && okStudents && okTeachers && okGrades && okAttendance && okBills;
     } catch (e: any) {
       console.error('Failed pushing to Supabase:', e);
       setIsSupabaseSyncing(false);
@@ -390,6 +452,7 @@ export default function App() {
     const cachedTeachers = localStorage.getItem('ea_teachers');
     const cachedGrades = localStorage.getItem('ea_grades');
     const cachedAttendance = localStorage.getItem('ea_attendance');
+    const cachedBills = localStorage.getItem('ea_bills');
     const cachedConfig = localStorage.getItem('ea_config');
 
     let finalTeachers: User[] = [];
@@ -419,9 +482,17 @@ export default function App() {
     // Filter out any teacher accounts that may have leaked into students
     const teacherEmails = new Set(finalTeachers.map(t => t.email.toLowerCase()));
     const teacherIds = new Set(finalTeachers.map(t => t.id));
-    const cleanStudents = finalStudents.filter(
+    let cleanStudents = finalStudents.filter(
       s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
     );
+
+    // Auto-restore any initial students (like Aboagye Messiah) missing from cache
+    const existingStudentIds = new Set(cleanStudents.map(s => s.id));
+    INITIAL_STUDENTS.forEach(initSt => {
+      if (!existingStudentIds.has(initSt.id)) {
+        cleanStudents.push(initSt);
+      }
+    });
 
     setStudents(cleanStudents);
     localStorage.setItem('ea_students', JSON.stringify(cleanStudents));
@@ -436,6 +507,16 @@ export default function App() {
     } else {
       finalGrades = INITIAL_GRADES;
     }
+
+    // Auto-restore any initial grades (like Aboagye Messiah's grades) missing from cache
+    const existingGradeKeys = new Set(finalGrades.map(g => `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`));
+    INITIAL_GRADES.forEach(initG => {
+      const key = `${initG.studentId}_${initG.subjectId}_${initG.term || 'Term 1'}_${initG.year || '2025/2026'}`;
+      if (!existingGradeKeys.has(key)) {
+        finalGrades.push(initG);
+      }
+    });
+
     setGrades(finalGrades);
     localStorage.setItem('ea_grades', JSON.stringify(finalGrades));
 
@@ -449,8 +530,25 @@ export default function App() {
     } else {
       finalAttendance = INITIAL_ATTENDANCE;
     }
+
+    const existingAttKeys = new Set(finalAttendance.map(a => `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`));
+    INITIAL_ATTENDANCE.forEach(initA => {
+      const key = `${initA.studentId}_${initA.term || 'Term 1'}_${initA.year || '2025/2026'}`;
+      if (!existingAttKeys.has(key)) {
+        finalAttendance.push(initA);
+      }
+    });
+
     setAttendance(finalAttendance);
     localStorage.setItem('ea_attendance', JSON.stringify(finalAttendance));
+
+    if (cachedBills !== null) {
+      try {
+        setBills(JSON.parse(cachedBills) as StudentBill[]);
+      } catch (e) {
+        setBills([]);
+      }
+    }
 
     if (cachedConfig) {
       const parsed = JSON.parse(cachedConfig);
@@ -992,6 +1090,8 @@ export default function App() {
                 setGrades={setGrades}
                 attendance={attendance}
                 setAttendance={setAttendance}
+                bills={bills}
+                onUpdateBill={handleUpdateBill}
                 config={config}
                 setConfig={setConfig}
                 classes={INITIAL_CLASSES}

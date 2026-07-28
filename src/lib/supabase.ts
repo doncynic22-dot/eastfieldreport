@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Student, User, Grade, Attendance, ReportConfig } from '../types';
+import { Student, User, Grade, Attendance, ReportConfig, StudentBill } from '../types';
 
 // Helper to retrieve credentials from env or localStorage
 export function getSupabaseCredentials() {
@@ -147,14 +147,42 @@ ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS remarks VARCHAR DEFAUL
 ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS teacher_id VARCHAR DEFAULT '';
 ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
 
--- 6. Disable Row Level Security (RLS) on all tables to ensure public frontend sync operates correctly
+-- 6. Create / Fix ea_bills table columns for per-student bills
+CREATE TABLE IF NOT EXISTS public.ea_bills (
+  student_id VARCHAR PRIMARY KEY,
+  arrears VARCHAR DEFAULT '0.00',
+  tuition VARCHAR DEFAULT '0.00',
+  computing VARCHAR DEFAULT '0.00',
+  utility VARCHAR DEFAULT '0.00',
+  stationery VARCHAR DEFAULT '0.00',
+  pta VARCHAR DEFAULT '0.00',
+  reopening_date VARCHAR,
+  contact_number VARCHAR,
+  term VARCHAR DEFAULT 'Term 1',
+  year VARCHAR DEFAULT '2025/2026',
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS arrears VARCHAR DEFAULT '0.00';
+ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS tuition VARCHAR DEFAULT '0.00';
+ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS computing VARCHAR DEFAULT '0.00';
+ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS utility VARCHAR DEFAULT '0.00';
+ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS stationery VARCHAR DEFAULT '0.00';
+ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS pta VARCHAR DEFAULT '0.00';
+ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS reopening_date VARCHAR;
+ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS contact_number VARCHAR;
+ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
+ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS year VARCHAR DEFAULT '2025/2026';
+ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+-- 7. Disable Row Level Security (RLS) on all tables to ensure public frontend sync operates correctly
 ALTER TABLE public.ea_config DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_students DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_teachers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_grades DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_attendance DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_bills DISABLE ROW LEVEL SECURITY;
 
--- 7. Reload PostgREST schema cache
+-- 8. Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';
 `;
 
@@ -252,6 +280,22 @@ CREATE TABLE IF NOT EXISTS public.ea_attendance (
   teacher_id VARCHAR NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
   PRIMARY KEY (student_id, term, year)
+);
+
+-- 6. Create Student Bills Table
+CREATE TABLE IF NOT EXISTS public.ea_bills (
+  student_id VARCHAR PRIMARY KEY,
+  arrears VARCHAR DEFAULT '0.00',
+  tuition VARCHAR DEFAULT '0.00',
+  computing VARCHAR DEFAULT '0.00',
+  utility VARCHAR DEFAULT '0.00',
+  stationery VARCHAR DEFAULT '0.00',
+  pta VARCHAR DEFAULT '0.00',
+  reopening_date VARCHAR,
+  contact_number VARCHAR,
+  term VARCHAR DEFAULT 'Term 1',
+  year VARCHAR DEFAULT '2025/2026',
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- Ensure columns exist on older tables in case "IF NOT EXISTS" table creation was skipped
@@ -1127,6 +1171,76 @@ export async function saveSupabaseAttendance(attendance: Attendance[]): Promise<
     return true;
   } catch (err: any) {
     console.warn('Supabase saveSupabaseAttendance exception, fallback to local storage preserved:', err);
+    return true;
+  }
+}
+
+// 6. SYNC STUDENT BILLS
+export async function fetchSupabaseBills(): Promise<StudentBill[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client.from('ea_bills').select('*');
+    if (error) {
+      if (isMissingTableOrConnectionError(error)) {
+        const cached = localStorage.getItem('mock_supabase_ea_bills') || localStorage.getItem('ea_bills');
+        return cached ? JSON.parse(cached) : null;
+      }
+      return null;
+    }
+    if (!data) return null;
+    return data.map(item => ({
+      studentId: item.student_id,
+      arrears: item.arrears || '0.00',
+      tuition: item.tuition || '0.00',
+      computing: item.computing || '0.00',
+      utility: item.utility || '0.00',
+      stationery: item.stationery || '0.00',
+      pta: item.pta || '0.00',
+      reopeningDate: item.reopening_date || undefined,
+      contactNumber: item.contact_number || undefined,
+      term: item.term || 'Term 1',
+      year: item.year || '2025/2026',
+      updatedAt: item.updated_at,
+    }));
+  } catch (err: any) {
+    if (isMissingTableOrConnectionError(err)) {
+      const cached = localStorage.getItem('mock_supabase_ea_bills') || localStorage.getItem('ea_bills');
+      return cached ? JSON.parse(cached) : null;
+    }
+    return null;
+  }
+}
+
+export async function saveSupabaseBills(bills: StudentBill[]): Promise<boolean> {
+  localStorage.setItem('mock_supabase_ea_bills', JSON.stringify(bills));
+  localStorage.setItem('ea_bills', JSON.stringify(bills));
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+  try {
+    const payloads = bills.map(b => ({
+      student_id: b.studentId,
+      arrears: String(b.arrears),
+      tuition: String(b.tuition),
+      computing: String(b.computing),
+      utility: String(b.utility),
+      stationery: String(b.stationery),
+      pta: String(b.pta),
+      reopening_date: b.reopeningDate || null,
+      contact_number: b.contactNumber || null,
+      term: b.term || 'Term 1',
+      year: b.year || '2025/2026',
+      updated_at: b.updatedAt || new Date().toISOString()
+    }));
+    const { error } = await safeUpsert('ea_bills', payloads, client, 'student_id');
+    if (error) {
+      console.warn('Supabase saveSupabaseBills sync error, fallback to local storage preserved:', error);
+      return true;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('Supabase saveSupabaseBills exception, fallback to local storage preserved:', err);
     return true;
   }
 }

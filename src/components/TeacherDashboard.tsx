@@ -1641,8 +1641,8 @@ export default function TeacherDashboard({
 
           {/* MAIN GRADE ENTRY SHEET TABLE */}
           {(() => {
-            const classLimit = selectedLevel === 'KINDERGARTEN' ? 50 : 30;
-            const examLimit = selectedLevel === 'KINDERGARTEN' ? 50 : 70;
+            const classLimit = (selectedLevel === 'KINDERGARTEN' || selectedLevel === 'PRIMARY') ? 50 : (config?.classScoreWeight || 50);
+            const examLimit = (selectedLevel === 'KINDERGARTEN' || selectedLevel === 'PRIMARY') ? 50 : (config?.examScoreWeight || 50);
 
             return (
               <div className="bg-white rounded border border-mauve-500/20 shadow-sm overflow-hidden">

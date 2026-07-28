@@ -4,10 +4,10 @@
  */
 
 import React, { useState } from 'react';
-import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel } from '../types';
+import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill } from '../types';
 import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink } from 'lucide-react';
 import ReportPDF from './ReportPDF';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion } from '../services/promotionService';
 
@@ -21,6 +21,8 @@ interface AdminDashboardProps {
   setGrades?: React.Dispatch<React.SetStateAction<Grade[]>>;
   attendance: Attendance[];
   setAttendance: React.Dispatch<React.SetStateAction<Attendance[]>>;
+  bills?: StudentBill[];
+  onUpdateBill?: (bill: StudentBill) => void;
   config: ReportConfig;
   setConfig: React.Dispatch<React.SetStateAction<ReportConfig>>;
   classes: { NURSERY: string[]; KINDERGARTEN?: string[]; PRIMARY: string[]; JHS: string[] };
@@ -47,6 +49,8 @@ export default function AdminDashboard({
   setGrades,
   attendance,
   setAttendance,
+  bills,
+  onUpdateBill,
   config,
   setConfig,
   classes,
@@ -69,8 +73,10 @@ export default function AdminDashboard({
     setIsSavingConfig(true);
     try {
       localStorage.setItem('ea_config', JSON.stringify(config));
+      localStorage.setItem('mock_supabase_ea_config', JSON.stringify(config));
       if (getSupabaseCredentials().isConfigured) {
-        await onPushToSupabase?.();
+        await saveSupabaseConfig(config);
+        await onPushToSupabase?.(undefined, config);
       }
       const isThirdTerm = config.term?.toLowerCase().includes('3') || config.term?.toLowerCase().includes('third');
       const termNotice = isThirdTerm
@@ -1193,6 +1199,8 @@ export default function AdminDashboard({
             {selectedStudent ? (
               <ReportPDF
                 student={selectedStudent}
+                bills={bills}
+                onUpdateBill={onUpdateBill}
                 grades={
                   grades.filter((g) => g.studentId === selectedStudent.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear)).length > 0
                     ? grades.filter((g) => g.studentId === selectedStudent.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear))
@@ -2157,7 +2165,15 @@ export default function AdminDashboard({
                     <input
                       type="date"
                       value={config.reopeningDate || '2026-09-15'}
-                      onChange={(e) => setConfig(prev => ({ ...prev, reopeningDate: e.target.value }))}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setConfig(prev => {
+                          const updated = { ...prev, reopeningDate: val };
+                          localStorage.setItem('ea_config', JSON.stringify(updated));
+                          localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updated));
+                          return updated;
+                        });
+                      }}
                       className="w-full p-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none text-mauve-900 bg-white"
                     />
                     <span className="text-[10px] text-gray-500 block">Target date for First Term migration roll.</span>
@@ -2902,7 +2918,15 @@ export default function AdminDashboard({
                 <input
                   type="date"
                   value={config.reopeningDate || '2026-09-15'}
-                  onChange={(e) => setConfig(prev => ({ ...prev, reopeningDate: e.target.value }))}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setConfig(prev => {
+                      const updated = { ...prev, reopeningDate: val };
+                      localStorage.setItem('ea_config', JSON.stringify(updated));
+                      localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updated));
+                      return updated;
+                    });
+                  }}
                   className="p-1.5 rounded-lg border border-mauve-250 text-xs font-semibold bg-white text-mauve-900"
                 />
               </div>
@@ -3240,6 +3264,8 @@ export default function AdminDashboard({
 
                       <ReportPDF
                         student={st}
+                        bills={bills}
+                        onUpdateBill={onUpdateBill}
                         grades={stGrades}
                         attendance={stAttendance}
                         subjects={subjects}
