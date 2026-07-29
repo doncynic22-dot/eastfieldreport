@@ -745,6 +745,47 @@ export default function App() {
     }
   }, [config, isInitialized]);
 
+  // Background polling & tab focus refresh to receive real-time admin updates across devices (e.g. reopening date)
+  useEffect(() => {
+    if (!isInitialized) return;
+    const creds = getSupabaseCredentials();
+    if (!creds.isConfigured) return;
+
+    const pullRemoteUpdates = async () => {
+      try {
+        const remoteConfig = await fetchSupabaseConfig();
+        if (remoteConfig) {
+          setConfig(prev => {
+            if (
+              remoteConfig.reopeningDate !== prev.reopeningDate ||
+              remoteConfig.term !== prev.term ||
+              remoteConfig.schoolYear !== prev.schoolYear ||
+              remoteConfig.schoolName !== prev.schoolName
+            ) {
+              const updated = { ...prev, ...remoteConfig };
+              localStorage.setItem('ea_config', JSON.stringify(updated));
+              return updated;
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        // silent catch
+      }
+    };
+
+    const interval = setInterval(pullRemoteUpdates, 12000);
+    const handleFocus = () => pullRemoteUpdates();
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [isInitialized]);
+
 
   // 3. SECURE ADMIN PASSWORD CHECK
   const handleAdminGateLogin = (e: React.FormEvent) => {

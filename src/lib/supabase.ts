@@ -719,29 +719,31 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
   const client = getSupabaseClient();
   if (!client) return null;
   try {
-    let { data, error } = await client.from('ea_config').select('*').eq('id', 'global_config').maybeSingle();
+    // 1. Query most recently updated config row
+    const { data: rows, error: selectErr } = await client
+      .from('ea_config')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    let data = rows && rows.length > 0 ? rows[0] : null;
+
     if (!data) {
-      const uuidRes = await client.from('ea_config').select('*').eq('id', '00000000-0000-0000-0000-000000000000').maybeSingle();
-      if (uuidRes.data) {
-        data = uuidRes.data;
-        error = null;
+      // Fallback query without ordering
+      const { data: fallbackRows } = await client.from('ea_config').select('*').limit(1);
+      if (fallbackRows && fallbackRows.length > 0) {
+        data = fallbackRows[0];
       }
     }
+
     if (!data) {
-      const fallbackRes = await client.from('ea_config').select('*').limit(1).maybeSingle();
-      if (fallbackRes.data) {
-        data = fallbackRes.data;
-        error = null;
-      }
-    }
-    if (error) {
-      if (isMissingTableOrConnectionError(error)) {
+      if (selectErr && isMissingTableOrConnectionError(selectErr)) {
         const cached = localStorage.getItem('mock_supabase_ea_config') || localStorage.getItem('ea_config');
         return cached ? JSON.parse(cached) : null;
       }
       return null;
     }
-    if (!data) return null;
+
     return {
       schoolName: data.school_name || 'Eastfield Academy',
       schoolYear: data.school_year || '2025/2026',
@@ -782,8 +784,20 @@ export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean>
   const client = getSupabaseClient();
   if (!client) return true;
   try {
+    // Preserve existing row's ID if present to update in place
+    let targetId: string = 'global_config';
+    const { data: existingRows } = await client
+      .from('ea_config')
+      .select('id')
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (existingRows && existingRows.length > 0 && existingRows[0].id) {
+      targetId = existingRows[0].id;
+    }
+
     const payload = {
-      id: 'global_config',
+      id: targetId,
       school_name: config.schoolName,
       school_year: config.schoolYear,
       term: config.term,
@@ -815,6 +829,7 @@ export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean>
       error = retryRes.error;
     }
     if (error) {
+      console.warn('saveSupabaseConfig error:', error);
       if (isMissingTableOrConnectionError(error)) {
         localStorage.setItem('mock_supabase_ea_config', JSON.stringify(config));
         return true;
