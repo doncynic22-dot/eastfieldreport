@@ -755,9 +755,11 @@ export default function App() {
 
     const pullRemoteUpdates = async () => {
       try {
-        const [remoteConfig, remoteBills] = await Promise.all([
+        const [remoteConfig, remoteBills, remoteGrades, remoteAttendance] = await Promise.all([
           fetchSupabaseConfig(),
-          fetchSupabaseBills()
+          fetchSupabaseBills(),
+          fetchSupabaseGrades(),
+          fetchSupabaseAttendance()
         ]);
         if (remoteConfig) {
           setConfig(prev => {
@@ -780,6 +782,26 @@ export default function App() {
             if (hasChanged) {
               localStorage.setItem('ea_bills', JSON.stringify(remoteBills));
               return remoteBills;
+            }
+            return prev;
+          });
+        }
+        if (remoteGrades && Array.isArray(remoteGrades) && remoteGrades.length > 0) {
+          setGrades(prev => {
+            const hasChanged = JSON.stringify(prev) !== JSON.stringify(remoteGrades);
+            if (hasChanged) {
+              localStorage.setItem('ea_grades', JSON.stringify(remoteGrades));
+              return remoteGrades;
+            }
+            return prev;
+          });
+        }
+        if (remoteAttendance && Array.isArray(remoteAttendance) && remoteAttendance.length > 0) {
+          setAttendance(prev => {
+            const hasChanged = JSON.stringify(prev) !== JSON.stringify(remoteAttendance);
+            if (hasChanged) {
+              localStorage.setItem('ea_attendance', JSON.stringify(remoteAttendance));
+              return remoteAttendance;
             }
             return prev;
           });

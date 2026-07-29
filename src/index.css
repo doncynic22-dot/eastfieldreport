@@ -132,37 +132,40 @@
     position: relative !important;
     page-break-after: avoid !important;
     page-break-inside: avoid !important;
+    break-after: avoid !important;
+    break-inside: avoid !important;
   }
 
-  /* Force Font 11 (11pt) on table cells, metadata, paragraphs and other text elements */
-  .print-container td,
-  .print-container th,
-  .print-container span,
-  .print-container p,
-  .print-container label,
-  .print-container div,
-  .print-container blockquote {
-    font-size: 11pt !important;
-    line-height: 1.25 !important;
+  /* Prevent breaks inside tables, table rows, and grid blocks */
+  .print-container table,
+  .print-container tr,
+  .print-container tbody,
+  .print-container thead,
+  .print-container .grid,
+  .bulk-report-card {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
-  /* Tighten padding and cell boundaries in print mode to ensure everything fits perfectly in 1 page */
+  /* Base cell formatting */
   .print-container td,
   .print-container th {
-    padding: 4px 6px !important;
+    font-size: 9.5pt !important;
+    line-height: 1.2 !important;
+    padding: 3px 5px !important;
     border-width: 1px !important;
   }
 
   /* Specific typography sizing rules to preserve visual hierarchy */
   .print-container h1 {
-    font-size: 18pt !important;
+    font-size: 16pt !important;
     font-weight: bold !important;
     line-height: 1.15 !important;
     margin-bottom: 2px !important;
   }
 
   .print-container h2 {
-    font-size: 11pt !important;
+    font-size: 10pt !important;
     font-weight: bold !important;
     line-height: 1.15 !important;
     margin-top: 2px !important;
@@ -174,48 +177,47 @@
   .print-container .space-y-4,
   .print-container .space-y-3,
   .print-container .space-y-2 {
-    margin-top: 4px !important;
-    margin-bottom: 4px !important;
+    margin-top: 3px !important;
+    margin-bottom: 3px !important;
   }
 
   /* Reduce grid row and column gaps */
   .print-container .grid {
-    gap: 4px 10px !important;
-    margin-top: 4px !important;
-    margin-bottom: 4px !important;
+    gap: 4px 8px !important;
+    margin-top: 3px !important;
+    margin-bottom: 3px !important;
   }
 
   /* Tighten bio metadata padding */
   .print-container .py-3 {
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
   }
 
   /* Attendance bar container */
   .print-container .py-1\.5 {
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
-    font-size: 11pt !important;
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
   }
 
   /* General comments card and bill summary card padding reduction */
   .print-container .p-4,
   .print-container .p-5,
   .print-container .p-3 {
-    padding: 10px !important;
+    padding: 8px !important;
   }
 
   /* Compact spacing for Bills rows */
   .print-container .space-y-1 > div {
-    margin-top: 1.5px !important;
-    margin-bottom: 1.5px !important;
+    margin-top: 1px !important;
+    margin-bottom: 1px !important;
   }
 
   /* Scale SVG mascots, seal, and logo elements safely */
   .print-container svg,
   .print-container img {
-    max-height: 48px !important;
-    max-width: 48px !important;
+    max-height: 42px !important;
+    max-width: 42px !important;
     margin-bottom: 2px !important;
   }
 
@@ -223,7 +225,7 @@
   .print-container p.text-slate-800,
   .print-container p.text-slate-700 {
     min-height: 0 !important;
-    padding: 6px !important;
+    padding: 4px !important;
     margin-top: 2px !important;
   }
 

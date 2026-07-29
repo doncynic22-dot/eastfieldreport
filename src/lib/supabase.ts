@@ -132,6 +132,7 @@ ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS exam_score NUMERIC DEFAULT
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS total_score NUMERIC DEFAULT 0;
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS grade_letter VARCHAR DEFAULT 'F';
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS remarks VARCHAR DEFAULT '';
+ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS nursery_remark VARCHAR DEFAULT '';
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS year VARCHAR DEFAULT '2025/2026';
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS teacher_id VARCHAR DEFAULT '';
@@ -262,6 +263,7 @@ CREATE TABLE IF NOT EXISTS public.ea_grades (
   total_score NUMERIC NOT NULL DEFAULT 0,
   grade_letter VARCHAR NOT NULL DEFAULT 'F',
   remarks VARCHAR NOT NULL DEFAULT '',
+  nursery_remark VARCHAR NOT NULL DEFAULT '',
   term VARCHAR NOT NULL DEFAULT 'Term 1',
   year VARCHAR NOT NULL DEFAULT '2025/2026',
   teacher_id VARCHAR NOT NULL,
@@ -354,6 +356,7 @@ ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS exam_score NUMERIC DEFAULT
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS total_score NUMERIC DEFAULT 0;
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS grade_letter VARCHAR DEFAULT 'F';
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS remarks VARCHAR DEFAULT '';
+ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS nursery_remark VARCHAR DEFAULT '';
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS year VARCHAR DEFAULT '2025/2026';
 ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS teacher_id VARCHAR DEFAULT '';
@@ -1088,6 +1091,7 @@ export async function fetchSupabaseGrades(): Promise<Grade[] | null> {
       totalScore: item.total_score !== undefined && item.total_score !== null ? Number(item.total_score) : 0,
       gradeLetter: item.grade_letter || 'F',
       remarks: item.remarks || '',
+      nurseryRemark: item.nursery_remark || item.nurseryRemark || undefined,
       term: item.term || 'Term 1',
       year: item.year || '2025/2026',
       teacherId: item.teacher_id || '',
@@ -1117,7 +1121,8 @@ export async function saveSupabaseGrades(grades: Grade[]): Promise<boolean> {
       exam_score: g.examScore,
       total_score: g.totalScore,
       grade_letter: g.gradeLetter,
-      remarks: g.remarks,
+      remarks: g.remarks || '',
+      nursery_remark: g.nurseryRemark || '',
       term: g.term || 'Term 1',
       year: g.year || '2025/2026',
       teacher_id: g.teacherId,

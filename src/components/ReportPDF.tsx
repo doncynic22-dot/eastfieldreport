@@ -300,12 +300,12 @@ export default function ReportPDF({
 
   const clsUpper = (student.className || '').toUpperCase();
   const isKg = student.level === 'KINDERGARTEN' || clsUpper.includes('KG') || clsUpper.includes('KINDERGARTEN');
-  const isNurseryLevel = !isKg && (student.level === 'NURSERY' || clsUpper.includes('NURSERY'));
+  const isNurseryLevel = !isKg && (student.level === 'NURSERY' || clsUpper.includes('NURSERY') || clsUpper.includes('N1') || clsUpper.includes('N2'));
   const effectiveLevel = isKg ? 'KINDERGARTEN' : (isNurseryLevel ? 'NURSERY' : (student.level === 'JHS' ? 'JHS' : 'PRIMARY'));
 
   const templateStyle = config.selectedTemplate || 'dynamic';
-  const isCompactTemplate = templateStyle === 'compact' || (templateStyle === 'dynamic' && isNurseryLevel);
-  const isHighFidelityTemplate = templateStyle === 'high-fidelity' || (templateStyle === 'dynamic' && (student.level === 'JHS' || student.level === 'PRIMARY' || isKg));
+  const isCompactTemplate = templateStyle === 'compact' || (templateStyle === 'dynamic' && (isNurseryLevel || isKg));
+  const isHighFidelityTemplate = templateStyle === 'high-fidelity' || (templateStyle === 'dynamic' && !isNurseryLevel && !isKg);
 
   const isJHS = effectiveLevel === 'JHS';
   const isPrimary = effectiveLevel === 'PRIMARY';
@@ -1640,6 +1640,19 @@ export default function ReportPDF({
                               levelSubjects.push(dk as any);
                             }
                           });
+                        } else if (effectiveLevel === 'NURSERY') {
+                          const defaultNursery = [
+                            { id: 'sub-n-lit', name: 'LITERACY / LANGUAGE', code: 'LIT', level: 'NURSERY' },
+                            { id: 'sub-n-num', name: 'NUMERACY', code: 'NUM', level: 'NURSERY' },
+                            { id: 'sub-n-cr', name: 'CREATIVITY', code: 'CRT', level: 'NURSERY' },
+                            { id: 'sub-n-pho', name: 'PHONICS', code: 'PHO', level: 'NURSERY' },
+                            { id: 'sub-n-psy', name: 'PSYCHOMOTOR SKILLS', code: 'PSY', level: 'NURSERY' }
+                          ];
+                          defaultNursery.forEach(dn => {
+                            if (!levelSubjects.some(s => matchesSubject(dn.id, s))) {
+                              levelSubjects.push(dn as any);
+                            }
+                          });
                         } else if (effectiveLevel === 'PRIMARY') {
                           const defaultPrimary = [
                             { id: 'sub-p-eng', name: 'English language', code: 'ENG', level: 'PRIMARY' },
@@ -1704,11 +1717,11 @@ export default function ReportPDF({
                           const renderRadioDot = (key: 'MO' | 'O' | 'S' | 'NA') => {
                             const isSelected = selectedKey === key && !!g;
                             const dotVisual = isSelected ? (
-                              <div className="w-4 h-4 rounded-full bg-[#3B4CA3] border-2 border-[#3B4CA3] mx-auto flex items-center justify-center shadow-xs">
+                              <div className="w-3.5 h-3.5 rounded-full bg-[#3B4CA3] border-2 border-[#3B4CA3] mx-auto flex items-center justify-center shadow-xs">
                                 <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
                               </div>
                             ) : (
-                              <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 mx-auto hover:border-[#3B4CA3]"></div>
+                              <div className="w-3 h-3 rounded-full border-2 border-slate-300 mx-auto hover:border-[#3B4CA3]"></div>
                             );
 
                             if (onUpdateGrade && row.subjectId) {
@@ -1718,7 +1731,7 @@ export default function ReportPDF({
                                   onClick={() => {
                                     onUpdateGrade(row.subjectId, g ? g.classScore : 50, g ? g.examScore : 50, key);
                                   }}
-                                  className="w-full h-full p-1 flex items-center justify-center cursor-pointer hover:bg-indigo-50/50 rounded transition-colors"
+                                  className="w-full h-full p-0.5 flex items-center justify-center cursor-pointer hover:bg-indigo-50/50 rounded transition-colors"
                                   title={`Click to set rating for ${row.name} to ${key}`}
                                 >
                                   {dotVisual}
@@ -1728,9 +1741,36 @@ export default function ReportPDF({
                             return dotVisual;
                           };
 
+                          if (isKg) {
+                            const classVal = g ? g.classScore : '';
+                            const examVal = g ? g.examScore : '';
+                            const totalVal = g ? g.totalScore : (g ? (g.classScore + g.examScore) : '');
+                            const commentVal = g ? (g.remarks || getGradeDetails(g.totalScore).remarks) : 'Good';
+
+                            return (
+                              <tr key={index} className="hover:bg-[#E8E5FC]/20 print:hover:bg-transparent">
+                                <td className="p-1 pl-2 sm:p-1.5 sm:pl-3 border-r border-[#7285DE] font-bold text-slate-800 bg-white text-[11px] print:text-[9.5pt]">
+                                  {row.name}
+                                </td>
+                                <td className="p-1 text-center border-r border-[#7285DE] font-mono text-slate-800 font-bold bg-white text-[11px] print:text-[9.5pt]">
+                                  {classVal}
+                                </td>
+                                <td className="p-1 text-center border-r border-[#7285DE] font-mono text-slate-800 font-bold bg-white text-[11px] print:text-[9.5pt]">
+                                  {examVal}
+                                </td>
+                                <td className="p-1 text-center border-r border-[#7285DE] font-mono font-extrabold text-[#3B4CA3] bg-white text-[11px] print:text-[9.5pt]">
+                                  {totalVal}
+                                </td>
+                                <td className="p-1 text-center italic text-slate-600 font-medium bg-white text-[10px] print:text-[9pt]">
+                                  {commentVal}
+                                </td>
+                              </tr>
+                            );
+                          }
+
                           return (
                             <tr key={index} className="hover:bg-[#E8E5FC]/20 print:hover:bg-transparent">
-                              <td className="p-1.5 pl-3 border-r border-[#7285DE] font-bold text-slate-800 bg-white">
+                              <td className="p-1 pl-2 sm:p-1.5 sm:pl-3 border-r border-[#7285DE] font-bold text-slate-800 bg-white text-[11px] print:text-[9.5pt]">
                                 {row.name}
                               </td>
                               <td className="p-1 text-center border-r border-[#7285DE] bg-white">
@@ -1754,7 +1794,7 @@ export default function ReportPDF({
                 </div>
 
                 {/* Combined Bottom Section in 2 Columns */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2 print:gap-3">
+                <div className="grid grid-cols-2 gap-3 px-2 print:grid-cols-2 print:gap-2">
                   {/* Left Column: Attendance & Bills */}
                   <div className="space-y-3 print:space-y-2">
                     {/* Attendance, Attitude & Conduct */}
