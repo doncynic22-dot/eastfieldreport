@@ -61,7 +61,13 @@ export const INITIAL_STUDENTS: Student[] = [
   { id: "st-106", name: "Yaw Ofori", rollNumber: "ST-006", level: "KINDERGARTEN", className: "Kindergarten 1", guardianName: "Seth Ofori", guardianEmail: "seth@ofori.com", guardianPhone: "+233241112233" },
   { id: "st-107", name: "Ebenezer Osei-Kofi", rollNumber: "ST-007", level: "JHS", className: "JHS 2", guardianName: "Daniel Osei-Kofi", guardianEmail: "daniel@osei-kofi.com", guardianPhone: "+233249876543" },
   { id: "st-108", name: "Akosua Mansah", rollNumber: "ST-008", level: "JHS", className: "JHS 2", guardianName: "Grace Mansah", guardianEmail: "grace@mansah.com", guardianPhone: "+233509876543" },
-  { id: "st-109", name: "Aboagye Messiah", rollNumber: "ST-009", level: "JHS", className: "JHS 1", guardianName: "Mr. Aboagye", guardianEmail: "aboagye@eastfield.com", guardianPhone: "+233241234568" }
+  { id: "st-109", name: "Aboagye Messiah", rollNumber: "ST-009", level: "JHS", className: "JHS 1", guardianName: "Mr. Aboagye", guardianEmail: "aboagye@eastfield.com", guardianPhone: "+233241234568" },
+  { id: "st-110", name: "Kofi Badu", rollNumber: "ST-010", level: "NURSERY", className: "Nursery 1", guardianName: "Kwaku Badu", guardianEmail: "badu@eastfield.com", guardianPhone: "+233241230001" },
+  { id: "st-111", name: "Adwoa Saah", rollNumber: "ST-011", level: "NURSERY", className: "Nursery 2", guardianName: "Madam Saah", guardianEmail: "saah@eastfield.com", guardianPhone: "+233241230002" },
+  { id: "st-112", name: "Kwaku Ananse", rollNumber: "ST-012", level: "NURSERY", className: "Nursery 2", guardianName: "Poku Ananse", guardianEmail: "ananse@eastfield.com", guardianPhone: "+233241230003" },
+  { id: "st-113", name: "Efya Pokua", rollNumber: "ST-013", level: "KINDERGARTEN", className: "Kindergarten 1", guardianName: "Osei Poku", guardianEmail: "poku@eastfield.com", guardianPhone: "+233241230004" },
+  { id: "st-114", name: "Kwadwo Sheldon", rollNumber: "ST-014", level: "KINDERGARTEN", className: "Kindergarten 2", guardianName: "Samuel Sheldon", guardianEmail: "sheldon@eastfield.com", guardianPhone: "+233241230005" },
+  { id: "st-115", name: "Akua Donkor", rollNumber: "ST-015", level: "KINDERGARTEN", className: "Kindergarten 2", guardianName: "Isaac Donkor", guardianEmail: "donkor@eastfield.com", guardianPhone: "+233241230006" }
 ];
 
 export const INITIAL_GRADING_SCALE: GradingScaleRule[] = [
@@ -122,14 +128,73 @@ export const INITIAL_GRADES: Grade[] = [
   { studentId: "st-109", subjectId: "sub-j-gh", classScore: 39, examScore: 42, totalScore: 81, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
   { studentId: "st-109", subjectId: "sub-j-ca", classScore: 44, examScore: 46, totalScore: 90, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
   { studentId: "st-109", subjectId: "sub-j-fr", classScore: 38, examScore: 40, totalScore: 78, gradeLetter: "B2", remarks: "VERY GOOD", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
-  { studentId: "st-109", subjectId: "sub-j-ict", classScore: 45, examScore: 47, totalScore: 92, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() }
+  { studentId: "st-109", subjectId: "sub-j-ict", classScore: 45, examScore: 47, totalScore: 92, gradeLetter: "A1", remarks: "EXCELLENT", term: "Term 1", year: "2025/2026", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  // Nursery 1 Grades (st-105 Abena Osei, st-110 Kofi Badu)
+  { studentId: "st-105", subjectId: "sub-n-cr", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-105", subjectId: "sub-n-lit", classScore: 42, examScore: 43, totalScore: 85, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-105", subjectId: "sub-n-num", classScore: 38, examScore: 37, totalScore: 75, gradeLetter: "B2", remarks: "O", nurseryRemark: "O", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-105", subjectId: "sub-n-pho", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-105", subjectId: "sub-n-psy", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+
+  { studentId: "st-110", subjectId: "sub-n-cr", classScore: 38, examScore: 37, totalScore: 75, gradeLetter: "B2", remarks: "O", nurseryRemark: "O", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-110", subjectId: "sub-n-lit", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-110", subjectId: "sub-n-num", classScore: 42, examScore: 43, totalScore: 85, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-110", subjectId: "sub-n-pho", classScore: 38, examScore: 37, totalScore: 75, gradeLetter: "B2", remarks: "O", nurseryRemark: "O", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-110", subjectId: "sub-n-psy", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+
+  // Nursery 2 Grades (st-111 Adwoa Saah, st-112 Kwaku Ananse)
+  { studentId: "st-111", subjectId: "sub-n-cr", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-111", subjectId: "sub-n-lit", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-111", subjectId: "sub-n-num", classScore: 42, examScore: 43, totalScore: 85, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-111", subjectId: "sub-n-pho", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-111", subjectId: "sub-n-psy", classScore: 38, examScore: 37, totalScore: 75, gradeLetter: "B2", remarks: "O", nurseryRemark: "O", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+
+  { studentId: "st-112", subjectId: "sub-n-cr", classScore: 38, examScore: 37, totalScore: 75, gradeLetter: "B2", remarks: "O", nurseryRemark: "O", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-112", subjectId: "sub-n-lit", classScore: 38, examScore: 37, totalScore: 75, gradeLetter: "B2", remarks: "O", nurseryRemark: "O", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-112", subjectId: "sub-n-num", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-112", subjectId: "sub-n-pho", classScore: 42, examScore: 43, totalScore: 85, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-112", subjectId: "sub-n-psy", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+
+  // Kindergarten 1 Grades (st-106 Yaw Ofori, st-113 Efya Pokua)
+  { studentId: "st-106", subjectId: "sub-k-lit", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-106", subjectId: "sub-k-num", classScore: 42, examScore: 43, totalScore: 85, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-106", subjectId: "sub-k-owop", classScore: 38, examScore: 37, totalScore: 75, gradeLetter: "B2", remarks: "O", nurseryRemark: "O", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-106", subjectId: "sub-k-ca", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-106", subjectId: "sub-k-wrt", classScore: 42, examScore: 43, totalScore: 85, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+
+  { studentId: "st-113", subjectId: "sub-k-lit", classScore: 38, examScore: 37, totalScore: 75, gradeLetter: "B2", remarks: "O", nurseryRemark: "O", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-113", subjectId: "sub-k-num", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-113", subjectId: "sub-k-owop", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-113", subjectId: "sub-k-ca", classScore: 42, examScore: 43, totalScore: 85, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-113", subjectId: "sub-k-wrt", classScore: 38, examScore: 37, totalScore: 75, gradeLetter: "B2", remarks: "O", nurseryRemark: "O", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+
+  // Kindergarten 2 Grades (st-114 Kwadwo Sheldon, st-115 Akua Donkor)
+  { studentId: "st-114", subjectId: "sub-k-lit", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-114", subjectId: "sub-k-num", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-114", subjectId: "sub-k-owop", classScore: 42, examScore: 43, totalScore: 85, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-114", subjectId: "sub-k-ca", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-114", subjectId: "sub-k-wrt", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+
+  { studentId: "st-115", subjectId: "sub-k-lit", classScore: 42, examScore: 43, totalScore: 85, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-115", subjectId: "sub-k-num", classScore: 38, examScore: 37, totalScore: 75, gradeLetter: "B2", remarks: "O", nurseryRemark: "O", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-115", subjectId: "sub-k-owop", classScore: 45, examScore: 45, totalScore: 90, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-115", subjectId: "sub-k-ca", classScore: 38, examScore: 37, totalScore: 75, gradeLetter: "B2", remarks: "O", nurseryRemark: "O", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-115", subjectId: "sub-k-wrt", classScore: 42, examScore: 43, totalScore: 85, gradeLetter: "A1", remarks: "MO", nurseryRemark: "MO", term: "Term 1", year: "2025/2026", teacherId: "tch-01", updatedAt: new Date().toISOString() }
 ];
 
 export const INITIAL_ATTENDANCE: Attendance[] = [
   { studentId: "st-101", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 68, remarks: "Very regular and punctual. Keep it up!", teacherId: "tch-02", updatedAt: new Date().toISOString() },
   { studentId: "st-102", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 62, remarks: "Good attendance. Well done.", teacherId: "tch-02", updatedAt: new Date().toISOString() },
   { studentId: "st-103", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 70, remarks: "Perfect attendance score!", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-105", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 68, remarks: "Very enthusiastic in class activities.", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-106", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 69, remarks: "Shows remarkable progress and discipline.", teacherId: "tch-01", updatedAt: new Date().toISOString() },
   { studentId: "st-107", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 69, remarks: "Excellent attendance record.", teacherId: "tch-03", updatedAt: new Date().toISOString() },
   { studentId: "st-108", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 67, remarks: "Very good attendance.", teacherId: "tch-03", updatedAt: new Date().toISOString() },
-  { studentId: "st-109", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 70, remarks: "Outstanding academic performance and perfect attendance.", teacherId: "tch-03", updatedAt: new Date().toISOString() }
+  { studentId: "st-109", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 70, remarks: "Outstanding academic performance and perfect attendance.", teacherId: "tch-03", updatedAt: new Date().toISOString() },
+  { studentId: "st-110", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 65, remarks: "Good participation.", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-111", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 70, remarks: "Excellent presence.", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-112", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 66, remarks: "Very active child.", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-113", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 68, remarks: "Bright and punctual.", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-114", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 70, remarks: "Punctual and smart.", teacherId: "tch-01", updatedAt: new Date().toISOString() },
+  { studentId: "st-115", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 67, remarks: "Punctual and friendly.", teacherId: "tch-01", updatedAt: new Date().toISOString() }
 ];

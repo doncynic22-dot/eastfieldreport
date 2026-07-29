@@ -1227,7 +1227,8 @@ export default function AdminDashboard({
                   const totalScore = Math.min(100, Math.max(0, classScore + examScore));
                   const rule = config.gradingScale?.find((r) => totalScore >= r.minScore && totalScore <= r.maxScore);
                   const gradeLetter = rule ? rule.grade : (totalScore >= 80 ? 'A' : totalScore >= 70 ? 'B' : totalScore >= 60 ? 'C' : totalScore >= 50 ? 'D' : totalScore >= 40 ? 'E' : 'F');
-                  const remarks = rule ? rule.remarks : (totalScore >= 80 ? 'Excellent' : totalScore >= 70 ? 'Very Good' : totalScore >= 60 ? 'Good' : totalScore >= 50 ? 'Credit' : totalScore >= 40 ? 'Pass' : 'Fail');
+                  const calcRemarks = rule ? rule.remarks : (totalScore >= 80 ? 'Excellent' : totalScore >= 70 ? 'Very Good' : totalScore >= 60 ? 'Good' : totalScore >= 50 ? 'Credit' : totalScore >= 40 ? 'Pass' : 'Fail');
+                  const finalRemarks = nurseryRemark || calcRemarks;
 
                   const updatedGrades = [...grades];
                   const existingIndex = updatedGrades.findIndex(
@@ -1244,7 +1245,7 @@ export default function AdminDashboard({
                     examScore,
                     totalScore,
                     gradeLetter,
-                    remarks,
+                    remarks: finalRemarks,
                     nurseryRemark,
                     term: config.term || 'Term 1',
                     year: config.schoolYear || '2025/2026',
@@ -3287,6 +3288,61 @@ export default function AdminDashboard({
                         allClassStudents={stClassList}
                         allGrades={grades}
                         isBulkMode={true}
+                        onUpdateGrade={(subjectId, classScore, examScore, nurseryRemark) => {
+                          const studentId = st.id;
+                          const targetSubObj = subjects.find(s => s.id === subjectId || s.name === subjectId || s.code === subjectId) ||
+                                               INITIAL_SUBJECTS.find(s => matchesSubject(subjectId, s));
+                          const canonicalSubjectId = targetSubObj ? targetSubObj.id : subjectId;
+
+                          const totalScore = Math.min(100, Math.max(0, classScore + examScore));
+                          const rule = config.gradingScale?.find((r) => totalScore >= r.minScore && totalScore <= r.maxScore);
+                          const gradeLetter = rule ? rule.grade : (totalScore >= 80 ? 'A' : totalScore >= 70 ? 'B' : totalScore >= 60 ? 'C' : totalScore >= 50 ? 'D' : totalScore >= 40 ? 'E' : 'F');
+                          const calcRemarks = rule ? rule.remarks : (totalScore >= 80 ? 'Excellent' : totalScore >= 70 ? 'Very Good' : totalScore >= 60 ? 'Good' : totalScore >= 50 ? 'Credit' : totalScore >= 40 ? 'Pass' : 'Fail');
+                          const finalRemarks = nurseryRemark || calcRemarks;
+
+                          const updatedGrades = [...grades];
+                          const existingIndex = updatedGrades.findIndex(
+                            (g) => g.studentId === studentId &&
+                                   (g.subjectId === canonicalSubjectId || (targetSubObj && matchesSubject(g.subjectId, targetSubObj))) &&
+                                   (!g.term || g.term === config.term) &&
+                                   (!g.year || g.year === config.schoolYear)
+                          );
+
+                          const gradeRecord: Grade = {
+                            studentId,
+                            subjectId: canonicalSubjectId,
+                            classScore,
+                            examScore,
+                            totalScore,
+                            gradeLetter,
+                            remarks: finalRemarks,
+                            nurseryRemark,
+                            term: config.term || 'Term 1',
+                            year: config.schoolYear || '2025/2026',
+                            teacherId: 'admin',
+                            updatedAt: new Date().toISOString()
+                          };
+
+                          if (existingIndex !== -1) {
+                            updatedGrades[existingIndex] = {
+                              ...updatedGrades[existingIndex],
+                              ...gradeRecord
+                            };
+                          } else {
+                            updatedGrades.push(gradeRecord);
+                          }
+
+                          if (setGrades) {
+                            setGrades(updatedGrades);
+                          }
+
+                          localStorage.setItem('ea_grades', JSON.stringify(updatedGrades));
+                          localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(updatedGrades));
+
+                          if (getSupabaseCredentials().isConfigured) {
+                            saveSupabaseGrades(updatedGrades).catch((err) => console.warn('Supabase save grade error', err));
+                          }
+                        }}
                       />
                     </div>
                   );

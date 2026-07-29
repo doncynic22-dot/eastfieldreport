@@ -788,20 +788,70 @@ export default function App() {
         }
         if (remoteGrades && Array.isArray(remoteGrades) && remoteGrades.length > 0) {
           setGrades(prev => {
-            const hasChanged = JSON.stringify(prev) !== JSON.stringify(remoteGrades);
-            if (hasChanged) {
-              localStorage.setItem('ea_grades', JSON.stringify(remoteGrades));
-              return remoteGrades;
+            const studentLevelMap = new Map<string, string>();
+            students.forEach(s => studentLevelMap.set(s.id, s.level));
+
+            const gradeMap = new Map<string, Grade>();
+            remoteGrades.forEach(g => {
+              const stLevel = studentLevelMap.get(g.studentId);
+              const cSubId = getCanonicalSubjectId(g.subjectId, stLevel);
+              const normalizedG = { ...g, subjectId: cSubId };
+              const key = `${g.studentId}_${cSubId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
+              gradeMap.set(key, normalizedG);
+            });
+
+            prev.forEach(g => {
+              const stLevel = studentLevelMap.get(g.studentId);
+              const cSubId = getCanonicalSubjectId(g.subjectId, stLevel);
+              const normalizedG = { ...g, subjectId: cSubId };
+              const key = `${g.studentId}_${cSubId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
+              const existing = gradeMap.get(key);
+              if (!existing) {
+                gradeMap.set(key, normalizedG);
+              } else {
+                const localTime = g.updatedAt ? new Date(g.updatedAt).getTime() : 0;
+                const remoteTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+                if (localTime > remoteTime) {
+                  gradeMap.set(key, normalizedG);
+                } else if (g.nurseryRemark && !existing.nurseryRemark) {
+                  gradeMap.set(key, { ...existing, nurseryRemark: g.nurseryRemark });
+                }
+              }
+            });
+
+            const merged = Array.from(gradeMap.values());
+            if (JSON.stringify(prev) !== JSON.stringify(merged)) {
+              localStorage.setItem('ea_grades', JSON.stringify(merged));
+              localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(merged));
+              return merged;
             }
             return prev;
           });
         }
         if (remoteAttendance && Array.isArray(remoteAttendance) && remoteAttendance.length > 0) {
           setAttendance(prev => {
-            const hasChanged = JSON.stringify(prev) !== JSON.stringify(remoteAttendance);
-            if (hasChanged) {
-              localStorage.setItem('ea_attendance', JSON.stringify(remoteAttendance));
-              return remoteAttendance;
+            const attMap = new Map<string, Attendance>();
+            remoteAttendance.forEach(a => {
+              const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+              attMap.set(key, a);
+            });
+            prev.forEach(a => {
+              const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+              if (!attMap.has(key)) {
+                attMap.set(key, a);
+              } else {
+                const localTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+                const remoteTime = attMap.get(key)?.updatedAt ? new Date(attMap.get(key)!.updatedAt).getTime() : 0;
+                if (localTime > remoteTime) {
+                  attMap.set(key, a);
+                }
+              }
+            });
+            const mergedAtt = Array.from(attMap.values());
+            if (JSON.stringify(prev) !== JSON.stringify(mergedAtt)) {
+              localStorage.setItem('ea_attendance', JSON.stringify(mergedAtt));
+              localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(mergedAtt));
+              return mergedAtt;
             }
             return prev;
           });

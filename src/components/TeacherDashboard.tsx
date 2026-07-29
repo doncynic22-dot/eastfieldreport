@@ -834,17 +834,66 @@ export default function TeacherDashboard({
     if (remark === 'S') { defaultClassScore = '28'; defaultExamScore = '27'; }
     if (remark === 'NA') { defaultClassScore = '18'; defaultExamScore = '17'; }
 
+    let targetClassNum = Number(defaultClassScore);
+    let targetExamNum = Number(defaultExamScore);
+
     setGradeInputs(prev => {
       const current = prev[studentId] || { classScore: '', examScore: '' };
+      const cScore = current.classScore || defaultClassScore;
+      const eScore = current.examScore || defaultExamScore;
+      targetClassNum = Number(cScore) || Number(defaultClassScore);
+      targetExamNum = Number(eScore) || Number(defaultExamScore);
       return {
         ...prev,
         [studentId]: {
-          classScore: current.classScore || defaultClassScore,
-          examScore: current.examScore || defaultExamScore,
+          classScore: cScore,
+          examScore: eScore,
           nurseryRemark: remark
         }
       };
     });
+
+    if (!selectedSubject) return;
+    const selSubjectObj = allSubjectsWithDefaults.find(s => s.id === selectedSubject || s.name === selectedSubject || matchesSubject(selectedSubject, s));
+    const canonicalSubjectId = selSubjectObj ? selSubjectObj.id : selectedSubject;
+    const totalNum = targetClassNum + targetExamNum;
+
+    const updatedGrades = [...grades];
+    const gradeIndex = updatedGrades.findIndex(
+      g => g.studentId === studentId &&
+           (selSubjectObj ? matchesSubject(g.subjectId, selSubjectObj) : (g.subjectId === selectedSubject || g.subjectId.toLowerCase() === selectedSubject.toLowerCase())) &&
+           (!g.term || g.term === config.term) &&
+           (!g.year || g.year === config.schoolYear)
+    );
+
+    const gradeRecord: Grade = {
+      studentId,
+      subjectId: canonicalSubjectId,
+      classScore: targetClassNum,
+      examScore: targetExamNum,
+      totalScore: totalNum,
+      gradeLetter: getGradeLetter(totalNum),
+      remarks: remark,
+      nurseryRemark: remark,
+      term: config.term,
+      year: config.schoolYear,
+      teacherId: currentUser.id,
+      updatedAt: new Date().toISOString()
+    };
+
+    if (gradeIndex !== -1) {
+      updatedGrades[gradeIndex] = gradeRecord;
+    } else {
+      updatedGrades.push(gradeRecord);
+    }
+
+    setGrades(updatedGrades);
+    localStorage.setItem('ea_grades', JSON.stringify(updatedGrades));
+    localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(updatedGrades));
+
+    if (getSupabaseCredentials().isConfigured) {
+      saveSupabaseGrades(updatedGrades).catch(e => console.warn('Cloud save grades error', e));
+    }
   };
 
   const handleAttInputChange = (studentId: string, field: 'totalDays' | 'daysPresent' | 'remarks', val: string) => {
@@ -1666,6 +1715,8 @@ export default function TeacherDashboard({
           {(() => {
             const classLimit = 50;
             const examLimit = 50;
+            const isNurseryOrKg = selectedLevel === 'NURSERY' || selectedLevel === 'KINDERGARTEN' ||
+                                  (!!selectedClass && (selectedClass.toLowerCase().includes('nursery') || selectedClass.toLowerCase().includes('kindergarten') || selectedClass.toLowerCase().includes('kg')));
 
             return (
               <div className="bg-white rounded border border-mauve-500/20 shadow-sm overflow-hidden">
@@ -1726,7 +1777,7 @@ export default function TeacherDashboard({
                             </span>
                           </div>
                         </th>
-                        {selectedLevel === 'NURSERY' ? (
+                        {isNurseryOrKg ? (
                           <>
                             <th className="p-3 text-center w-20">MO (Most Often)</th>
                             <th className="p-3 text-center w-20">O (Often)</th>
@@ -1747,7 +1798,7 @@ export default function TeacherDashboard({
                     <tbody className="divide-y divide-mauve-50 text-xs text-gray-800">
                       {activeClassStudents.length === 0 ? (
                         <tr>
-                          <td colSpan={selectedLevel === 'NURSERY' ? 6 : 5} className="p-6 text-center text-gray-400">
+                          <td colSpan={isNurseryOrKg ? 6 : 5} className="p-6 text-center text-gray-400">
                             No students enrolled in {selectedClass} yet. Admins can admit students via the admissions tab.
                           </td>
                         </tr>
@@ -1761,7 +1812,7 @@ export default function TeacherDashboard({
                           const remarks = getGradeRemarks(totalVal);
                           const hasInput = inputs.classScore || inputs.examScore || inputs.nurseryRemark;
 
-                          if (selectedLevel === 'NURSERY') {
+                          if (isNurseryOrKg) {
                             const curRem = inputs.nurseryRemark || (totalVal >= 80 ? 'MO' : totalVal >= 65 ? 'O' : totalVal >= 45 ? 'S' : hasInput ? 'NA' : undefined);
                             return (
                               <tr key={student.id} className="hover:bg-mauve-50/20">

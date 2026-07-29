@@ -1083,20 +1083,38 @@ export async function fetchSupabaseGrades(): Promise<Grade[] | null> {
       return null;
     }
     if (!data) return null;
-    return data.map(item => ({
-      studentId: item.student_id,
-      subjectId: item.subject_id || '',
-      classScore: item.class_score !== undefined && item.class_score !== null ? Number(item.class_score) : 0,
-      examScore: item.exam_score !== undefined && item.exam_score !== null ? Number(item.exam_score) : 0,
-      totalScore: item.total_score !== undefined && item.total_score !== null ? Number(item.total_score) : 0,
-      gradeLetter: item.grade_letter || 'F',
-      remarks: item.remarks || '',
-      nurseryRemark: item.nursery_remark || item.nurseryRemark || undefined,
-      term: item.term || 'Term 1',
-      year: item.year || '2025/2026',
-      teacherId: item.teacher_id || '',
-      updatedAt: item.updated_at,
-    }));
+    return data.map(item => {
+      const rawNurseryRem = (item.nursery_remark || item.nurseryRemark || '').toString().trim().toUpperCase();
+      const remUpper = (item.remarks || '').toString().trim().toUpperCase();
+      const totalScoreNum = item.total_score !== undefined && item.total_score !== null ? Number(item.total_score) : ((Number(item.class_score) || 0) + (Number(item.exam_score) || 0));
+
+      let resolvedNurseryRemark: 'MO' | 'O' | 'S' | 'NA' | undefined = undefined;
+      if (['MO', 'O', 'S', 'NA'].includes(rawNurseryRem)) {
+        resolvedNurseryRemark = rawNurseryRem as 'MO' | 'O' | 'S' | 'NA';
+      } else if (['MO', 'O', 'S', 'NA'].includes(remUpper)) {
+        resolvedNurseryRemark = remUpper as 'MO' | 'O' | 'S' | 'NA';
+      } else if (totalScoreNum > 0) {
+        if (totalScoreNum >= 80) resolvedNurseryRemark = 'MO';
+        else if (totalScoreNum >= 65) resolvedNurseryRemark = 'O';
+        else if (totalScoreNum >= 45) resolvedNurseryRemark = 'S';
+        else resolvedNurseryRemark = 'NA';
+      }
+
+      return {
+        studentId: item.student_id,
+        subjectId: item.subject_id || '',
+        classScore: item.class_score !== undefined && item.class_score !== null ? Number(item.class_score) : 0,
+        examScore: item.exam_score !== undefined && item.exam_score !== null ? Number(item.exam_score) : 0,
+        totalScore: totalScoreNum,
+        gradeLetter: item.grade_letter || 'F',
+        remarks: item.remarks || resolvedNurseryRemark || '',
+        nurseryRemark: resolvedNurseryRemark,
+        term: item.term || 'Term 1',
+        year: item.year || '2025/2026',
+        teacherId: item.teacher_id || '',
+        updatedAt: item.updated_at,
+      };
+    });
   } catch (err: any) {
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_grades') || localStorage.getItem('ea_grades');
@@ -1114,20 +1132,23 @@ export async function saveSupabaseGrades(grades: Grade[]): Promise<boolean> {
   const client = getSupabaseClient();
   if (!client) return true;
   try {
-    const payloads = grades.map(g => ({
-      student_id: g.studentId,
-      subject_id: g.subjectId,
-      class_score: g.classScore,
-      exam_score: g.examScore,
-      total_score: g.totalScore,
-      grade_letter: g.gradeLetter,
-      remarks: g.remarks || '',
-      nursery_remark: g.nurseryRemark || '',
-      term: g.term || 'Term 1',
-      year: g.year || '2025/2026',
-      teacher_id: g.teacherId,
-      updated_at: g.updatedAt || new Date().toISOString()
-    }));
+    const payloads = grades.map(g => {
+      const effectiveNurseryRem = g.nurseryRemark || (['MO', 'O', 'S', 'NA'].includes((g.remarks || '').toUpperCase()) ? g.remarks.toUpperCase() : '');
+      return {
+        student_id: g.studentId,
+        subject_id: g.subjectId,
+        class_score: g.classScore,
+        exam_score: g.examScore,
+        total_score: g.totalScore,
+        grade_letter: g.gradeLetter,
+        remarks: g.remarks || effectiveNurseryRem || '',
+        nursery_remark: effectiveNurseryRem || '',
+        term: g.term || 'Term 1',
+        year: g.year || '2025/2026',
+        teacher_id: g.teacherId,
+        updated_at: g.updatedAt || new Date().toISOString()
+      };
+    });
     const { error } = await safeUpsert('ea_grades', payloads, client, 'student_id,subject_id,term,year');
     if (error) {
       console.warn('Supabase saveSupabaseGrades sync error, fallback to local storage preserved:', error);
