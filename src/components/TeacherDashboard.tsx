@@ -739,6 +739,17 @@ export default function TeacherDashboard({
                (!g.year || g.year === config.schoolYear)
         );
 
+        const existingGrade = gradeIndex !== -1 ? updatedGrades[gradeIndex] : undefined;
+        let resolvedNursery: 'MO' | 'O' | 'S' | 'NA' | undefined = sGrade.nurseryRemark || existingGrade?.nurseryRemark;
+
+        const isNurseryOnly = selectedLevel === 'NURSERY' || student.level === 'NURSERY' || (!!selectedClass && selectedClass.toLowerCase().includes('nursery'));
+        if (!resolvedNursery && isNurseryOnly) {
+          if (totalNum >= 80) resolvedNursery = 'MO';
+          else if (totalNum >= 65) resolvedNursery = 'O';
+          else if (totalNum >= 45) resolvedNursery = 'S';
+          else resolvedNursery = 'NA';
+        }
+
         const gradeRecord: Grade = {
           studentId: student.id,
           subjectId: canonicalSubjectId,
@@ -746,8 +757,8 @@ export default function TeacherDashboard({
           examScore: examNum,
           totalScore: totalNum,
           gradeLetter: getGradeLetter(totalNum),
-          remarks: sGrade.nurseryRemark || getGradeRemarks(totalNum),
-          nurseryRemark: sGrade.nurseryRemark,
+          remarks: isNurseryOnly ? (resolvedNursery || existingGrade?.remarks || 'MO') : (existingGrade?.remarks || getGradeRemarks(totalNum)),
+          nurseryRemark: isNurseryOnly ? resolvedNursery : undefined,
           term: config.term,
           year: config.schoolYear,
           teacherId: currentUser.id,
@@ -1715,8 +1726,7 @@ export default function TeacherDashboard({
           {(() => {
             const classLimit = 50;
             const examLimit = 50;
-            const isNurseryOrKg = selectedLevel === 'NURSERY' || selectedLevel === 'KINDERGARTEN' ||
-                                  (!!selectedClass && (selectedClass.toLowerCase().includes('nursery') || selectedClass.toLowerCase().includes('kindergarten') || selectedClass.toLowerCase().includes('kg')));
+            const isNurseryOnly = selectedLevel === 'NURSERY' || (!!selectedClass && selectedClass.toLowerCase().includes('nursery'));
 
             return (
               <div className="bg-white rounded border border-mauve-500/20 shadow-sm overflow-hidden">
@@ -1777,7 +1787,7 @@ export default function TeacherDashboard({
                             </span>
                           </div>
                         </th>
-                        {isNurseryOrKg ? (
+                        {isNurseryOnly ? (
                           <>
                             <th className="p-3 text-center w-20">MO (Most Often)</th>
                             <th className="p-3 text-center w-20">O (Often)</th>
@@ -1798,7 +1808,7 @@ export default function TeacherDashboard({
                     <tbody className="divide-y divide-mauve-50 text-xs text-gray-800">
                       {activeClassStudents.length === 0 ? (
                         <tr>
-                          <td colSpan={isNurseryOrKg ? 6 : 5} className="p-6 text-center text-gray-400">
+                          <td colSpan={isNurseryOnly ? 6 : 5} className="p-6 text-center text-gray-400">
                             No students enrolled in {selectedClass} yet. Admins can admit students via the admissions tab.
                           </td>
                         </tr>
@@ -1812,7 +1822,7 @@ export default function TeacherDashboard({
                           const remarks = getGradeRemarks(totalVal);
                           const hasInput = inputs.classScore || inputs.examScore || inputs.nurseryRemark;
 
-                          if (isNurseryOrKg) {
+                          if (isNurseryOnly) {
                             const curRem = inputs.nurseryRemark || (totalVal >= 80 ? 'MO' : totalVal >= 65 ? 'O' : totalVal >= 45 ? 'S' : hasInput ? 'NA' : undefined);
                             return (
                               <tr key={student.id} className="hover:bg-mauve-50/20">

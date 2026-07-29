@@ -1395,7 +1395,10 @@ export default function ReportPDF({
                               const classVal = matchedGrade ? matchedGrade.classScore : 0;
                               const examVal = matchedGrade ? matchedGrade.examScore : 0;
                               const totalVal = matchedGrade ? matchedGrade.totalScore : (classVal + examVal);
-                              const currentRemark = matchedGrade?.nurseryRemark || 'MO';
+                              const rawRem = (matchedGrade?.nurseryRemark || matchedGrade?.remarks || '').toString().trim().toUpperCase();
+                              const currentRemark = ['MO', 'O', 'S', 'NA'].includes(rawRem)
+                                ? rawRem
+                                : (totalVal >= 80 ? 'MO' : totalVal >= 65 ? 'O' : totalVal >= 45 ? 'S' : 'NA');
 
                               return (
                                 <tr key={subItem.id} className="hover:bg-mauve-50/20 transition-colors">
@@ -1410,7 +1413,9 @@ export default function ReportPDF({
                                             key={code}
                                             type="button"
                                             onClick={() => {
-                                              onUpdateGrade(subItem.id, classVal, examVal, code);
+                                              const defaultClass = matchedGrade ? matchedGrade.classScore : (code === 'MO' ? 45 : code === 'O' ? 38 : code === 'S' ? 28 : 18);
+                                              const defaultExam = matchedGrade ? matchedGrade.examScore : (code === 'MO' ? 45 : code === 'O' ? 37 : code === 'S' ? 27 : 17);
+                                              onUpdateGrade(subItem.id, defaultClass, defaultExam, code);
                                             }}
                                             className={`px-2.5 py-1 rounded text-[10px] font-bold transition cursor-pointer ${
                                               currentRemark === code
@@ -1588,21 +1593,21 @@ export default function ReportPDF({
                 <div className="overflow-hidden border-2 border-[#7285DE] rounded bg-white shadow-sm mx-2">
                   <table className="w-full text-left border-collapse font-serif text-[11px]">
                     <thead>
-                      {isKg ? (
-                        <tr className="bg-[#B5C4F7] text-[#2B3B63] font-extrabold text-[9px] uppercase tracking-wider border-b-2 border-[#7285DE]">
-                          <th className="p-1.5 pl-3 border-r border-[#7285DE] bg-white">SUBJECT</th>
-                          <th className="p-1.5 text-center w-24 border-r border-[#7285DE] bg-white">CLASS SCORE (50)</th>
-                          <th className="p-1.5 text-center w-24 border-r border-[#7285DE] bg-white">EXAM SCORE (50)</th>
-                          <th className="p-1.5 text-center w-24 border-r border-[#7285DE] bg-white">OVERALL (100)</th>
-                          <th className="p-1.5 text-center bg-white">COMMENT</th>
-                        </tr>
-                      ) : (
+                      {isNursery ? (
                         <tr className="bg-[#B5C4F7] text-[#2B3B63] font-extrabold text-[9px] uppercase tracking-wider border-b-2 border-[#7285DE]">
                           <th className="p-1.5 pl-3 border-r border-[#7285DE] bg-white">Subject</th>
                           <th className="p-1.5 text-center w-16 border-r border-[#7285DE] bg-white">MO</th>
                           <th className="p-1.5 text-center w-16 border-r border-[#7285DE] bg-white">O</th>
                           <th className="p-1.5 text-center w-16 border-r border-[#7285DE] bg-white">S</th>
                           <th className="p-1.5 text-center w-16 bg-white">NA</th>
+                        </tr>
+                      ) : (
+                        <tr className="bg-[#B5C4F7] text-[#2B3B63] font-extrabold text-[9px] uppercase tracking-wider border-b-2 border-[#7285DE]">
+                          <th className="p-1.5 pl-3 border-r border-[#7285DE] bg-white">SUBJECT</th>
+                          <th className="p-1.5 text-center w-24 border-r border-[#7285DE] bg-white">CLASS SCORE (50)</th>
+                          <th className="p-1.5 text-center w-24 border-r border-[#7285DE] bg-white">EXAM SCORE (50)</th>
+                          <th className="p-1.5 text-center w-24 border-r border-[#7285DE] bg-white">OVERALL (100)</th>
+                          <th className="p-1.5 text-center bg-white">COMMENT</th>
                         </tr>
                       )}
                     </thead>
@@ -1725,11 +1730,17 @@ export default function ReportPDF({
                             );
 
                             if (onUpdateGrade && row.subjectId) {
+                              let defaultClass = g ? g.classScore : 45;
+                              let defaultExam = g ? g.examScore : 45;
+                              if (key === 'O') { defaultClass = g ? g.classScore : 38; defaultExam = g ? g.examScore : 37; }
+                              if (key === 'S') { defaultClass = g ? g.classScore : 28; defaultExam = g ? g.examScore : 27; }
+                              if (key === 'NA') { defaultClass = g ? g.classScore : 18; defaultExam = g ? g.examScore : 17; }
+
                               return (
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    onUpdateGrade(row.subjectId, g ? g.classScore : 50, g ? g.examScore : 50, key);
+                                    onUpdateGrade(row.subjectId, defaultClass, defaultExam, key);
                                   }}
                                   className="w-full h-full p-0.5 flex items-center justify-center cursor-pointer hover:bg-indigo-50/50 rounded transition-colors"
                                   title={`Click to set rating for ${row.name} to ${key}`}
@@ -1741,49 +1752,49 @@ export default function ReportPDF({
                             return dotVisual;
                           };
 
-                          if (isKg) {
-                            const classVal = g ? g.classScore : '';
-                            const examVal = g ? g.examScore : '';
-                            const totalVal = g ? g.totalScore : (g ? (g.classScore + g.examScore) : '');
-                            const commentVal = g ? (g.remarks || getGradeDetails(g.totalScore).remarks) : 'Good';
-
+                          if (isNursery) {
                             return (
                               <tr key={index} className="hover:bg-[#E8E5FC]/20 print:hover:bg-transparent">
                                 <td className="p-1 pl-2 sm:p-1.5 sm:pl-3 border-r border-[#7285DE] font-bold text-slate-800 bg-white text-[11px] print:text-[9.5pt]">
                                   {row.name}
                                 </td>
-                                <td className="p-1 text-center border-r border-[#7285DE] font-mono text-slate-800 font-bold bg-white text-[11px] print:text-[9.5pt]">
-                                  {classVal}
+                                <td className="p-1 text-center border-r border-[#7285DE] bg-white">
+                                  {renderRadioDot('MO')}
                                 </td>
-                                <td className="p-1 text-center border-r border-[#7285DE] font-mono text-slate-800 font-bold bg-white text-[11px] print:text-[9.5pt]">
-                                  {examVal}
+                                <td className="p-1 text-center border-r border-[#7285DE] bg-white">
+                                  {renderRadioDot('O')}
                                 </td>
-                                <td className="p-1 text-center border-r border-[#7285DE] font-mono font-extrabold text-[#3B4CA3] bg-white text-[11px] print:text-[9.5pt]">
-                                  {totalVal}
+                                <td className="p-1 text-center border-r border-[#7285DE] bg-white">
+                                  {renderRadioDot('S')}
                                 </td>
-                                <td className="p-1 text-center italic text-slate-600 font-medium bg-white text-[10px] print:text-[9pt]">
-                                  {commentVal}
+                                <td className="p-1 text-center bg-white">
+                                  {renderRadioDot('NA')}
                                 </td>
                               </tr>
                             );
                           }
+
+                          const classVal = g ? g.classScore : '';
+                          const examVal = g ? g.examScore : '';
+                          const totalVal = g ? g.totalScore : (g ? (g.classScore + g.examScore) : '');
+                          const commentVal = g ? (g.remarks || getGradeDetails(g.totalScore).remarks) : 'Good';
 
                           return (
                             <tr key={index} className="hover:bg-[#E8E5FC]/20 print:hover:bg-transparent">
                               <td className="p-1 pl-2 sm:p-1.5 sm:pl-3 border-r border-[#7285DE] font-bold text-slate-800 bg-white text-[11px] print:text-[9.5pt]">
                                 {row.name}
                               </td>
-                              <td className="p-1 text-center border-r border-[#7285DE] bg-white">
-                                {renderRadioDot('MO')}
+                              <td className="p-1 text-center border-r border-[#7285DE] font-mono text-slate-800 font-bold bg-white text-[11px] print:text-[9.5pt]">
+                                {classVal}
                               </td>
-                              <td className="p-1 text-center border-r border-[#7285DE] bg-white">
-                                {renderRadioDot('O')}
+                              <td className="p-1 text-center border-r border-[#7285DE] font-mono text-slate-800 font-bold bg-white text-[11px] print:text-[9.5pt]">
+                                {examVal}
                               </td>
-                              <td className="p-1 text-center border-r border-[#7285DE] bg-white">
-                                {renderRadioDot('S')}
+                              <td className="p-1 text-center border-r border-[#7285DE] font-mono font-extrabold text-[#3B4CA3] bg-white text-[11px] print:text-[9.5pt]">
+                                {totalVal}
                               </td>
-                              <td className="p-1 text-center bg-white">
-                                {renderRadioDot('NA')}
+                              <td className="p-1 text-center italic text-slate-600 font-medium bg-white text-[10px] print:text-[9pt]">
+                                {commentVal}
                               </td>
                             </tr>
                           );
@@ -2141,7 +2152,7 @@ export default function ReportPDF({
                               {g ? g.totalScore : ''}
                             </td>
                             <td className="p-1.5 pr-3 sm:p-2 sm:pr-4 print:p-0.5 print:pr-2 text-center text-slate-600 italic font-medium text-[10px] print:text-[9px] bg-white">
-                              {g ? gradeInfo?.remarks : ''}
+                              {g ? (g.nurseryRemark || (['MO', 'O', 'S', 'NA'].includes((g.remarks || '').toUpperCase()) ? g.remarks : gradeInfo?.remarks)) : ''}
                             </td>
                           </tr>
                         );
@@ -2395,7 +2406,7 @@ export default function ReportPDF({
                             </td>
                             <td className="p-3 text-center font-mono font-bold text-mauve-900 bg-white">{g.totalScore}</td>
                             <td className="p-3 pr-4 text-center text-gray-500 italic text-[11px] bg-white">
-                              {gradeInfo.remarks}
+                              {g.nurseryRemark || (['MO', 'O', 'S', 'NA'].includes((g.remarks || '').toUpperCase()) ? g.remarks : gradeInfo.remarks)}
                             </td>
                           </tr>
                         );

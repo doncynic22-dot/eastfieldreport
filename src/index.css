@@ -58,10 +58,10 @@
 
 /* Print Specific Rules for High-Fidelity Customizable Transcripts */
 @media print {
-  /* Set A4 portrait size with optimal 1cm padding */
+  /* Set A4 portrait size with tight 5mm margin for maximum printable area */
   @page {
     size: A4 portrait;
-    margin: 1.0cm;
+    margin: 5mm;
   }
 
   /* Reset global page container styles */
@@ -113,6 +113,35 @@
     background: transparent !important;
   }
 
+  /* Bulk Print Container & Card page-break enforcement */
+  .bulk-print-container {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .bulk-report-card {
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    width: 100% !important;
+    max-height: 285mm !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  .bulk-report-card:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+
   /* Force print-container to span full A4 portrait and cover one page cleanly using Times New Roman and Bold */
   .print-container,
   .print-container * {
@@ -130,10 +159,9 @@
     box-shadow: none !important;
     background: #ffffff !important;
     position: relative !important;
-    page-break-after: avoid !important;
     page-break-inside: avoid !important;
-    break-after: avoid !important;
     break-inside: avoid !important;
+    box-sizing: border-box !important;
   }
 
   /* Prevent breaks inside tables, table rows, and grid blocks */
@@ -141,8 +169,7 @@
   .print-container tr,
   .print-container tbody,
   .print-container thead,
-  .print-container .grid,
-  .bulk-report-card {
+  .print-container .grid {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
   }
@@ -150,61 +177,69 @@
   /* Base cell formatting */
   .print-container td,
   .print-container th {
-    font-size: 9.5pt !important;
-    line-height: 1.2 !important;
-    padding: 3px 5px !important;
+    font-size: 8.5pt !important;
+    line-height: 1.15 !important;
+    padding: 2px 4px !important;
     border-width: 1px !important;
   }
 
-  /* Specific typography sizing rules to preserve visual hierarchy */
+  /* Specific typography sizing rules to preserve visual hierarchy & single page fit */
   .print-container h1 {
-    font-size: 16pt !important;
+    font-size: 13pt !important;
     font-weight: bold !important;
-    line-height: 1.15 !important;
+    line-height: 1.1 !important;
     margin-bottom: 2px !important;
   }
 
   .print-container h2 {
-    font-size: 10pt !important;
+    font-size: 9.5pt !important;
     font-weight: bold !important;
-    line-height: 1.15 !important;
-    margin-top: 2px !important;
-    margin-bottom: 4px !important;
+    line-height: 1.1 !important;
+    margin-top: 1px !important;
+    margin-bottom: 2px !important;
+  }
+
+  .print-container h3 {
+    font-size: 8.5pt !important;
+    font-weight: bold !important;
+    line-height: 1.1 !important;
+    margin-bottom: 1px !important;
   }
 
   /* Reduce vertical spacing to guarantee perfect 1-page portrait print fit */
   .print-container .space-y-6,
+  .print-container .space-y-5,
   .print-container .space-y-4,
   .print-container .space-y-3,
-  .print-container .space-y-2 {
-    margin-top: 3px !important;
-    margin-bottom: 3px !important;
+  .print-container .space-y-2,
+  .print-container .space-y-1 {
+    margin-top: 2px !important;
+    margin-bottom: 2px !important;
   }
 
   /* Reduce grid row and column gaps */
   .print-container .grid {
-    gap: 4px 8px !important;
-    margin-top: 3px !important;
-    margin-bottom: 3px !important;
+    gap: 3px 6px !important;
+    margin-top: 2px !important;
+    margin-bottom: 2px !important;
   }
 
   /* Tighten bio metadata padding */
-  .print-container .py-3 {
-    padding-top: 3px !important;
-    padding-bottom: 3px !important;
-  }
-
-  /* Attendance bar container */
+  .print-container .py-4,
+  .print-container .py-3,
+  .print-container .py-2,
   .print-container .py-1\.5 {
-    padding-top: 3px !important;
-    padding-bottom: 3px !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
   }
 
   /* General comments card and bill summary card padding reduction */
-  .print-container .p-4,
+  .print-container .p-6,
   .print-container .p-5,
-  .print-container .p-3 {
-    padding: 8px !important;
+  .print-container .p-4,
+  .print-container .p-3,
+  .print-container .p-2 {
+    padding: 4px 6px !important;
   }
 
   /* Compact spacing for Bills rows */
@@ -216,35 +251,23 @@
   /* Scale SVG mascots, seal, and logo elements safely */
   .print-container svg,
   .print-container img {
-    max-height: 42px !important;
-    max-width: 42px !important;
-    margin-bottom: 2px !important;
+    max-height: 38px !important;
+    max-width: 38px !important;
+    margin-bottom: 1px !important;
   }
 
   /* Remarks blockquotes / boxes */
+  .print-container p,
   .print-container p.text-slate-800,
   .print-container p.text-slate-700 {
     min-height: 0 !important;
-    padding: 4px !important;
-    margin-top: 2px !important;
+    padding: 3px 4px !important;
+    margin-top: 1px !important;
+    line-height: 1.15 !important;
   }
 
   .page-break {
     page-break-after: always !important;
     break-after: page !important;
-  }
-
-  /* Bulk Print Report Cards */
-  .bulk-report-card {
-    page-break-after: always !important;
-    break-after: page !important;
-    page-break-inside: avoid !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  .bulk-report-card:last-child {
-    page-break-after: auto !important;
-    break-after: auto !important;
   }
 }
