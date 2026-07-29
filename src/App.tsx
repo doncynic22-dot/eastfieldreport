@@ -184,9 +184,11 @@ export default function App() {
           const mergedConfig: ReportConfig = {
             ...DEFAULT_REPORT_CONFIG,
             ...localConfig,
-            ...sConfig,
-            reopeningDate: sConfig.reopeningDate || localConfig.reopeningDate || DEFAULT_REPORT_CONFIG.reopeningDate
+            ...sConfig
           };
+          if (sConfig.reopeningDate) {
+            mergedConfig.reopeningDate = sConfig.reopeningDate;
+          }
           setConfig(mergedConfig);
           localStorage.setItem('ea_config', JSON.stringify(mergedConfig));
         } else if (cachedConfigStr) {
@@ -745,7 +747,7 @@ export default function App() {
     }
   }, [config, isInitialized]);
 
-  // Background polling & tab focus refresh to receive real-time admin updates across devices (e.g. reopening date)
+  // Background polling & tab focus refresh to receive real-time admin updates across devices (e.g. reopening date & bills)
   useEffect(() => {
     if (!isInitialized) return;
     const creds = getSupabaseCredentials();
@@ -753,7 +755,10 @@ export default function App() {
 
     const pullRemoteUpdates = async () => {
       try {
-        const remoteConfig = await fetchSupabaseConfig();
+        const [remoteConfig, remoteBills] = await Promise.all([
+          fetchSupabaseConfig(),
+          fetchSupabaseBills()
+        ]);
         if (remoteConfig) {
           setConfig(prev => {
             if (
@@ -769,12 +774,22 @@ export default function App() {
             return prev;
           });
         }
+        if (remoteBills && Array.isArray(remoteBills) && remoteBills.length > 0) {
+          setBills(prev => {
+            const hasChanged = JSON.stringify(prev) !== JSON.stringify(remoteBills);
+            if (hasChanged) {
+              localStorage.setItem('ea_bills', JSON.stringify(remoteBills));
+              return remoteBills;
+            }
+            return prev;
+          });
+        }
       } catch (err) {
         // silent catch
       }
     };
 
-    const interval = setInterval(pullRemoteUpdates, 12000);
+    const interval = setInterval(pullRemoteUpdates, 4000);
     const handleFocus = () => pullRemoteUpdates();
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleFocus);

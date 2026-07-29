@@ -1204,6 +1204,7 @@ export default function AdminDashboard({
                 student={selectedStudent}
                 bills={bills}
                 onUpdateBill={onUpdateBill}
+                setConfig={setConfig}
                 grades={
                   grades.filter((g) => g.studentId === selectedStudent.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear)).length > 0
                     ? grades.filter((g) => g.studentId === selectedStudent.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear))
@@ -3278,6 +3279,7 @@ export default function AdminDashboard({
                         student={st}
                         bills={bills}
                         onUpdateBill={onUpdateBill}
+                        setConfig={setConfig}
                         grades={stGrades}
                         attendance={stAttendance}
                         subjects={subjects}

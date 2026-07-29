@@ -10,6 +10,7 @@ import { Printer, Check, Settings2, FileText, Sparkles, ExternalLink, Sliders, G
 import { generateEmailReportBody, sendGuardianEmail, sendWhatsAppReport } from '../services/emailDispatcher';
 import { findMatchingGrade, matchesSubject } from '../utils/subjectUtils';
 import { formatReopeningDate } from '../utils/dateUtils';
+import { saveSupabaseConfig } from '../lib/supabase';
 
 interface ReportPDFProps {
   student: Student;
@@ -19,6 +20,7 @@ interface ReportPDFProps {
   attendance?: Attendance;
   subjects: Subject[];
   config: ReportConfig;
+  setConfig?: React.Dispatch<React.SetStateAction<ReportConfig>>;
   allClassStudents: Student[];
   allGrades: Grade[]; // Used for rank calculation
   onUpdateAttendance?: (daysPresent: number, totalDays: number, remarks?: string) => void;
@@ -165,6 +167,7 @@ export default function ReportPDF({
   attendance,
   subjects,
   config,
+  setConfig,
   allClassStudents,
   allGrades,
   onUpdateAttendance,
@@ -260,10 +263,12 @@ export default function ReportPDF({
     const saved = bills?.find(b => b.studentId === student.id);
     const globalReopening = config.reopeningDate || '15th September, 2026';
     const savedReopening = saved?.reopeningDate;
-    // Prefer global config reopening date whenever set, unless a specific non-default bill reopening date is configured
-    const effectiveReopening = config.reopeningDate
-      ? config.reopeningDate
-      : ((savedReopening && savedReopening !== '15th September, 2026' && savedReopening !== '2026-09-15') ? savedReopening : globalReopening);
+    const isLegacyDefault = (d?: string) => !d || d === '15th September, 2026' || d === '2026-09-15';
+
+    // Prioritize custom global config first, then custom student bill reopening date, then fallback
+    const effectiveReopening = !isLegacyDefault(config.reopeningDate)
+      ? config.reopeningDate!
+      : (!isLegacyDefault(savedReopening) ? savedReopening! : globalReopening);
 
     setJhsArrears(saved?.arrears ?? '825.00');
     setJhsTuition(saved?.tuition ?? '730.00');
@@ -343,6 +348,18 @@ export default function ReportPDF({
       if (field === 'pta') setNurseryPta(value);
       if (field === 'reopeningDate') setNurseryReopening(value);
       if (field === 'contactNumber') setNurseryContact(value);
+    }
+
+    if (field === 'reopeningDate' && value && value.trim()) {
+      if (setConfig) {
+        setConfig(prev => {
+          const updated = { ...prev, reopeningDate: value };
+          localStorage.setItem('ea_config', JSON.stringify(updated));
+          localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updated));
+          saveSupabaseConfig(updated).catch(err => console.warn('Supabase config sync error:', err));
+          return updated;
+        });
+      }
     }
 
     if (onUpdateBill) {
