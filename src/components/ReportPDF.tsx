@@ -260,9 +260,10 @@ export default function ReportPDF({
     const saved = bills?.find(b => b.studentId === student.id);
     const globalReopening = config.reopeningDate || '15th September, 2026';
     const savedReopening = saved?.reopeningDate;
-    const effectiveReopening = (savedReopening && savedReopening !== '15th September, 2026' && savedReopening !== '2026-09-15')
-      ? savedReopening
-      : globalReopening;
+    // Prefer global config reopening date whenever set, unless a specific non-default bill reopening date is configured
+    const effectiveReopening = config.reopeningDate
+      ? config.reopeningDate
+      : ((savedReopening && savedReopening !== '15th September, 2026' && savedReopening !== '2026-09-15') ? savedReopening : globalReopening);
 
     setJhsArrears(saved?.arrears ?? '825.00');
     setJhsTuition(saved?.tuition ?? '730.00');
@@ -1349,7 +1350,9 @@ export default function ReportPDF({
                                 }
                               });
                             }
-                            const extraG = studentGrades.filter((g) => !levelSubs.some((sub) => matchesSubject(g.subjectId, sub)));
+                            const extraG = (effectiveLevel === 'KINDERGARTEN' || isKg || isNursery)
+                              ? []
+                              : studentGrades.filter((g) => !levelSubs.some((sub) => matchesSubject(g.subjectId, sub)));
                             const allSubjectRows = [
                               ...levelSubs.map((sub) => ({ id: sub.id, name: sub.name, code: sub.code, subjectObj: sub })),
                               ...extraG.map((g) => {
@@ -1588,79 +1591,6 @@ export default function ReportPDF({
                     </thead>
                     <tbody className="divide-y divide-[#7285DE] text-[11px] text-slate-800">
                       {(() => {
-                        if (isKg) {
-                          const kgStandardSubjects = [
-                            {
-                              displayName: 'LITERACY / LANGUAGE (LIT)',
-                              shortCode: 'LIT',
-                              matchKeys: ['LITERACY', 'LANGUAGE', 'LIT']
-                            },
-                            {
-                              displayName: 'NUMERACY (NUM)',
-                              shortCode: 'NUM',
-                              matchKeys: ['NUMERACY', 'NUM']
-                            },
-                            {
-                              displayName: 'OUR WORLD OUR PEOPLE (OWOP)',
-                              shortCode: 'OWOP',
-                              matchKeys: ['OUR WORLD', 'OWOP', 'PEOPLE']
-                            },
-                            {
-                              displayName: 'CREATIVE ARTS (CA)',
-                              shortCode: 'CA',
-                              matchKeys: ['CREATIVE', 'CREATIVITY', 'CA', 'CRT']
-                            },
-                            {
-                              displayName: 'WRITING (WRT)',
-                              shortCode: 'WRT',
-                              matchKeys: ['WRITING', 'WRT']
-                            }
-                          ];
-
-                          return kgStandardSubjects.map((stdSub, index) => {
-                            const matchedGrade = studentGrades.find((g) => {
-                              if (stdSub.shortCode === 'LIT' && g.subjectId === 'sub-k-lit') return true;
-                              if (stdSub.shortCode === 'NUM' && g.subjectId === 'sub-k-num') return true;
-                              if (stdSub.shortCode === 'OWOP' && g.subjectId === 'sub-k-owop') return true;
-                              if (stdSub.shortCode === 'CA' && g.subjectId === 'sub-k-ca') return true;
-                              if (stdSub.shortCode === 'WRT' && g.subjectId === 'sub-k-wrt') return true;
-
-                              const subObj = subjects.find((s) => s.id === g.subjectId);
-                              if (subObj) {
-                                const sName = subObj.name.toUpperCase();
-                                const sCode = (subObj.code || '').toUpperCase();
-                                return stdSub.matchKeys.some((k) => sName.includes(k) || sCode === k);
-                              }
-                              return false;
-                            });
-
-                            const g = matchedGrade;
-                            const commentText = g
-                              ? (g.remarks || getGradeDetails(g.totalScore).remarks)
-                              : '';
-
-                            return (
-                              <tr key={index} className="hover:bg-[#E8E5FC]/20 print:hover:bg-transparent">
-                                <td className="p-1.5 pl-3 border-r border-[#7285DE] font-bold text-slate-800 bg-white uppercase text-[10px]">
-                                  {stdSub.displayName}
-                                </td>
-                                <td className="p-1.5 text-center border-r border-[#7285DE] font-mono font-bold text-slate-800 bg-white">
-                                  {g ? g.classScore : ''}
-                                </td>
-                                <td className="p-1.5 text-center border-r border-[#7285DE] font-mono font-bold text-slate-800 bg-white">
-                                  {g ? g.examScore : ''}
-                                </td>
-                                <td className="p-1.5 text-center border-r border-[#7285DE] font-mono font-extrabold text-[#2B3B63] bg-white">
-                                  {g ? g.totalScore : ''}
-                                </td>
-                                <td className="p-1.5 text-center italic text-slate-700 bg-white uppercase text-[10px] font-bold">
-                                  {commentText}
-                                </td>
-                              </tr>
-                            );
-                          });
-                        }
-
                         let levelSubjects = subjects.filter(sub => sub.level === effectiveLevel);
                         if (effectiveLevel === 'JHS') {
                           const defaultJhs = [
@@ -1722,9 +1652,11 @@ export default function ReportPDF({
                           };
                         });
 
-                        const extraGrades = studentGrades.filter((g) => {
-                          return !levelSubjects.some((sub) => matchesSubject(g.subjectId, sub));
-                        });
+                        const extraGrades = (effectiveLevel === 'KINDERGARTEN' || isKg || isNursery)
+                          ? []
+                          : studentGrades.filter((g) => {
+                              return !levelSubjects.some((sub) => matchesSubject(g.subjectId, sub));
+                            });
 
                         const allRows = [
                           ...rows,
@@ -2088,9 +2020,11 @@ export default function ReportPDF({
                       });
 
                       // Also find any grades that didn't match the level subjects
-                      const extraGrades = studentGrades.filter((g) => {
-                        return !levelSubjects.some((sub) => matchesSubject(g.subjectId, sub));
-                      });
+                      const extraGrades = (effectiveLevel === 'KINDERGARTEN' || isKg || isNursery)
+                        ? []
+                        : studentGrades.filter((g) => {
+                            return !levelSubjects.some((sub) => matchesSubject(g.subjectId, sub));
+                          });
 
                       const allRows = [
                         ...rows,

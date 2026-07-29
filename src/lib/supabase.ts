@@ -720,11 +720,19 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
   if (!client) return null;
   try {
     let { data, error } = await client.from('ea_config').select('*').eq('id', 'global_config').maybeSingle();
-    if (error && (error.code === '22P02' || error.message?.includes('invalid input syntax for type uuid'))) {
-      // Fallback if ID column has a UUID type constraint in the database
-      const retryRes = await client.from('ea_config').select('*').eq('id', '00000000-0000-0000-0000-000000000000').maybeSingle();
-      data = retryRes.data;
-      error = retryRes.error;
+    if (!data) {
+      const uuidRes = await client.from('ea_config').select('*').eq('id', '00000000-0000-0000-0000-000000000000').maybeSingle();
+      if (uuidRes.data) {
+        data = uuidRes.data;
+        error = null;
+      }
+    }
+    if (!data) {
+      const fallbackRes = await client.from('ea_config').select('*').limit(1).maybeSingle();
+      if (fallbackRes.data) {
+        data = fallbackRes.data;
+        error = null;
+      }
     }
     if (error) {
       if (isMissingTableOrConnectionError(error)) {

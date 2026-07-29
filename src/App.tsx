@@ -182,14 +182,15 @@ export default function App() {
       if (configFetchSuccess) {
         if (sConfig) {
           const mergedConfig: ReportConfig = {
+            ...DEFAULT_REPORT_CONFIG,
             ...localConfig,
             ...sConfig,
             reopeningDate: sConfig.reopeningDate || localConfig.reopeningDate || DEFAULT_REPORT_CONFIG.reopeningDate
           };
           setConfig(mergedConfig);
           localStorage.setItem('ea_config', JSON.stringify(mergedConfig));
-        } else {
-          // Row does not exist on Supabase, but query worked -> safe to seed
+        } else if (cachedConfigStr) {
+          // Only seed if this client device has user-edited local cache
           try {
             await saveSupabaseConfig(localConfig);
             setConfig(localConfig);
@@ -197,6 +198,8 @@ export default function App() {
             console.error("Failed seeding config to Supabase:", seedErr);
             setConfig(localConfig);
           }
+        } else {
+          setConfig(DEFAULT_REPORT_CONFIG);
         }
       } else {
         // Query failed (e.g. missing column) -> use local cache, don't write to DB
