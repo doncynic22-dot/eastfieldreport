@@ -78,15 +78,11 @@
     print-color-adjust: exact !important;
   }
 
-  /* Robust class to completely exclude elements in print mode */
+  /* Robust class to completely exclude non-printable elements in print mode */
   .no-print,
-  header,
-  footer,
+  header.no-print,
+  footer.no-print,
   nav,
-  button,
-  select,
-  input,
-  form,
   aside,
   [id^="btn-print-floating-"],
   .customizer-panel {
@@ -94,6 +90,18 @@
     visibility: hidden !important;
     height: 0 !important;
     overflow: hidden !important;
+  }
+
+  /* Ensure interactive radio buttons or controls inside report card print containers are visible */
+  .print-container button,
+  .bulk-report-card button,
+  .print-container input,
+  .bulk-report-card input {
+    display: inline-flex !important;
+    visibility: visible !important;
+    height: auto !important;
+    opacity: 1 !important;
+    border-color: inherit !important;
   }
 
   /* Bypass and flatten all layout-wrapper hierarchies to allow print container full width */

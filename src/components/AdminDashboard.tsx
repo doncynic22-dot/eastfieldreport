@@ -1228,7 +1228,9 @@ export default function AdminDashboard({
                   const rule = config.gradingScale?.find((r) => totalScore >= r.minScore && totalScore <= r.maxScore);
                   const gradeLetter = rule ? rule.grade : (totalScore >= 80 ? 'A' : totalScore >= 70 ? 'B' : totalScore >= 60 ? 'C' : totalScore >= 50 ? 'D' : totalScore >= 40 ? 'E' : 'F');
                   const calcRemarks = rule ? rule.remarks : (totalScore >= 80 ? 'Excellent' : totalScore >= 70 ? 'Very Good' : totalScore >= 60 ? 'Good' : totalScore >= 50 ? 'Credit' : totalScore >= 40 ? 'Pass' : 'Fail');
-                  const finalRemarks = nurseryRemark || calcRemarks;
+                  const isStudentNursery = selectedStudent.level === 'NURSERY' || (selectedStudent.className || '').toLowerCase().includes('nursery');
+                  const finalRemarks = isStudentNursery ? (nurseryRemark || calcRemarks) : calcRemarks;
+                  const finalNurseryRemark = isStudentNursery ? nurseryRemark : undefined;
 
                   const updatedGrades = [...grades];
                   const existingIndex = updatedGrades.findIndex(
@@ -1246,7 +1248,7 @@ export default function AdminDashboard({
                     totalScore,
                     gradeLetter,
                     remarks: finalRemarks,
-                    nurseryRemark,
+                    nurseryRemark: finalNurseryRemark,
                     term: config.term || 'Term 1',
                     year: config.schoolYear || '2025/2026',
                     teacherId: 'admin',
@@ -3298,7 +3300,9 @@ export default function AdminDashboard({
                           const rule = config.gradingScale?.find((r) => totalScore >= r.minScore && totalScore <= r.maxScore);
                           const gradeLetter = rule ? rule.grade : (totalScore >= 80 ? 'A' : totalScore >= 70 ? 'B' : totalScore >= 60 ? 'C' : totalScore >= 50 ? 'D' : totalScore >= 40 ? 'E' : 'F');
                           const calcRemarks = rule ? rule.remarks : (totalScore >= 80 ? 'Excellent' : totalScore >= 70 ? 'Very Good' : totalScore >= 60 ? 'Good' : totalScore >= 50 ? 'Credit' : totalScore >= 40 ? 'Pass' : 'Fail');
-                          const finalRemarks = nurseryRemark || calcRemarks;
+                          const isStudentNursery = st.level === 'NURSERY' || (st.className || '').toLowerCase().includes('nursery');
+                          const finalRemarks = isStudentNursery ? (nurseryRemark || calcRemarks) : calcRemarks;
+                          const finalNurseryRemark = isStudentNursery ? nurseryRemark : undefined;
 
                           const updatedGrades = [...grades];
                           const existingIndex = updatedGrades.findIndex(
@@ -3316,7 +3320,7 @@ export default function AdminDashboard({
                             totalScore,
                             gradeLetter,
                             remarks: finalRemarks,
-                            nurseryRemark,
+                            nurseryRemark: finalNurseryRemark,
                             term: config.term || 'Term 1',
                             year: config.schoolYear || '2025/2026',
                             teacherId: 'admin',

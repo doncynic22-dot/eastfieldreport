@@ -1536,7 +1536,7 @@ export default function ReportPDF({
                     {config.schoolName}
                   </h1>
                   <h2 className="font-serif font-extrabold text-[12px] tracking-wider text-slate-800 uppercase mt-1.5 italic print:text-[10px]">
-                    REPORT CARD FOR {isKg ? 'KINDERGARTEN' : 'NURSERY'}
+                    REPORT CARD FOR {isKg ? 'KINDERGARTEN' : (isNursery ? 'NURSERY' : effectiveLevel)}
                   </h2>
                 </div>
 
@@ -1548,7 +1548,7 @@ export default function ReportPDF({
                       <span className="font-serif font-black text-slate-950 text-[11px] uppercase grow px-1 border-b border-dotted border-slate-400 print:text-[10px]">{student.name}</span>
                     </div>
                     <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm shrink-0 print:py-0.5">
-                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">{isKg ? 'KG' : 'NURSERY'}:</span>
+                      <span className="font-serif font-black italic text-[#4A3B94] text-[9px] uppercase whitespace-nowrap">{isKg ? 'KG' : (isNursery ? 'NURSERY' : 'CLASS')}:</span>
                       <span className="font-serif font-black text-slate-950 text-[11px] uppercase px-1 print:text-[10px]">{student.className}</span>
                     </div>
                     <div className="px-3.5 py-1 border-2 border-[#A899F7]/60 rounded-full bg-white/95 flex items-center gap-1.5 shadow-sm shrink-0 print:py-0.5">
@@ -1720,13 +1720,13 @@ export default function ReportPDF({
                           }
 
                           const renderRadioDot = (key: 'MO' | 'O' | 'S' | 'NA') => {
-                            const isSelected = selectedKey === key && !!g;
+                            const isSelected = selectedKey === key;
                             const dotVisual = isSelected ? (
-                              <div className="w-3.5 h-3.5 rounded-full bg-[#3B4CA3] border-2 border-[#3B4CA3] mx-auto flex items-center justify-center shadow-xs">
-                                <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+                              <div className="w-3.5 h-3.5 rounded-full bg-[#3B4CA3] border-2 border-[#3B4CA3] mx-auto flex items-center justify-center shadow-xs print:bg-[#3B4CA3] print:border-[#3B4CA3]">
+                                <div className="w-1.5 h-1.5 rounded-full bg-white print:bg-white"></div>
                               </div>
                             ) : (
-                              <div className="w-3 h-3 rounded-full border-2 border-slate-300 mx-auto hover:border-[#3B4CA3]"></div>
+                              <div className="w-3 h-3 rounded-full border-2 border-slate-300 mx-auto hover:border-[#3B4CA3] print:border-slate-400"></div>
                             );
 
                             if (onUpdateGrade && row.subjectId) {
@@ -1742,7 +1742,7 @@ export default function ReportPDF({
                                   onClick={() => {
                                     onUpdateGrade(row.subjectId, defaultClass, defaultExam, key);
                                   }}
-                                  className="w-full h-full p-0.5 flex items-center justify-center cursor-pointer hover:bg-indigo-50/50 rounded transition-colors"
+                                  className="w-full h-full p-0.5 flex items-center justify-center cursor-pointer hover:bg-indigo-50/50 rounded transition-colors print:p-0"
                                   title={`Click to set rating for ${row.name} to ${key}`}
                                 >
                                   {dotVisual}
@@ -1777,7 +1777,7 @@ export default function ReportPDF({
                           const classVal = g ? g.classScore : '';
                           const examVal = g ? g.examScore : '';
                           const totalVal = g ? g.totalScore : (g ? (g.classScore + g.examScore) : '');
-                          const commentVal = g ? (g.remarks || getGradeDetails(g.totalScore).remarks) : 'Good';
+                          const commentVal = g ? (isNursery ? (g.nurseryRemark || g.remarks || 'MO') : (['MO', 'O', 'S', 'NA'].includes((g.remarks || '').toUpperCase()) || !g.remarks ? getGradeDetails(g.totalScore).remarks : g.remarks)) : '';
 
                           return (
                             <tr key={index} className="hover:bg-[#E8E5FC]/20 print:hover:bg-transparent">
@@ -1883,7 +1883,7 @@ export default function ReportPDF({
 
                   {/* Right Column: Comments & Key Legend */}
                   <div className="flex flex-col justify-between space-y-2 print:space-y-1.5 h-full font-serif">
-                    {!isKg && (
+                    {isNursery && (
                       <div className="border border-[#7285DE]/60 rounded bg-white p-2 text-[9px] shadow-xs">
                         <span className="block font-bold text-[#4A3B94] uppercase tracking-wider text-[8px] mb-1">Remarks Key</span>
                         <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-slate-700 font-medium text-[9px]">
@@ -1898,9 +1898,9 @@ export default function ReportPDF({
                     {/* Headmistress' / Teacher's / Principal's Remarks Box */}
                     <div className="bg-white/80 p-2.5 rounded border-2 border-[#7285DE]/60 italic text-slate-700 text-[9.5px] leading-relaxed shadow-sm grow">
                       <span className="block not-italic font-bold text-[#4A3B94] uppercase tracking-wider text-[8px] mb-1">
-                        {isKg ? "PRINCIPAL'S REMARKS" : "Headmistress' / Teacher's Remarks"}
+                        {!isNursery ? "PRINCIPAL'S REMARKS" : "Headmistress' / Teacher's Remarks"}
                       </span>
-                      {customPrincipalComment ? `"${customPrincipalComment}"` : (isKg ? '"Keep up the wonderful energy! Extremely proud of your terminal steps."' : (attendance?.remarks ? `"${attendance.remarks}"` : '"Exhibiting steady growth and enthusiasm."'))}
+                      {customPrincipalComment ? `"${customPrincipalComment}"` : (!isNursery ? (attendance?.remarks ? `"${attendance.remarks}"` : '"Keep up the wonderful energy! Extremely proud of your terminal steps."') : (attendance?.remarks ? `"${attendance.remarks}"` : '"Exhibiting steady growth and enthusiasm."'))}
                     </div>
 
                     {/* Bottom Details & Mascot */}
@@ -2152,7 +2152,7 @@ export default function ReportPDF({
                               {g ? g.totalScore : ''}
                             </td>
                             <td className="p-1.5 pr-3 sm:p-2 sm:pr-4 print:p-0.5 print:pr-2 text-center text-slate-600 italic font-medium text-[10px] print:text-[9px] bg-white">
-                              {g ? (g.nurseryRemark || (['MO', 'O', 'S', 'NA'].includes((g.remarks || '').toUpperCase()) ? g.remarks : gradeInfo?.remarks)) : ''}
+                              {g ? (isNursery ? (g.nurseryRemark || (['MO', 'O', 'S', 'NA'].includes((g.remarks || '').toUpperCase()) ? g.remarks : 'MO')) : (['MO', 'O', 'S', 'NA'].includes((g.remarks || '').toUpperCase()) ? gradeInfo?.remarks : (g.remarks || gradeInfo?.remarks))) : ''}
                             </td>
                           </tr>
                         );
@@ -2406,7 +2406,7 @@ export default function ReportPDF({
                             </td>
                             <td className="p-3 text-center font-mono font-bold text-mauve-900 bg-white">{g.totalScore}</td>
                             <td className="p-3 pr-4 text-center text-gray-500 italic text-[11px] bg-white">
-                              {g.nurseryRemark || (['MO', 'O', 'S', 'NA'].includes((g.remarks || '').toUpperCase()) ? g.remarks : gradeInfo.remarks)}
+                              {isNursery ? (g.nurseryRemark || (['MO', 'O', 'S', 'NA'].includes((g.remarks || '').toUpperCase()) ? g.remarks : 'MO')) : (['MO', 'O', 'S', 'NA'].includes((g.remarks || '').toUpperCase()) ? gradeInfo.remarks : (g.remarks || gradeInfo.remarks))}
                             </td>
                           </tr>
                         );
