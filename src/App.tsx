@@ -901,9 +901,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-mauve-50 text-gray-800 font-sans pb-12 print:pb-0">
+    <div className="min-h-screen bg-[#160330] text-white font-sans pb-12 print:pb-0">
       {/* GLOBAL HIGH-CONTRAST HEADER NAVBAR - HIDE IN PRINT */}
-      <header className="bg-white border-b border-mauve-500/20 sticky top-0 z-40 shadow-sm no-print">
+      <header className="bg-[#1C053E] border-b border-white/15 text-white sticky top-0 z-40 shadow-sm no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           {/* Logo & Academy Name */}
           <div className="flex items-center gap-2.5 sm:gap-3 cursor-pointer shrink-0" onClick={() => { setActivePortal('hub'); setIsMobileMenuOpen(false); }}>
@@ -926,7 +926,7 @@ export default function App() {
                 </span>
               </div>
               <span className="text-[8px] sm:text-[9px] font-mono tracking-wider text-mauve-600 uppercase block truncate">
-                Terminal Report Engine v4.0
+                School Management System
               </span>
             </div>
           </div>
@@ -1067,7 +1067,7 @@ export default function App() {
                   Ghanaian Basic Education Framework
                 </span>
                 <h1 className="font-display font-bold text-2xl sm:text-3xl text-mauve-900 tracking-tight uppercase">
-                  EASTFIELD ACADEMY REPORT MANAGEMENT SYSTEM
+                  EASTFIELD ACADEMY SCHOOL MANAGEMENT SYSTEM
                 </h1>
                 <p className="text-xs text-gray-600 max-w-xl mx-auto leading-relaxed">
                   A high-fidelity record platform designed for Eastfield Academy teachers and administrators to automate pupil evaluations, log term attendances, and generate crisp transcript cards.

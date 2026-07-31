@@ -6,27 +6,118 @@
   --font-display: "Space Grotesk", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-mauve-50: #E6CEE6;
-  --color-mauve-100: #D8B2D8;
-  --color-mauve-200: #C590C5;
-  --color-mauve-300: #AD6BAD;
-  --color-mauve-400: #934993;
-  --color-mauve-500: #7B307B;
-  --color-mauve-600: #642164;
-  --color-mauve-700: #4E164E;
-  --color-mauve-800: #390D39;
-  --color-mauve-900: #250725;
-  --color-mauve-950: #160316;
+  --color-mauve-50: #160330;
+  --color-mauve-100: #210747;
+  --color-mauve-150: #2B0D5D;
+  --color-mauve-200: #38137A;
+  --color-mauve-250: #461C94;
+  --color-mauve-300: #5725B2;
+  --color-mauve-400: #6B34D6;
+  --color-mauve-500: #8146F2;
+  --color-mauve-600: #9B6CFA;
+  --color-mauve-700: #B794FD;
+  --color-mauve-800: #3E168D;
+  --color-mauve-900: #5021AD;
+  --color-mauve-950: #1A043B;
 }
 
 @layer utilities {
   /* Fine-tuned glassmorphism and subtle utilities */
   .bg-glass {
-    background-color: rgba(255, 255, 255, 0.85);
+    background-color: rgba(26, 4, 59, 0.9);
     backdrop-filter: blur(8px);
   }
   .mauve-glow {
-    box-shadow: 0 4px 20px -2px rgba(92, 43, 95, 0.25);
+    box-shadow: 0 4px 20px -2px rgba(80, 33, 173, 0.45);
+  }
+}
+
+/* =========================================================================
+   DEEP VIOLET & WHITE SCHOOL MANAGEMENT THEME (Screen Mode)
+   ========================================================================= */
+@media screen {
+  body,
+  #root,
+  .min-h-screen {
+    background-color: #160330 !important;
+    color: #FFFFFF !important;
+  }
+
+  header,
+  footer {
+    background-color: #1C053E !important;
+    border-color: rgba(255, 255, 255, 0.15) !important;
+    color: #FFFFFF !important;
+  }
+
+  .bg-white:not(.print-container):not(.print-container *),
+  .bg-mauve-50:not(.print-container):not(.print-container *),
+  .bg-mauve-50\/50:not(.print-container):not(.print-container *),
+  .bg-mauve-50\/80:not(.print-container):not(.print-container *),
+  .bg-gray-50:not(.print-container):not(.print-container *),
+  .bg-gray-100:not(.print-container):not(.print-container *),
+  .bg-slate-50:not(.print-container):not(.print-container *) {
+    background-color: #210747 !important;
+    color: #FFFFFF !important;
+    border-color: rgba(255, 255, 255, 0.18) !important;
+  }
+
+  .text-gray-900:not(.print-container *),
+  .text-gray-800:not(.print-container *),
+  .text-gray-700:not(.print-container *),
+  .text-gray-600:not(.print-container *),
+  .text-gray-500:not(.print-container *),
+  .text-mauve-900:not(.print-container *),
+  .text-mauve-800:not(.print-container *),
+  .text-mauve-700:not(.print-container *),
+  .text-mauve-600:not(.print-container *),
+  .text-black:not(.print-container *),
+  .text-slate-900:not(.print-container *),
+  .text-slate-800:not(.print-container *),
+  .text-slate-700:not(.print-container *) {
+    color: #FFFFFF !important;
+  }
+
+  .text-gray-400:not(.print-container *),
+  .text-slate-400:not(.print-container *) {
+    color: rgba(255, 255, 255, 0.85) !important;
+  }
+
+  input:not(.print-container *),
+  select:not(.print-container *),
+  textarea:not(.print-container *) {
+    background-color: #1A0438 !important;
+    color: #FFFFFF !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgba(255, 255, 255, 0.55) !important;
+  }
+
+  table:not(.print-container *),
+  th:not(.print-container *),
+  td:not(.print-container *),
+  tr:not(.print-container *),
+  .border-mauve-500\/20:not(.print-container *),
+  .border-mauve-200:not(.print-container *),
+  .border-mauve-150:not(.print-container *),
+  .border-gray-200:not(.print-container *) {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+
+  .bg-mauve-900:not(.print-container *),
+  .bg-mauve-800:not(.print-container *) {
+    background-color: #4F1FA3 !important;
+    color: #FFFFFF !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  }
+
+  .bg-mauve-900:hover:not(.print-container *),
+  .bg-mauve-800:hover:not(.print-container *) {
+    background-color: #6428C9 !important;
+    color: #FFFFFF !important;
   }
 }
 
@@ -37,16 +128,16 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #e6cee6;
+  background: #160330;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c48ec4;
+  background: #4F1FA3;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #914e94;
+  background: #6428C9;
 }
 
 /* Screen and Print style for high-fidelity Report Templates */
