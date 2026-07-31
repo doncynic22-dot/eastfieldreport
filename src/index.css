@@ -71,11 +71,53 @@
   .text-mauve-800:not(.print-container *),
   .text-mauve-700:not(.print-container *),
   .text-mauve-600:not(.print-container *),
+  [class*="text-mauve-"]:not(.print-container *),
+  [class*="text-gray-"]:not(.print-container *),
+  [class*="text-slate-"]:not(.print-container *),
   .text-black:not(.print-container *),
   .text-slate-900:not(.print-container *),
   .text-slate-800:not(.print-container *),
-  .text-slate-700:not(.print-container *) {
+  .text-slate-700:not(.print-container *),
+  .text-white:not(.print-container *) {
     color: #FFFFFF !important;
+  }
+
+  /* Increase font size across all pages in screen mode */
+  html {
+    font-size: 17px;
+  }
+
+  .text-xs:not(.print-container *),
+  .text-\[9px\]:not(.print-container *),
+  .text-\[10px\]:not(.print-container *),
+  .text-\[11px\]:not(.print-container *) {
+    font-size: 0.9rem !important;
+    line-height: 1.35rem !important;
+  }
+
+  .text-sm:not(.print-container *) {
+    font-size: 1.05rem !important;
+    line-height: 1.5rem !important;
+  }
+
+  .text-base:not(.print-container *) {
+    font-size: 1.15rem !important;
+    line-height: 1.7rem !important;
+  }
+
+  .text-lg:not(.print-container *) {
+    font-size: 1.3rem !important;
+    line-height: 1.85rem !important;
+  }
+
+  .text-xl:not(.print-container *) {
+    font-size: 1.5rem !important;
+    line-height: 2.1rem !important;
+  }
+
+  .text-2xl:not(.print-container *) {
+    font-size: 1.85rem !important;
+    line-height: 2.35rem !important;
   }
 
   .text-gray-400:not(.print-container *),

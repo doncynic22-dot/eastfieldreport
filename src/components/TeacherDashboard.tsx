@@ -950,10 +950,10 @@ export default function TeacherDashboard({
               </div>
             )}
             <div>
-              <h3 className="font-display font-bold text-mauve-900 text-sm">
-                Staff Portals
+              <h3 className="font-display font-extrabold text-white text-base sm:text-lg">
+                Teacher Portal
               </h3>
-              <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+              <p className="text-xs text-gray-300 mt-1 leading-relaxed">
                 Welcome, Eastfield Educator. Log in to your register.
               </p>
             </div>
