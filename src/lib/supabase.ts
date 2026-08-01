@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Student, User, Grade, Attendance, ReportConfig, StudentBill } from '../types';
+import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog } from '../types';
 
 // Helper to retrieve credentials from env or localStorage
 export function getSupabaseCredentials() {
@@ -175,15 +175,116 @@ ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 
 ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS year VARCHAR DEFAULT '2025/2026';
 ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
 
--- 7. Disable Row Level Security (RLS) on all tables to ensure public frontend sync operates correctly
+-- 7. Create / Fix Additional Tables for Global Synchronisation (Fee Payments, Fee Structures, Daily Collections, Sync Logs)
+CREATE TABLE IF NOT EXISTS public.ea_fee_payments (
+  id VARCHAR PRIMARY KEY,
+  receipt_number VARCHAR NOT NULL,
+  student_id VARCHAR NOT NULL,
+  student_name VARCHAR NOT NULL,
+  class_name VARCHAR NOT NULL,
+  fee_type VARCHAR NOT NULL,
+  amount_paid NUMERIC DEFAULT 0,
+  total_fee_amount NUMERIC DEFAULT 0,
+  payment_method VARCHAR DEFAULT 'Cash',
+  payment_date VARCHAR NOT NULL,
+  status VARCHAR DEFAULT 'Paid',
+  remarks VARCHAR DEFAULT '',
+  recorded_by VARCHAR DEFAULT 'Admin',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS receipt_number VARCHAR;
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS student_id VARCHAR;
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS student_name VARCHAR;
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS class_name VARCHAR;
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS fee_type VARCHAR;
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS amount_paid NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS total_fee_amount NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS payment_method VARCHAR DEFAULT 'Cash';
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS payment_date VARCHAR;
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'Paid';
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS remarks VARCHAR DEFAULT '';
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS recorded_by VARCHAR DEFAULT 'Admin';
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+CREATE TABLE IF NOT EXISTS public.ea_fee_structures (
+  id VARCHAR PRIMARY KEY,
+  level VARCHAR NOT NULL,
+  tuition NUMERIC DEFAULT 0,
+  computing NUMERIC DEFAULT 0,
+  utility NUMERIC DEFAULT 0,
+  stationery NUMERIC DEFAULT 0,
+  pta NUMERIC DEFAULT 0,
+  uniform NUMERIC DEFAULT 0,
+  mock_exam NUMERIC DEFAULT 0,
+  term VARCHAR DEFAULT 'Term 1',
+  year VARCHAR DEFAULT '2025/2026',
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS level VARCHAR;
+ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS tuition NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS computing NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS utility NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS stationery NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS pta NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS uniform NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS mock_exam NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
+ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS year VARCHAR DEFAULT '2025/2026';
+ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+CREATE TABLE IF NOT EXISTS public.ea_daily_collections (
+  id VARCHAR PRIMARY KEY,
+  collection_date VARCHAR NOT NULL,
+  total_cash NUMERIC DEFAULT 0,
+  total_momo NUMERIC DEFAULT 0,
+  total_bank NUMERIC DEFAULT 0,
+  total_cheque NUMERIC DEFAULT 0,
+  total_collected NUMERIC DEFAULT 0,
+  recorded_by VARCHAR DEFAULT 'Admin',
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS collection_date VARCHAR;
+ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS total_cash NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS total_momo NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS total_bank NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS total_cheque NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS total_collected NUMERIC DEFAULT 0;
+ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS recorded_by VARCHAR DEFAULT 'Admin';
+ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+CREATE TABLE IF NOT EXISTS public.ea_sync_logs (
+  id VARCHAR PRIMARY KEY,
+  action_type VARCHAR NOT NULL,
+  description TEXT NOT NULL,
+  performed_by VARCHAR DEFAULT 'System',
+  status VARCHAR DEFAULT 'SUCCESS',
+  details JSONB DEFAULT '{}'::jsonb,
+  timestamp VARCHAR NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS action_type VARCHAR;
+ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS performed_by VARCHAR DEFAULT 'System';
+ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'SUCCESS';
+ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS timestamp VARCHAR;
+ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+-- 8. Disable Row Level Security (RLS) on all tables to ensure public frontend sync operates correctly
 ALTER TABLE public.ea_config DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_students DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_teachers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_grades DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_attendance DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_bills DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_fee_payments DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_fee_structures DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_daily_collections DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_sync_logs DISABLE ROW LEVEL SECURITY;
 
--- 8. Reload PostgREST schema cache
+-- 9. Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';
 `;
 
@@ -297,6 +398,63 @@ CREATE TABLE IF NOT EXISTS public.ea_bills (
   contact_number VARCHAR,
   term VARCHAR DEFAULT 'Term 1',
   year VARCHAR DEFAULT '2025/2026',
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 7. Create Additional Tables (Fee Payments, Fee Structures, Daily Collections, Sync Logs)
+CREATE TABLE IF NOT EXISTS public.ea_fee_payments (
+  id VARCHAR PRIMARY KEY,
+  receipt_number VARCHAR NOT NULL,
+  student_id VARCHAR NOT NULL,
+  student_name VARCHAR NOT NULL,
+  class_name VARCHAR NOT NULL,
+  fee_type VARCHAR NOT NULL,
+  amount_paid NUMERIC DEFAULT 0,
+  total_fee_amount NUMERIC DEFAULT 0,
+  payment_method VARCHAR DEFAULT 'Cash',
+  payment_date VARCHAR NOT NULL,
+  status VARCHAR DEFAULT 'Paid',
+  remarks VARCHAR DEFAULT '',
+  recorded_by VARCHAR DEFAULT 'Admin',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.ea_fee_structures (
+  id VARCHAR PRIMARY KEY,
+  level VARCHAR NOT NULL,
+  tuition NUMERIC DEFAULT 0,
+  computing NUMERIC DEFAULT 0,
+  utility NUMERIC DEFAULT 0,
+  stationery NUMERIC DEFAULT 0,
+  pta NUMERIC DEFAULT 0,
+  uniform NUMERIC DEFAULT 0,
+  mock_exam NUMERIC DEFAULT 0,
+  term VARCHAR DEFAULT 'Term 1',
+  year VARCHAR DEFAULT '2025/2026',
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.ea_daily_collections (
+  id VARCHAR PRIMARY KEY,
+  collection_date VARCHAR NOT NULL,
+  total_cash NUMERIC DEFAULT 0,
+  total_momo NUMERIC DEFAULT 0,
+  total_bank NUMERIC DEFAULT 0,
+  total_cheque NUMERIC DEFAULT 0,
+  total_collected NUMERIC DEFAULT 0,
+  recorded_by VARCHAR DEFAULT 'Admin',
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.ea_sync_logs (
+  id VARCHAR PRIMARY KEY,
+  action_type VARCHAR NOT NULL,
+  description TEXT NOT NULL,
+  performed_by VARCHAR DEFAULT 'System',
+  status VARCHAR DEFAULT 'SUCCESS',
+  details JSONB DEFAULT '{}'::jsonb,
+  timestamp VARCHAR NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

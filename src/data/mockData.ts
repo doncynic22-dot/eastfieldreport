@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Student, Subject, User, GradingScaleRule, ReportConfig, Grade, Attendance } from '../types';
+import { Student, Subject, User, GradingScaleRule, ReportConfig, Grade, Attendance, FeePayment } from '../types';
 
 export const INITIAL_CLASSES = {
   NURSERY: ['Nursery 1', 'Nursery 2'],
@@ -198,3 +198,5 @@ export const INITIAL_ATTENDANCE: Attendance[] = [
   { studentId: "st-114", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 70, remarks: "Punctual and smart.", teacherId: "tch-01", updatedAt: new Date().toISOString() },
   { studentId: "st-115", term: "Term 1", year: "2025/2026", totalDays: 70, daysPresent: 67, remarks: "Punctual and friendly.", teacherId: "tch-01", updatedAt: new Date().toISOString() }
 ];
+
+export const INITIAL_FEE_PAYMENTS: FeePayment[] = [];

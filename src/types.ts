@@ -111,3 +111,73 @@ export interface ReportConfig {
   accentColor?: string;
   watermarkText?: string;
 }
+
+export type FeeTypeCategory =
+  | 'School Fees'
+  | 'Feeding Fee'
+  | 'Bus Fee'
+  | 'Studies Fee'
+  | 'Printing/Exam Fee'
+  | 'Uniform Purchase Fee'
+  | 'Mock Examination Fee'
+  | string;
+
+export type PaymentMethod = 'Cash' | 'Mobile Money' | 'Bank Transfer' | 'Cheque' | 'POS/Card';
+
+export type PaymentStatus = 'Paid' | 'Partial' | 'Pending';
+
+export interface FeePayment {
+  id: string;
+  receiptNumber: string;
+  studentId: string;
+  studentName: string;
+  className: string;
+  feeType: FeeTypeCategory;
+  amountPaid: number;
+  totalFeeAmount: number;
+  paymentMethod: PaymentMethod;
+  paymentDate: string;
+  status: PaymentStatus;
+  remarks?: string;
+  recordedBy?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface FeeStructureItem {
+  id: string;
+  level: AcademicLevel | string;
+  tuition: number;
+  computing: number;
+  utility: number;
+  stationery: number;
+  pta: number;
+  uniform?: number;
+  mockExam?: number;
+  term: string;
+  year: string;
+  updatedAt?: string;
+}
+
+export interface DailyCollectionSummary {
+  id: string;
+  collectionDate: string;
+  totalCash: number;
+  totalMomo: number;
+  totalBank: number;
+  totalCheque: number;
+  totalCollected: number;
+  recordedBy: string;
+  updatedAt?: string;
+}
+
+export interface SyncAuditLog {
+  id: string;
+  actionType: string;
+  description: string;
+  performedBy: string;
+  status: 'SUCCESS' | 'FAILED' | 'PENDING';
+  details?: string;
+  timestamp: string;
+  updatedAt?: string;
+}

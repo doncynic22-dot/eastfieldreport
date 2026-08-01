@@ -5,8 +5,10 @@
 
 import React, { useState } from 'react';
 import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill } from '../types';
-import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink } from 'lucide-react';
+import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3 } from 'lucide-react';
 import ReportPDF from './ReportPDF';
+import FeesCollectionModule from './FeesCollectionModule';
+import FeesDashboard from './FeesDashboard';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion } from '../services/promotionService';
@@ -40,7 +42,7 @@ interface AdminDashboardProps {
 }
 
 
-type AdminTab = 'analytics' | 'transcripts' | 'students' | 'teachers' | 'config';
+type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'transcripts' | 'students' | 'teachers' | 'config';
 
 export default function AdminDashboard({
   students,
@@ -1036,6 +1038,8 @@ export default function AdminDashboard({
       <div className="flex items-center gap-1.5 overflow-x-auto pb-2 max-w-full border-b border-mauve-500/10 no-print whitespace-nowrap">
         {[
           { id: 'analytics', label: 'Overview Metrics', icon: Users },
+          { id: 'fees-dashboard', label: 'Fees Dashboard', icon: BarChart3 },
+          { id: 'fees', label: 'Fees Collection & Receipts', icon: CreditCard },
           { id: 'transcripts', label: 'Transcript Center', icon: FileSpreadsheet },
           { id: 'students', label: 'Student Admissions', icon: GraduationCap },
           { id: 'teachers', label: 'Teacher Directory', icon: BookOpen },
@@ -1126,6 +1130,28 @@ export default function AdminDashboard({
             ))}
           </div>
         </div>
+      )}
+
+      {/* FEES SUMMARY & ANALYTICS DASHBOARD VIEW */}
+      {activeTab === 'fees-dashboard' && (
+        <FeesDashboard
+          students={students}
+          classes={classes}
+          config={config}
+          bills={bills}
+          onRecordNewPayment={() => setActiveTab('fees')}
+        />
+      )}
+
+      {/* FEES COLLECTION & RECEIPTS VIEW */}
+      {activeTab === 'fees' && (
+        <FeesCollectionModule
+          students={students}
+          classes={classes}
+          config={config}
+          bills={bills}
+          onViewDashboard={() => setActiveTab('fees-dashboard')}
+        />
       )}
 
       {/* B. TRANSCRIPT CENTER VIEW */}
