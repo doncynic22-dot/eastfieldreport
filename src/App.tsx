@@ -26,12 +26,14 @@ import {
   fetchSupabaseGrades,
   fetchSupabaseAttendance,
   fetchSupabaseBills,
+  fetchSupabaseFeePayments,
   saveSupabaseConfig,
   saveSupabaseStudents,
   saveSupabaseTeachers,
   saveSupabaseGrades,
   saveSupabaseAttendance,
   saveSupabaseBills,
+  saveSupabaseFeePayments,
   SUPABASE_SQL_SCHEMA,
   SUPABASE_SQL_REPAIR
 } from './lib/supabase';
@@ -412,6 +414,18 @@ export default function App() {
         setBills(localBills);
       }
 
+      // Sync Fee Payments
+      try {
+        const sPayments = await fetchSupabaseFeePayments();
+        if (sPayments && sPayments.length > 0) {
+          localStorage.setItem('ea_fee_payments', JSON.stringify(sPayments));
+          localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(sPayments));
+          window.dispatchEvent(new Event('storage'));
+        }
+      } catch (err) {
+        console.warn('Failed fetching fee payments from Supabase', err);
+      }
+
       setIsSupabaseSyncing(false);
       return true;
     } catch (e: any) {
@@ -444,6 +458,14 @@ export default function App() {
       const targetGrades = customGrades || grades;
       const targetAttendance = customAttendance || attendance;
       const targetBills = customBills || bills;
+      const targetFeePayments = (() => {
+        try {
+          const cached = localStorage.getItem('ea_fee_payments');
+          return cached ? JSON.parse(cached) : [];
+        } catch (e) {
+          return [];
+        }
+      })();
 
       const okConfig = await saveSupabaseConfig(targetConfig);
       const okStudents = await saveSupabaseStudents(targetStudents);
@@ -451,9 +473,10 @@ export default function App() {
       const okGrades = await saveSupabaseGrades(targetGrades);
       const okAttendance = await saveSupabaseAttendance(targetAttendance);
       const okBills = await saveSupabaseBills(targetBills);
+      const okPayments = await saveSupabaseFeePayments(targetFeePayments);
 
       setIsSupabaseSyncing(false);
-      return okConfig && okStudents && okTeachers && okGrades && okAttendance && okBills;
+      return okConfig && okStudents && okTeachers && okGrades && okAttendance && okBills && okPayments;
     } catch (e: any) {
       console.error('Failed pushing to Supabase:', e);
       setIsSupabaseSyncing(false);

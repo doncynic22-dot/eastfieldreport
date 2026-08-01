@@ -34,6 +34,7 @@ import {
   BarChart3,
   Trash2
 } from 'lucide-react';
+import { fetchSupabaseFeePayments, saveSupabaseFeePayments } from '../lib/supabase';
 
 interface FeesCollectionModuleProps {
   students: Student[];
@@ -215,10 +216,22 @@ export default function FeesCollectionModule({
     return INITIAL_FEE_PAYMENTS.filter((p) => !isDemoFeePayment(p));
   });
 
-  // Save payments to localStorage whenever they change
+  // Initial load from global Supabase database
+  useEffect(() => {
+    fetchSupabaseFeePayments().then((data) => {
+      if (data && Array.isArray(data) && data.length > 0) {
+        setFeePayments(data.filter((p) => !isDemoFeePayment(p)));
+      }
+    }).catch(err => console.warn('Supabase fee payments sync error:', err));
+  }, []);
+
+  // Save payments to localStorage and global Supabase whenever they change
   useEffect(() => {
     try {
       localStorage.setItem('ea_fee_payments', JSON.stringify(feePayments));
+      saveSupabaseFeePayments(feePayments).catch((err) =>
+        console.warn('Failed to sync fee payments to Supabase:', err)
+      );
     } catch (e) {
       console.error('Failed to save fee payments to localStorage', e);
     }

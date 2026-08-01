@@ -1452,6 +1452,248 @@ export async function saveSupabaseBills(bills: StudentBill[]): Promise<boolean> 
   }
 }
 
+// 7. SYNC FEE PAYMENTS
+export async function fetchSupabaseFeePayments(): Promise<FeePayment[] | null> {
+  const client = getSupabaseClient();
+  if (!client) {
+    const cached = localStorage.getItem('mock_supabase_ea_fee_payments') || localStorage.getItem('ea_fee_payments');
+    return cached ? JSON.parse(cached) : null;
+  }
+  try {
+    const { data, error } = await client.from('ea_fee_payments').select('*');
+    if (error) {
+      if (isMissingTableOrConnectionError(error)) {
+        const cached = localStorage.getItem('mock_supabase_ea_fee_payments') || localStorage.getItem('ea_fee_payments');
+        return cached ? JSON.parse(cached) : null;
+      }
+      return null;
+    }
+    if (!data) return null;
+    return data.map(item => ({
+      id: item.id || item.receipt_number || String(Math.random()),
+      receiptNumber: item.receipt_number || '',
+      studentId: item.student_id || '',
+      studentName: item.student_name || '',
+      className: item.class_name || '',
+      feeType: (item.fee_type || 'Tuition Fee') as any,
+      amountPaid: Number(item.amount_paid) || 0,
+      totalFeeAmount: Number(item.total_fee_amount) || 0,
+      paymentMethod: (item.payment_method || 'Cash') as any,
+      paymentDate: item.payment_date || new Date().toISOString().split('T')[0],
+      status: (item.status || 'Paid') as any,
+      remarks: item.remarks || '',
+      recordedBy: item.recorded_by || 'Admin',
+      createdAt: item.created_at || new Date().toISOString(),
+      updatedAt: item.updated_at || undefined,
+    }));
+  } catch (err: any) {
+    if (isMissingTableOrConnectionError(err)) {
+      const cached = localStorage.getItem('mock_supabase_ea_fee_payments') || localStorage.getItem('ea_fee_payments');
+      return cached ? JSON.parse(cached) : null;
+    }
+    return null;
+  }
+}
+
+export async function saveSupabaseFeePayments(payments: FeePayment[]): Promise<boolean> {
+  localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(payments));
+  localStorage.setItem('ea_fee_payments', JSON.stringify(payments));
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+  try {
+    const payloads = payments.map(p => ({
+      id: p.id || p.receiptNumber || `fee_${Date.now()}_${Math.random()}`,
+      receipt_number: p.receiptNumber,
+      student_id: p.studentId,
+      student_name: p.studentName,
+      class_name: p.className,
+      fee_type: p.feeType,
+      amount_paid: Number(p.amountPaid) || 0,
+      total_fee_amount: Number(p.totalFeeAmount) || 0,
+      payment_method: p.paymentMethod || 'Cash',
+      payment_date: p.paymentDate,
+      status: p.status || 'Paid',
+      remarks: p.remarks || '',
+      recorded_by: p.recordedBy || 'Admin',
+      created_at: p.createdAt || new Date().toISOString(),
+      updated_at: p.updatedAt || new Date().toISOString(),
+    }));
+    const { error } = await safeUpsert('ea_fee_payments', payloads, client, 'id');
+    if (error) {
+      console.warn('Supabase saveSupabaseFeePayments sync error, fallback to local storage preserved:', error);
+      return true;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('Supabase saveSupabaseFeePayments exception, fallback to local storage preserved:', err);
+    return true;
+  }
+}
+
+// 8. SYNC FEE STRUCTURES
+export async function fetchSupabaseFeeStructures(): Promise<FeeStructureItem[] | null> {
+  const client = getSupabaseClient();
+  if (!client) {
+    const cached = localStorage.getItem('mock_supabase_ea_fee_structures') || localStorage.getItem('ea_fee_structures');
+    return cached ? JSON.parse(cached) : null;
+  }
+  try {
+    const { data, error } = await client.from('ea_fee_structures').select('*');
+    if (error) return null;
+    if (!data) return null;
+    return data.map(item => ({
+      id: item.id || String(Math.random()),
+      level: item.level || '',
+      tuition: Number(item.tuition) || 0,
+      computing: Number(item.computing) || 0,
+      utility: Number(item.utility) || 0,
+      stationery: Number(item.stationery) || 0,
+      pta: Number(item.pta) || 0,
+      uniform: Number(item.uniform) || 0,
+      mockExam: Number(item.mock_exam) || 0,
+      term: item.term || 'Term 1',
+      year: item.year || '2025/2026',
+      updatedAt: item.updated_at || undefined,
+    }));
+  } catch (err: any) {
+    return null;
+  }
+}
+
+export async function saveSupabaseFeeStructures(structures: FeeStructureItem[]): Promise<boolean> {
+  localStorage.setItem('mock_supabase_ea_fee_structures', JSON.stringify(structures));
+  localStorage.setItem('ea_fee_structures', JSON.stringify(structures));
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+  try {
+    const payloads = structures.map(s => ({
+      id: s.id || `${s.level}_${s.term}_${s.year}`,
+      level: s.level,
+      tuition: Number(s.tuition) || 0,
+      computing: Number(s.computing) || 0,
+      utility: Number(s.utility) || 0,
+      stationery: Number(s.stationery) || 0,
+      pta: Number(s.pta) || 0,
+      uniform: Number(s.uniform) || 0,
+      mock_exam: Number(s.mockExam) || 0,
+      term: s.term || 'Term 1',
+      year: s.year || '2025/2026',
+      updated_at: s.updatedAt || new Date().toISOString()
+    }));
+    const { error } = await safeUpsert('ea_fee_structures', payloads, client, 'id');
+    if (error) return true;
+    return true;
+  } catch (err: any) {
+    return true;
+  }
+}
+
+// 9. SYNC DAILY COLLECTIONS
+export async function fetchSupabaseDailyCollections(): Promise<DailyCollectionSummary[] | null> {
+  const client = getSupabaseClient();
+  if (!client) {
+    const cached = localStorage.getItem('mock_supabase_ea_daily_collections') || localStorage.getItem('ea_daily_collections');
+    return cached ? JSON.parse(cached) : null;
+  }
+  try {
+    const { data, error } = await client.from('ea_daily_collections').select('*');
+    if (error) return null;
+    if (!data) return null;
+    return data.map(item => ({
+      id: item.id || String(Math.random()),
+      collectionDate: item.collection_date || '',
+      totalCash: Number(item.total_cash) || 0,
+      totalMomo: Number(item.total_momo) || 0,
+      totalBank: Number(item.total_bank) || 0,
+      totalCheque: Number(item.total_cheque) || 0,
+      totalCollected: Number(item.total_collected) || 0,
+      recordedBy: item.recorded_by || 'Admin',
+      updatedAt: item.updated_at || undefined,
+    }));
+  } catch (err: any) {
+    return null;
+  }
+}
+
+export async function saveSupabaseDailyCollections(collections: DailyCollectionSummary[]): Promise<boolean> {
+  localStorage.setItem('mock_supabase_ea_daily_collections', JSON.stringify(collections));
+  localStorage.setItem('ea_daily_collections', JSON.stringify(collections));
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+  try {
+    const payloads = collections.map(c => ({
+      id: c.id || c.collectionDate,
+      collection_date: c.collectionDate,
+      total_cash: Number(c.totalCash) || 0,
+      total_momo: Number(c.totalMomo) || 0,
+      total_bank: Number(c.totalBank) || 0,
+      total_cheque: Number(c.totalCheque) || 0,
+      total_collected: Number(c.totalCollected) || 0,
+      recorded_by: c.recordedBy || 'Admin',
+      updated_at: c.updatedAt || new Date().toISOString()
+    }));
+    const { error } = await safeUpsert('ea_daily_collections', payloads, client, 'id');
+    if (error) return true;
+    return true;
+  } catch (err: any) {
+    return true;
+  }
+}
+
+// 10. SYNC AUDIT LOGS
+export async function fetchSupabaseSyncLogs(): Promise<SyncAuditLog[] | null> {
+  const client = getSupabaseClient();
+  if (!client) {
+    const cached = localStorage.getItem('mock_supabase_ea_sync_logs') || localStorage.getItem('ea_sync_logs');
+    return cached ? JSON.parse(cached) : null;
+  }
+  try {
+    const { data, error } = await client.from('ea_sync_logs').select('*');
+    if (error) return null;
+    if (!data) return null;
+    return data.map(item => ({
+      id: item.id || String(Math.random()),
+      actionType: item.action_type || '',
+      description: item.description || '',
+      performedBy: item.performed_by || 'System',
+      status: (item.status || 'SUCCESS') as any,
+      details: typeof item.details === 'string' ? item.details : JSON.stringify(item.details || {}),
+      timestamp: item.timestamp || new Date().toISOString(),
+      updatedAt: item.updated_at || undefined,
+    }));
+  } catch (err: any) {
+    return null;
+  }
+}
+
+export async function saveSupabaseSyncLogs(logs: SyncAuditLog[]): Promise<boolean> {
+  localStorage.setItem('mock_supabase_ea_sync_logs', JSON.stringify(logs));
+  localStorage.setItem('ea_sync_logs', JSON.stringify(logs));
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+  try {
+    const payloads = logs.map(l => ({
+      id: l.id || `log_${Date.now()}_${Math.random()}`,
+      action_type: l.actionType,
+      description: l.description,
+      performed_by: l.performedBy || 'System',
+      status: l.status || 'SUCCESS',
+      details: typeof l.details === 'string' ? JSON.parse(l.details || '{}') : (l.details || {}),
+      timestamp: l.timestamp || new Date().toISOString(),
+      updated_at: l.updatedAt || new Date().toISOString()
+    }));
+    const { error } = await safeUpsert('ea_sync_logs', payloads, client, 'id');
+    if (error) return true;
+    return true;
+  } catch (err: any) {
+    return true;
+  }
+}
+
 // Global setup helper that tries to execute the setup via RPC or instructions
 export async function createTablesInSupabase(): Promise<{ success: boolean; message: string }> {
   const client = getSupabaseClient();

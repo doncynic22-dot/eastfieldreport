@@ -7,6 +7,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Student, ReportConfig, FeePayment, FeeTypeCategory, PaymentStatus, StudentBill } from '../types';
 import { INITIAL_FEE_PAYMENTS } from '../data/mockData';
 import { isDemoFeePayment } from './FeesCollectionModule';
+import { fetchSupabaseFeePayments } from '../lib/supabase';
 import {
   DollarSign,
   Search,
@@ -63,8 +64,14 @@ export default function FeesDashboard({
     return INITIAL_FEE_PAYMENTS.filter((p) => !isDemoFeePayment(p));
   });
 
-  // Sync when storage changes
+  // Sync when storage changes or load from Supabase
   useEffect(() => {
+    fetchSupabaseFeePayments().then((data) => {
+      if (data && Array.isArray(data) && data.length > 0) {
+        setFeePayments(data.filter((p) => !isDemoFeePayment(p)));
+      }
+    }).catch(err => console.warn('Supabase fee payments load error:', err));
+
     const handleStorageChange = () => {
       try {
         const saved = localStorage.getItem('ea_fee_payments');
