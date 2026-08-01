@@ -34,7 +34,7 @@ import {
   BarChart3,
   Trash2
 } from 'lucide-react';
-import { fetchSupabaseFeePayments, saveSupabaseFeePayments } from '../lib/supabase';
+import { fetchSupabaseFeePayments, saveSupabaseFeePayments, deleteSupabaseFeePayment, clearAllSupabaseFeePayments } from '../lib/supabase';
 
 interface FeesCollectionModuleProps {
   students: Student[];
@@ -1292,14 +1292,38 @@ export default function FeesCollectionModule({
                         {p.paymentDate}
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <button
-                          onClick={() => setActiveReceiptModal(p)}
-                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs rounded-lg transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer border border-purple-400/30"
-                          title="View and print official student receipt"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>Receipt</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => setActiveReceiptModal(p)}
+                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs rounded-lg transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer border border-purple-400/30"
+                            title="View and print official student receipt"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Receipt</span>
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const updated = feePayments.filter(item => item.id !== p.id && item.receiptNumber !== p.receiptNumber);
+                              setFeePayments(updated);
+                              try {
+                                localStorage.setItem('ea_fee_payments', JSON.stringify(updated));
+                                window.dispatchEvent(new Event('storage'));
+                              } catch (e) {
+                                console.error('Failed to update localStorage after receipt delete', e);
+                              }
+                              await deleteSupabaseFeePayment({ id: p.id, receiptNumber: p.receiptNumber });
+                              await saveSupabaseFeePayments(updated);
+                              setToastMessage({
+                                text: `Receipt ${p.receiptNumber} deleted and synchronized with database!`,
+                                receiptNumber: '',
+                              });
+                            }}
+                            className="p-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-extrabold text-xs rounded-lg transition inline-flex items-center justify-center shadow-sm cursor-pointer border border-rose-400/30"
+                            title="Delete receipt and synchronise with database"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1342,7 +1366,7 @@ export default function FeesCollectionModule({
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   setFeePayments([]);
                   try {
                     localStorage.setItem('ea_fee_payments', JSON.stringify([]));
@@ -1350,9 +1374,11 @@ export default function FeesCollectionModule({
                   } catch (e) {
                     console.error('Failed to clear localStorage', e);
                   }
+                  await clearAllSupabaseFeePayments();
+                  await saveSupabaseFeePayments([]);
                   setShowClearConfirmModal(false);
                   setToastMessage({
-                    text: 'All fee receipt records have been permanently cleared!',
+                    text: 'All fee receipt records have been permanently cleared and synchronized with database!',
                     receiptNumber: '',
                   });
                 }}

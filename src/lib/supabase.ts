@@ -1066,11 +1066,20 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
     }
     
     // Prune deleted students
-    const cleanStudentIds = students.map(s => s.id).filter(id => id && id.trim() !== '');
-    if (cleanStudentIds.length > 0) {
-      await client.from('ea_students').delete().not('id', 'in', `(${cleanStudentIds.join(',')})`);
-    } else {
+    if (students.length === 0) {
       await client.from('ea_students').delete().not('id', 'is', null);
+    } else {
+      const { data: existingRows } = await client.from('ea_students').select('id');
+      if (existingRows && existingRows.length > 0) {
+        const activeIds = new Set(students.map(s => String(s.id)));
+        const toDeleteIds = existingRows
+          .filter(row => !activeIds.has(String(row.id)))
+          .map(row => row.id)
+          .filter(Boolean);
+        if (toDeleteIds.length > 0) {
+          await client.from('ea_students').delete().in('id', toDeleteIds);
+        }
+      }
     }
 
     return true;
@@ -1142,11 +1151,20 @@ export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
     }
 
     // Prune deleted teachers
-    const cleanTeacherIds = teachers.map(t => t.id).filter(id => id && id.trim() !== '');
-    if (cleanTeacherIds.length > 0) {
-      await client.from('ea_teachers').delete().not('id', 'in', `(${cleanTeacherIds.join(',')})`);
-    } else {
+    if (teachers.length === 0) {
       await client.from('ea_teachers').delete().not('id', 'is', null);
+    } else {
+      const { data: existingRows } = await client.from('ea_teachers').select('id');
+      if (existingRows && existingRows.length > 0) {
+        const activeIds = new Set(teachers.map(t => String(t.id)));
+        const toDeleteIds = existingRows
+          .filter(row => !activeIds.has(String(row.id)))
+          .map(row => row.id)
+          .filter(Boolean);
+        if (toDeleteIds.length > 0) {
+          await client.from('ea_teachers').delete().in('id', toDeleteIds);
+        }
+      }
     }
 
     return true;
@@ -1495,6 +1513,49 @@ export async function fetchSupabaseFeePayments(): Promise<FeePayment[] | null> {
   }
 }
 
+export async function forceResyncSupabaseFeePayments(): Promise<{ success: boolean; count: number; data: FeePayment[]; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, count: 0, data: [], message: 'Supabase client is not connected.' };
+  }
+  try {
+    const { data, error } = await client.from('ea_fee_payments').select('*');
+    if (error) {
+      return { success: false, count: 0, data: [], message: `Supabase error: ${error.message}` };
+    }
+    const freshPayments: FeePayment[] = (data || []).map(item => ({
+      id: item.id || item.receipt_number || String(Math.random()),
+      receiptNumber: item.receipt_number || '',
+      studentId: item.student_id || '',
+      studentName: item.student_name || '',
+      className: item.class_name || '',
+      feeType: (item.fee_type || 'Tuition Fee') as any,
+      amountPaid: Number(item.amount_paid) || 0,
+      totalFeeAmount: Number(item.total_fee_amount) || 0,
+      paymentMethod: (item.payment_method || 'Cash') as any,
+      paymentDate: item.payment_date || new Date().toISOString().split('T')[0],
+      status: (item.status || 'Paid') as any,
+      remarks: item.remarks || '',
+      recordedBy: item.recorded_by || 'Admin',
+      createdAt: item.created_at || new Date().toISOString(),
+      updatedAt: item.updated_at || undefined,
+    }));
+
+    localStorage.setItem('ea_fee_payments', JSON.stringify(freshPayments));
+    localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(freshPayments));
+    window.dispatchEvent(new Event('storage'));
+
+    return {
+      success: true,
+      count: freshPayments.length,
+      data: freshPayments,
+      message: `Synchronized ${freshPayments.length} fee payment record(s) from Supabase.`
+    };
+  } catch (err: any) {
+    return { success: false, count: 0, data: [], message: `Sync exception: ${err.message || err}` };
+  }
+}
+
 export async function saveSupabaseFeePayments(payments: FeePayment[]): Promise<boolean> {
   localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(payments));
   localStorage.setItem('ea_fee_payments', JSON.stringify(payments));
@@ -1519,17 +1580,67 @@ export async function saveSupabaseFeePayments(payments: FeePayment[]): Promise<b
       created_at: p.createdAt || new Date().toISOString(),
       updated_at: p.updatedAt || new Date().toISOString(),
     }));
-    const { error } = await safeUpsert('ea_fee_payments', payloads, client, 'id');
-    if (error) {
-      console.warn('Supabase saveSupabaseFeePayments sync error, fallback to local storage preserved:', error);
-      return true;
+    if (payloads.length === 0) {
+      await client.from('ea_fee_payments').delete().not('id', 'is', null);
+    } else {
+      const { error } = await safeUpsert('ea_fee_payments', payloads, client, 'id');
+      if (error) {
+        console.warn('Supabase saveSupabaseFeePayments sync error, fallback to local storage preserved:', error);
+        return true;
+      }
+
+      // Prune deleted fee payment receipts from Supabase
+      const { data: existingRows } = await client.from('ea_fee_payments').select('id, receipt_number');
+      if (existingRows && existingRows.length > 0) {
+        const activeIds = new Set(payloads.map(p => String(p.id)));
+        const activeReceipts = new Set(payloads.map(p => String(p.receipt_number)));
+        const toDeleteIds = existingRows
+          .filter(row => !activeIds.has(String(row.id)) && !activeReceipts.has(String(row.receipt_number)))
+          .map(row => row.id)
+          .filter(Boolean);
+        if (toDeleteIds.length > 0) {
+          await client.from('ea_fee_payments').delete().in('id', toDeleteIds);
+        }
+      }
     }
+
     return true;
   } catch (err: any) {
     console.warn('Supabase saveSupabaseFeePayments exception, fallback to local storage preserved:', err);
     return true;
   }
 }
+
+export async function deleteSupabaseFeePayment(payment: { id?: string; receiptNumber?: string }): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return true;
+  try {
+    if (payment.id) {
+      await client.from('ea_fee_payments').delete().eq('id', payment.id);
+    }
+    if (payment.receiptNumber) {
+      await client.from('ea_fee_payments').delete().eq('receipt_number', payment.receiptNumber);
+      await client.from('ea_fee_payments').delete().eq('id', payment.receiptNumber);
+    }
+    return true;
+  } catch (e) {
+    console.warn('Error deleting fee payment from Supabase:', e);
+    return false;
+  }
+}
+
+export async function clearAllSupabaseFeePayments(): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return true;
+  try {
+    await client.from('ea_fee_payments').delete().not('id', 'is', null);
+    return true;
+  } catch (e) {
+    console.warn('Error clearing all fee payments from Supabase:', e);
+    return false;
+  }
+}
+
 
 // 8. SYNC FEE STRUCTURES
 export async function fetchSupabaseFeeStructures(): Promise<FeeStructureItem[] | null> {
