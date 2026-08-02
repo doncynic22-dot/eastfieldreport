@@ -1125,8 +1125,8 @@ export default function AdminDashboard({
                 <div className="text-xs">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Classes Managed:</span>
                   <div className="flex flex-wrap gap-1 mt-1.5">
-                    {lvl.classes.map((cls) => (
-                      <span key={cls} className="text-[10px] px-1.5 py-0.5 bg-gray-50 border border-gray-200 text-gray-600 rounded">
+                    {lvl.classes.map((cls, idx) => (
+                      <span key={`${cls}-${idx}`} className="text-[10px] px-1.5 py-0.5 bg-gray-50 border border-gray-200 text-gray-600 rounded">
                         {cls}
                       </span>
                     ))}
@@ -1877,7 +1877,7 @@ export default function AdminDashboard({
                       <button
                         type="button"
                         onClick={() => {
-                          handleEditStudent(viewingStudentProfile);
+                          triggerEditStudent(viewingStudentProfile);
                           setViewingStudentProfile(null);
                         }}
                         className="absolute bottom-1 right-1 bg-mauve-900/90 hover:bg-mauve-950 text-white p-1.5 rounded-lg text-[10px] flex items-center gap-1 shadow transition cursor-pointer"
@@ -1976,11 +1976,11 @@ export default function AdminDashboard({
                             <tbody className="divide-y divide-mauve-100 text-xs">
                               {grades
                                 .filter(g => g.studentId === viewingStudentProfile.id)
-                                .map(g => {
+                                .map((g, idx) => {
                                   const sub = subjects.find(s => s.id === g.subjectId || s.name === g.subjectId || s.code === g.subjectId);
                                   const total = (Number(g.classScore) || 0) + (Number(g.examScore) || 0);
                                   return (
-                                    <tr key={g.id} className="hover:bg-mauve-50/50">
+                                    <tr key={`${g.id}-${idx}`} className="hover:bg-mauve-50/50">
                                       <td className="p-2.5 pl-3 font-semibold text-gray-900">
                                         {sub ? sub.name : g.subjectId}
                                       </td>
@@ -2108,7 +2108,7 @@ export default function AdminDashboard({
                     <button
                       type="button"
                       onClick={() => {
-                        handleEditStudent(viewingStudentProfile);
+                        triggerEditStudent(viewingStudentProfile);
                         setViewingStudentProfile(null);
                       }}
                       className="px-3.5 py-2 bg-white hover:bg-mauve-50 border border-mauve-300 text-mauve-800 font-bold text-xs rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-xs"

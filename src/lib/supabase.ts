@@ -112,6 +112,8 @@ ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS level VARCHAR DEFAULT 'P
 ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS class_name VARCHAR DEFAULT '';
 ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_name VARCHAR DEFAULT '';
 ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_email VARCHAR DEFAULT '';
+ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_phone VARCHAR DEFAULT '';
+ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS photo_url TEXT DEFAULT '';
 ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
 
 -- 3. Fix ea_teachers table columns
@@ -339,6 +341,8 @@ CREATE TABLE IF NOT EXISTS public.ea_students (
   class_name VARCHAR NOT NULL,
   guardian_name VARCHAR NOT NULL,
   guardian_email VARCHAR NOT NULL,
+  guardian_phone VARCHAR DEFAULT '',
+  photo_url TEXT DEFAULT '',
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -494,6 +498,8 @@ ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS level VARCHAR DEFAULT 'P
 ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS class_name VARCHAR DEFAULT '';
 ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_name VARCHAR DEFAULT '';
 ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_email VARCHAR DEFAULT '';
+ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_phone VARCHAR DEFAULT '';
+ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS photo_url TEXT DEFAULT '';
 ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
 
 -- C. Fix ea_teachers table columns
@@ -1045,6 +1051,7 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       guardianName: item.guardian_name || '',
       guardianEmail: item.guardian_email || '',
       guardianPhone: item.guardian_phone || '',
+      photoUrl: item.photo_url || '',
     }));
   } catch (err: any) {
     if (isMissingTableOrConnectionError(err)) {
@@ -1068,9 +1075,25 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
       guardian_name: s.guardianName,
       guardian_email: s.guardianEmail,
       guardian_phone: s.guardianPhone || '',
+      photo_url: s.photoUrl || '',
       updated_at: new Date().toISOString()
     }));
-    const { error } = await safeUpsert('ea_students', payloads, client);
+    let { error } = await safeUpsert('ea_students', payloads, client);
+    if (error && (error.message?.includes('photo_url') || error.message?.includes('guardian_phone') || error.code === '42703')) {
+      console.warn('Supabase ea_students table missing photo_url/guardian_phone column. Retrying without new columns until SQL migration is run.');
+      const legacyPayloads = students.map(s => ({
+        id: s.id,
+        name: s.name,
+        roll_number: s.rollNumber,
+        level: s.level,
+        class_name: s.className,
+        guardian_name: s.guardianName,
+        guardian_email: s.guardianEmail,
+        updated_at: new Date().toISOString()
+      }));
+      const retryRes = await safeUpsert('ea_students', legacyPayloads, client);
+      error = retryRes.error;
+    }
     if (error) {
       if (isMissingTableOrConnectionError(error)) {
         localStorage.setItem('mock_supabase_ea_students', JSON.stringify(students));
@@ -1846,5 +1869,111 @@ export async function createTablesInSupabase(): Promise<{ success: boolean; mess
     };
   } catch (err: any) {
     return { success: false, message: `Could not verify/create tables: ${err.message || err}` };
+  }
+}
+
+/**
+ * Compresses and resizes a passport photograph to max 400x500px portrait JPEG at 85% quality.
+ */
+export async function compressPassportPhoto(file: File): Promise<{ blob: Blob; dataUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 400;
+        const MAX_HEIGHT = 500;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                resolve({ blob, dataUrl });
+              } else {
+                reject(new Error('Canvas toBlob failed'));
+              }
+            },
+            'image/jpeg',
+            0.85
+          );
+        } else {
+          reject(new Error('Canvas context failed'));
+        }
+      };
+      img.onerror = () => reject(new Error('Image loading failed'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error('File reading failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Uploads a student passport photograph to the dedicated Supabase Storage bucket ('student-photos').
+ * Returns the global CDN public URL so the image synchronizes across all authorized user devices.
+ * Gracefully falls back to a compressed data URL if storage upload is offline or restricted.
+ */
+export async function uploadStudentPhotoToSupabase(file: File, studentId: string): Promise<string> {
+  try {
+    const { blob, dataUrl } = await compressPassportPhoto(file);
+    const client = getSupabaseClient();
+    if (!client) {
+      return dataUrl;
+    }
+
+    // Attempt to ensure the student-photos public bucket exists
+    await client.storage.createBucket('student-photos', {
+      public: true,
+      fileSizeLimit: 5242880,
+    }).catch(() => {});
+
+    const cleanId = studentId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `passport/${cleanId}_${Date.now()}.jpg`;
+
+    const { error: uploadErr } = await client.storage
+      .from('student-photos')
+      .upload(fileName, blob, {
+        cacheControl: '3600',
+        upsert: true,
+        contentType: 'image/jpeg',
+      });
+
+    if (uploadErr) {
+      console.warn('Supabase Storage bucket upload fallback to compressed database storage:', uploadErr.message);
+      return dataUrl;
+    }
+
+    const { data: urlData } = client.storage
+      .from('student-photos')
+      .getPublicUrl(fileName);
+
+    return urlData?.publicUrl || dataUrl;
+  } catch (err) {
+    console.warn('Student photo storage upload error, falling back to data URL:', err);
+    return new Promise((resolve) => {
+      const r = new FileReader();
+      r.onloadend = () => resolve((r.result as string) || '');
+      r.readAsDataURL(file);
+    });
   }
 }
