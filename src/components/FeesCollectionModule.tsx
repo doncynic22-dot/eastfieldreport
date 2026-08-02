@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Student, ReportConfig, FeePayment, FeeTypeCategory, PaymentMethod, PaymentStatus, StudentBill } from '../types';
 import { INITIAL_FEE_PAYMENTS } from '../data/mockData';
 import {
@@ -216,22 +216,44 @@ export default function FeesCollectionModule({
     return INITIAL_FEE_PAYMENTS.filter((p) => !isDemoFeePayment(p));
   });
 
+  const isInitialMountRef = useRef(true);
+
   // Initial load from global Supabase database
   useEffect(() => {
     fetchSupabaseFeePayments().then((data) => {
-      if (data && Array.isArray(data) && data.length > 0) {
+      if (data && Array.isArray(data)) {
         setFeePayments(data.filter((p) => !isDemoFeePayment(p)));
       }
-    }).catch(err => console.warn('Supabase fee payments sync error:', err));
+      isInitialMountRef.current = false;
+    }).catch(err => {
+      console.warn('Supabase fee payments sync error:', err);
+      isInitialMountRef.current = false;
+    });
+
+    const handleStorageChange = () => {
+      try {
+        const saved = localStorage.getItem('ea_fee_payments');
+        if (saved) {
+          const parsed: FeePayment[] = JSON.parse(saved);
+          setFeePayments(parsed.filter((p) => !isDemoFeePayment(p)));
+        }
+      } catch (e) {
+        console.error('Storage sync failed', e);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Save payments to localStorage and global Supabase whenever they change
+  // Save payments to localStorage and global Supabase whenever they change (ONLY after initial fetch!)
   useEffect(() => {
     try {
       localStorage.setItem('ea_fee_payments', JSON.stringify(feePayments));
-      saveSupabaseFeePayments(feePayments).catch((err) =>
-        console.warn('Failed to sync fee payments to Supabase:', err)
-      );
+      if (!isInitialMountRef.current) {
+        saveSupabaseFeePayments(feePayments).catch((err) =>
+          console.warn('Failed to sync fee payments to Supabase:', err)
+        );
+      }
     } catch (e) {
       console.error('Failed to save fee payments to localStorage', e);
     }
@@ -1307,6 +1329,7 @@ export default function FeesCollectionModule({
                               setFeePayments(updated);
                               try {
                                 localStorage.setItem('ea_fee_payments', JSON.stringify(updated));
+                                localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(updated));
                                 window.dispatchEvent(new Event('storage'));
                               } catch (e) {
                                 console.error('Failed to update localStorage after receipt delete', e);
@@ -1370,6 +1393,7 @@ export default function FeesCollectionModule({
                   setFeePayments([]);
                   try {
                     localStorage.setItem('ea_fee_payments', JSON.stringify([]));
+                    localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify([]));
                     window.dispatchEvent(new Event('storage'));
                   } catch (e) {
                     console.error('Failed to clear localStorage', e);

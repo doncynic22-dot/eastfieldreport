@@ -417,7 +417,7 @@ export default function App() {
       // Sync Fee Payments
       try {
         const sPayments = await fetchSupabaseFeePayments();
-        if (sPayments && sPayments.length > 0) {
+        if (sPayments && Array.isArray(sPayments)) {
           localStorage.setItem('ea_fee_payments', JSON.stringify(sPayments));
           localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(sPayments));
           window.dispatchEvent(new Event('storage'));

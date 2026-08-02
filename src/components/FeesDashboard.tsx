@@ -67,7 +67,7 @@ export default function FeesDashboard({
   // Sync when storage changes or load from Supabase
   useEffect(() => {
     fetchSupabaseFeePayments().then((data) => {
-      if (data && Array.isArray(data) && data.length > 0) {
+      if (data && Array.isArray(data)) {
         setFeePayments(data.filter((p) => !isDemoFeePayment(p)));
       }
     }).catch(err => console.warn('Supabase fee payments load error:', err));
