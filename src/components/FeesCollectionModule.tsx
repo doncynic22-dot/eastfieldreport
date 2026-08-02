@@ -34,7 +34,7 @@ import {
   BarChart3,
   Trash2
 } from 'lucide-react';
-import { fetchSupabaseFeePayments, saveSupabaseFeePayments, deleteSupabaseFeePayment, clearAllSupabaseFeePayments } from '../lib/supabase';
+import { fetchSupabaseFeePayments, saveSupabaseFeePayments, deleteSupabaseFeePayment, deleteSupabaseFeePaymentsBatch, clearAllSupabaseFeePayments } from '../lib/supabase';
 
 interface FeesCollectionModuleProps {
   students: Student[];
@@ -500,6 +500,89 @@ export default function FeesCollectionModule({
       return true;
     });
   }, [feePayments, filterClass, filterFeeType, filterStatus, searchQuery]);
+
+  // MULTI-SELECTION STATE FOR RECEIPTS
+  const [selectedReceiptIds, setSelectedReceiptIds] = useState<string[]>([]);
+
+  const getReceiptKey = (p: FeePayment, idx?: number): string => {
+    return p.id || p.receiptNumber || `idx_${idx || 0}`;
+  };
+
+  const isSameReceipt = (a: FeePayment, b: FeePayment): boolean => {
+    if (a.id && b.id && a.id === b.id) return true;
+    if (a.receiptNumber && b.receiptNumber && a.receiptNumber === b.receiptNumber) return true;
+    return false;
+  };
+
+  const toggleSelectReceipt = (p: FeePayment, idx?: number) => {
+    const key = getReceiptKey(p, idx);
+    setSelectedReceiptIds((prev) =>
+      prev.includes(key) ? prev.filter((id) => id !== key) : [...prev, key]
+    );
+  };
+
+  const handleSelectAllReceipts = () => {
+    if (displayedPayments.length === 0) return;
+    const allDisplayedKeys = displayedPayments.map((p, idx) => getReceiptKey(p, idx));
+    const allSelected = allDisplayedKeys.every((key) => selectedReceiptIds.includes(key));
+    if (allSelected) {
+      setSelectedReceiptIds((prev) => prev.filter((id) => !allDisplayedKeys.includes(id)));
+    } else {
+      setSelectedReceiptIds((prev) => Array.from(new Set([...prev, ...allDisplayedKeys])));
+    }
+  };
+
+  const handleDeleteSingleReceipt = async (p: FeePayment) => {
+    const updated = feePayments.filter((item) => !isSameReceipt(item, p));
+    setFeePayments(updated);
+    setSelectedReceiptIds((prev) => prev.filter((key) => key !== getReceiptKey(p)));
+    try {
+      localStorage.setItem('ea_fee_payments', JSON.stringify(updated));
+      localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(updated));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {
+      console.error('Failed to update localStorage after receipt delete', e);
+    }
+    await deleteSupabaseFeePayment({ id: p.id, receiptNumber: p.receiptNumber });
+    await saveSupabaseFeePayments(updated);
+    setToastMessage({
+      text: `Receipt ${p.receiptNumber} deleted and synchronized with database!`,
+      receiptNumber: '',
+    });
+  };
+
+  const handleDeleteSelectedReceipts = async () => {
+    if (selectedReceiptIds.length === 0) return;
+    const count = selectedReceiptIds.length;
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete ${count} selected receipt(s)? This action cannot be undone.`
+    );
+    if (!confirmDelete) return;
+
+    const remaining = feePayments.filter((p, idx) => !selectedReceiptIds.includes(getReceiptKey(p, idx)));
+    const deleted = feePayments.filter((p, idx) => selectedReceiptIds.includes(getReceiptKey(p, idx)));
+
+    setFeePayments(remaining);
+    setSelectedReceiptIds([]);
+
+    try {
+      localStorage.setItem('ea_fee_payments', JSON.stringify(remaining));
+      localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(remaining));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {
+      console.error('Failed to update localStorage after batch delete', e);
+    }
+
+    await deleteSupabaseFeePaymentsBatch(
+      deleted.map((p) => ({ id: p.id, receiptNumber: p.receiptNumber }))
+    );
+    await saveSupabaseFeePayments(remaining);
+
+    setToastMessage({
+      text: `${count} receipt(s) deleted and synchronized with database!`,
+      receiptNumber: '',
+    });
+  };
 
   // Analytics KPIs
   const totalCollected = useMemo(() => {
@@ -1162,6 +1245,15 @@ export default function FeesCollectionModule({
           </div>
 
           <div className="flex items-center gap-2 self-end sm:self-center">
+            {selectedReceiptIds.length > 0 && (
+              <button
+                onClick={handleDeleteSelectedReceipts}
+                className="px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl border border-rose-400/40 transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <Trash2 className="w-4 h-4 text-white" />
+                <span>Delete Selected ({selectedReceiptIds.length})</span>
+              </button>
+            )}
             <button
               onClick={handleExportCSV}
               className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl border border-white/20 transition flex items-center gap-1.5 cursor-pointer shadow-sm"
@@ -1250,6 +1342,20 @@ export default function FeesCollectionModule({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-white/20 text-gray-300 text-xs font-extrabold uppercase tracking-wider">
+                <th className="py-3 px-3 w-8">
+                  <input
+                    type="checkbox"
+                    checked={
+                      displayedPayments.length > 0 &&
+                      displayedPayments.every((p, idx) =>
+                        selectedReceiptIds.includes(getReceiptKey(p, idx))
+                      )
+                    }
+                    onChange={handleSelectAllReceipts}
+                    className="w-4 h-4 rounded border-white/30 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                    title="Select all displayed receipts"
+                  />
+                </th>
                 <th className="py-3 px-3">Receipt No.</th>
                 <th className="py-3 px-3">Student & Class</th>
                 <th className="py-3 px-3">Fee Type</th>
@@ -1263,11 +1369,19 @@ export default function FeesCollectionModule({
             </thead>
             <tbody className="divide-y divide-white/10 text-xs">
               {displayedPayments.length > 0 ? (
-                displayedPayments.map((p) => {
+                displayedPayments.map((p, idx) => {
                   const isPaid = p.status === 'Paid';
                   const isPartial = p.status === 'Partial';
                   return (
                     <tr key={p.id} className="hover:bg-white/5 transition">
+                      <td className="py-3 px-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedReceiptIds.includes(getReceiptKey(p, idx))}
+                          onChange={() => toggleSelectReceipt(p, idx)}
+                          className="w-4 h-4 rounded border-white/30 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                        />
+                      </td>
                       <td className="py-3 px-3 font-mono font-extrabold text-purple-300 whitespace-nowrap">
                         {p.receiptNumber}
                       </td>
@@ -1324,23 +1438,7 @@ export default function FeesCollectionModule({
                             <span>Receipt</span>
                           </button>
                           <button
-                            onClick={async () => {
-                              const updated = feePayments.filter(item => item.id !== p.id && item.receiptNumber !== p.receiptNumber);
-                              setFeePayments(updated);
-                              try {
-                                localStorage.setItem('ea_fee_payments', JSON.stringify(updated));
-                                localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(updated));
-                                window.dispatchEvent(new Event('storage'));
-                              } catch (e) {
-                                console.error('Failed to update localStorage after receipt delete', e);
-                              }
-                              await deleteSupabaseFeePayment({ id: p.id, receiptNumber: p.receiptNumber });
-                              await saveSupabaseFeePayments(updated);
-                              setToastMessage({
-                                text: `Receipt ${p.receiptNumber} deleted and synchronized with database!`,
-                                receiptNumber: '',
-                              });
-                            }}
+                            onClick={() => handleDeleteSingleReceipt(p)}
                             className="p-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-extrabold text-xs rounded-lg transition inline-flex items-center justify-center shadow-sm cursor-pointer border border-rose-400/30"
                             title="Delete receipt and synchronise with database"
                           >
@@ -1353,7 +1451,7 @@ export default function FeesCollectionModule({
                 })
               ) : (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-gray-300 font-bold">
+                  <td colSpan={10} className="py-8 text-center text-gray-300 font-bold">
                     No fee payment records match your filters. Record a payment above to issue a receipt.
                   </td>
                 </tr>

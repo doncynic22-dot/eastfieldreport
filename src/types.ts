@@ -28,6 +28,7 @@ export interface Student {
   guardianName: string;
   guardianEmail: string;
   guardianPhone?: string;
+  photoUrl?: string; // Passport size photograph URL/Base64
 }
 
 export interface Subject {

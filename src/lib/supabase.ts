@@ -1630,6 +1630,26 @@ export async function deleteSupabaseFeePayment(payment: { id?: string; receiptNu
   }
 }
 
+export async function deleteSupabaseFeePaymentsBatch(payments: { id?: string; receiptNumber?: string }[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !payments || payments.length === 0) return true;
+  try {
+    const ids = payments.map(p => p.id?.trim()).filter(Boolean) as string[];
+    const recs = payments.map(p => p.receiptNumber?.trim()).filter(Boolean) as string[];
+
+    if (ids.length > 0) {
+      await client.from('ea_fee_payments').delete().in('id', ids);
+    }
+    if (recs.length > 0) {
+      await client.from('ea_fee_payments').delete().in('receipt_number', recs);
+    }
+    return true;
+  } catch (e) {
+    console.warn('Error batch deleting fee payments from Supabase:', e);
+    return false;
+  }
+}
+
 export async function clearAllSupabaseFeePayments(): Promise<boolean> {
   const client = getSupabaseClient();
   if (!client) return true;
