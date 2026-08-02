@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill } from '../types';
-import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3 } from 'lucide-react';
+import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import FeesCollectionModule from './FeesCollectionModule';
 import FeesDashboard from './FeesDashboard';
@@ -120,7 +120,8 @@ export default function AdminDashboard({
     className: 'Primary 1',
     guardianName: '',
     guardianEmail: '',
-    guardianPhone: ''
+    guardianPhone: '',
+    photoUrl: ''
   });
 
   // Teacher Registration Form State
@@ -545,7 +546,8 @@ export default function AdminDashboard({
         className: studentForm.className,
         guardianName: studentForm.guardianName,
         guardianEmail: studentForm.guardianEmail,
-        guardianPhone: studentForm.guardianPhone
+        guardianPhone: studentForm.guardianPhone,
+        photoUrl: studentForm.photoUrl
       };
       setStudents(prev => [...prev, newStudent]);
     }
@@ -558,7 +560,8 @@ export default function AdminDashboard({
       className: 'Primary 1',
       guardianName: '',
       guardianEmail: '',
-      guardianPhone: ''
+      guardianPhone: '',
+      photoUrl: ''
     });
     setEditingStudent(null);
     setShowStudentModal(false);
@@ -573,7 +576,8 @@ export default function AdminDashboard({
       className: student.className,
       guardianName: student.guardianName,
       guardianEmail: student.guardianEmail,
-      guardianPhone: student.guardianPhone || ''
+      guardianPhone: student.guardianPhone || '',
+      photoUrl: student.photoUrl || ''
     });
     setShowStudentModal(true);
   };
@@ -1608,6 +1612,65 @@ export default function AdminDashboard({
                 </div>
 
                 <form onSubmit={handleAddOrEditStudent} className="space-y-4 text-sm">
+                  {/* Passport Size Photograph Upload */}
+                  <div className="p-3 bg-mauve-50/70 border border-mauve-200 rounded-xl space-y-2">
+                    <label className="text-xs font-semibold text-mauve-800 block flex justify-between items-center">
+                      <span>Passport Size Photograph</span>
+                      <span className="text-[10px] text-mauve-500 font-normal">Optional &bull; Max 2MB</span>
+                    </label>
+                    <div className="flex items-center gap-4">
+                      <div className="relative w-16 h-20 rounded-lg border-2 border-dashed border-mauve-300 bg-white flex flex-col items-center justify-center overflow-hidden shrink-0 shadow-inner">
+                        {studentForm.photoUrl ? (
+                          <>
+                            <img
+                              src={studentForm.photoUrl}
+                              alt="Passport Preview"
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setStudentForm({ ...studentForm, photoUrl: '' })}
+                              className="absolute top-0.5 right-0.5 bg-red-600 text-white rounded-full p-0.5 hover:bg-red-700 transition"
+                              title="Remove photo"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </>
+                        ) : (
+                          <Camera className="w-6 h-6 text-mauve-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 space-y-1.5">
+                        <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-mauve-100/50 border border-mauve-200 text-mauve-700 rounded-lg text-xs font-semibold cursor-pointer transition shadow-sm">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>{studentForm.photoUrl ? 'Change Photo' : 'Upload Photograph'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (file.size > 2 * 1024 * 1024) {
+                                  alert('Image size exceeds 2MB limit.');
+                                  return;
+                                }
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setStudentForm((prev) => ({ ...prev, photoUrl: reader.result as string }));
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                        </label>
+                        <p className="text-[11px] text-mauve-600 leading-tight">
+                          Standard passport portrait (JPG/PNG). Used on official term report cards & ID records.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Name */}
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-mauve-700 block">Student Fullname</label>
