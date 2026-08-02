@@ -680,34 +680,48 @@ USING (bucket_id = 'ea');
 -- Newer Supabase projects automatically enable RLS by default on newly created tables.
 -- To allow your frontend app to synchronize data, you MUST either disable RLS or add public policies.
 
--- OPTION A: Disable RLS on the tables (Simplest & Recommended for offline-sync app design)
+-- OPTION A: Disable RLS on all tables (Simplest & Recommended for offline-sync app design)
 ALTER TABLE public.ea_config DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_students DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_teachers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_grades DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_attendance DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_bills DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_fee_payments DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_fee_structures DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_daily_collections DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_sync_logs DISABLE ROW LEVEL SECURITY;
 
--- OPTION B: Alternatively, if you want to keep RLS active, use these unrestricted policies:
--- (Uncomment these if you prefer to keep RLS enabled)
--- ALTER TABLE public.ea_config ENABLE ROW LEVEL SECURITY;
--- DROP POLICY IF EXISTS "Allow public access on ea_config" ON public.ea_config;
--- CREATE POLICY "Allow public access on ea_config" ON public.ea_config FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
+-- OPTION B: Unrestricted policies (Ensure DELETE/INSERT/UPDATE/SELECT work even if RLS is enabled)
+DROP POLICY IF EXISTS "Allow public access on ea_config" ON public.ea_config;
+CREATE POLICY "Allow public access on ea_config" ON public.ea_config FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
 
--- ALTER TABLE public.ea_students ENABLE ROW LEVEL SECURITY;
--- DROP POLICY IF EXISTS "Allow public access on ea_students" ON public.ea_students;
--- CREATE POLICY "Allow public access on ea_students" ON public.ea_students FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public access on ea_students" ON public.ea_students;
+CREATE POLICY "Allow public access on ea_students" ON public.ea_students FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
 
--- ALTER TABLE public.ea_teachers ENABLE ROW LEVEL SECURITY;
--- DROP POLICY IF EXISTS "Allow public access on ea_teachers" ON public.ea_teachers;
--- CREATE POLICY "Allow public access on ea_teachers" ON public.ea_teachers FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public access on ea_teachers" ON public.ea_teachers;
+CREATE POLICY "Allow public access on ea_teachers" ON public.ea_teachers FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
 
--- ALTER TABLE public.ea_grades ENABLE ROW LEVEL SECURITY;
--- DROP POLICY IF EXISTS "Allow public access on ea_grades" ON public.ea_grades;
--- CREATE POLICY "Allow public access on ea_grades" ON public.ea_grades FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public access on ea_grades" ON public.ea_grades;
+CREATE POLICY "Allow public access on ea_grades" ON public.ea_grades FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
 
--- ALTER TABLE public.ea_attendance ENABLE ROW LEVEL SECURITY;
--- DROP POLICY IF EXISTS "Allow public access on ea_attendance" ON public.ea_attendance;
--- CREATE POLICY "Allow public access on ea_attendance" ON public.ea_attendance FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public access on ea_attendance" ON public.ea_attendance;
+CREATE POLICY "Allow public access on ea_attendance" ON public.ea_attendance FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on ea_bills" ON public.ea_bills;
+CREATE POLICY "Allow public access on ea_bills" ON public.ea_bills FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on ea_fee_payments" ON public.ea_fee_payments;
+CREATE POLICY "Allow public access on ea_fee_payments" ON public.ea_fee_payments FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on ea_fee_structures" ON public.ea_fee_structures;
+CREATE POLICY "Allow public access on ea_fee_structures" ON public.ea_fee_structures FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on ea_daily_collections" ON public.ea_daily_collections;
+CREATE POLICY "Allow public access on ea_daily_collections" ON public.ea_daily_collections FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access on ea_sync_logs" ON public.ea_sync_logs;
+CREATE POLICY "Allow public access on ea_sync_logs" ON public.ea_sync_logs FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
 
 -- 8. Automated Sync Trigger for Registered Users (Solves syntax errors like 'ERROR: 42601')
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
@@ -1580,27 +1594,11 @@ export async function saveSupabaseFeePayments(payments: FeePayment[]): Promise<b
       created_at: p.createdAt || new Date().toISOString(),
       updated_at: p.updatedAt || new Date().toISOString(),
     }));
-    if (payloads.length === 0) {
-      await client.from('ea_fee_payments').delete().not('id', 'is', null);
-    } else {
+    if (payloads.length > 0) {
       const { error } = await safeUpsert('ea_fee_payments', payloads, client, 'id');
       if (error) {
         console.warn('Supabase saveSupabaseFeePayments sync error, fallback to local storage preserved:', error);
         return true;
-      }
-
-      // Prune deleted fee payment receipts from Supabase
-      const { data: existingRows } = await client.from('ea_fee_payments').select('id, receipt_number');
-      if (existingRows && existingRows.length > 0) {
-        const activeIds = new Set(payloads.map(p => String(p.id)));
-        const activeReceipts = new Set(payloads.map(p => String(p.receipt_number)));
-        const toDeleteIds = existingRows
-          .filter(row => !activeIds.has(String(row.id)) && !activeReceipts.has(String(row.receipt_number)))
-          .map(row => row.id)
-          .filter(Boolean);
-        if (toDeleteIds.length > 0) {
-          await client.from('ea_fee_payments').delete().in('id', toDeleteIds);
-        }
       }
     }
 
@@ -1615,12 +1613,15 @@ export async function deleteSupabaseFeePayment(payment: { id?: string; receiptNu
   const client = getSupabaseClient();
   if (!client) return true;
   try {
-    if (payment.id) {
-      await client.from('ea_fee_payments').delete().eq('id', payment.id);
+    const targetId = payment.id && payment.id.trim() ? payment.id.trim() : null;
+    const targetRec = payment.receiptNumber && payment.receiptNumber.trim() ? payment.receiptNumber.trim() : null;
+    if (!targetId && !targetRec) return true;
+
+    if (targetId) {
+      await client.from('ea_fee_payments').delete().eq('id', targetId);
     }
-    if (payment.receiptNumber) {
-      await client.from('ea_fee_payments').delete().eq('receipt_number', payment.receiptNumber);
-      await client.from('ea_fee_payments').delete().eq('id', payment.receiptNumber);
+    if (targetRec) {
+      await client.from('ea_fee_payments').delete().eq('receipt_number', targetRec);
     }
     return true;
   } catch (e) {
