@@ -4,8 +4,8 @@
  */
 
 import React, { useState } from 'react';
-import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill } from '../types';
-import { Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera } from 'lucide-react';
+import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill } from '../types';
+import { User, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import FeesCollectionModule from './FeesCollectionModule';
 import FeesDashboard from './FeesDashboard';
@@ -112,6 +112,8 @@ export default function AdminDashboard({
 
   // Modal / Form States
   const [showStudentModal, setShowStudentModal] = useState(false);
+  const [viewingStudentProfile, setViewingStudentProfile] = useState<Student | null>(null);
+  const [profileTab, setProfileTab] = useState<'academic' | 'attendance' | 'guardian'>('academic');
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [studentForm, setStudentForm] = useState({
     name: '',
@@ -1513,7 +1515,35 @@ export default function AdminDashboard({
                   ) : (
                     filteredStudents.map((s) => (
                       <tr key={s.id} className="hover:bg-mauve-50/10">
-                        <td className="p-3 pl-4 font-bold text-gray-900 text-xs">{s.name}</td>
+                        <td className="p-3 pl-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setViewingStudentProfile(s);
+                              setProfileTab('academic');
+                            }}
+                            className="flex items-center gap-2.5 text-left group cursor-pointer focus:outline-none"
+                            title="Click to view full student profile & photograph"
+                          >
+                            <div className="w-9 h-11 rounded-lg overflow-hidden border border-mauve-200 bg-mauve-100/60 flex items-center justify-center shrink-0 shadow-xs group-hover:border-mauve-500 group-hover:shadow-sm transition">
+                              {s.photoUrl ? (
+                                <img src={s.photoUrl} alt={s.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="text-mauve-600 font-extrabold text-xs">
+                                  {s.name.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <span className="font-bold text-gray-900 text-xs group-hover:text-mauve-800 group-hover:underline transition block">
+                                {s.name}
+                              </span>
+                              <span className="text-[10px] text-mauve-600 font-medium flex items-center gap-0.5">
+                                <ExternalLink className="w-2.5 h-2.5 inline" /> Full Profile
+                              </span>
+                            </div>
+                          </button>
+                        </td>
                         <td className="p-3 font-mono font-bold text-mauve-900">{s.rollNumber}</td>
                         <td className="p-3">
                           <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
@@ -1539,6 +1569,18 @@ export default function AdminDashboard({
                         </td>
                         <td className="p-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setViewingStudentProfile(s);
+                                setProfileTab('academic');
+                              }}
+                              className="px-2 py-1 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 font-bold rounded text-[10px] flex items-center gap-1 transition cursor-pointer"
+                              title="Open Full Student Profile & Photograph"
+                            >
+                              <User className="w-3 h-3 shrink-0" />
+                              <span>Profile</span>
+                            </button>
                             <button
                               onClick={() => {
                                 setSelectedClass(s.className);
@@ -1799,6 +1841,304 @@ export default function AdminDashboard({
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* FULL STUDENT PROFILE MODAL WITH PASSPORT PHOTO */}
+          {viewingStudentProfile && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-mauve-200 flex flex-col max-h-[90vh]">
+                {/* Header with Background Accent */}
+                <div className="bg-gradient-to-r from-mauve-900 via-mauve-800 to-mauve-700 p-6 text-white relative">
+                  <button
+                    type="button"
+                    onClick={() => setViewingStudentProfile(null)}
+                    className="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition cursor-pointer"
+                    title="Close profile"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
+                    {/* Passport Size Photograph Display */}
+                    <div className="relative w-28 h-36 rounded-xl overflow-hidden border-2 border-white/80 bg-mauve-950/40 shadow-xl shrink-0 flex items-center justify-center">
+                      {viewingStudentProfile.photoUrl ? (
+                        <img
+                          src={viewingStudentProfile.photoUrl}
+                          alt={viewingStudentProfile.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="text-center p-2">
+                          <User className="w-12 h-12 text-mauve-300 mx-auto mb-1 opacity-80" />
+                          <span className="text-[10px] text-mauve-200 font-semibold uppercase tracking-wider">No Photo</span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleEditStudent(viewingStudentProfile);
+                          setViewingStudentProfile(null);
+                        }}
+                        className="absolute bottom-1 right-1 bg-mauve-900/90 hover:bg-mauve-950 text-white p-1.5 rounded-lg text-[10px] flex items-center gap-1 shadow transition cursor-pointer"
+                        title="Upload or Change Photograph"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Basic Info */}
+                    <div className="flex-1 text-center sm:text-left space-y-2">
+                      <div className="inline-block px-2.5 py-0.5 rounded-full bg-white/15 text-white text-[11px] font-bold uppercase tracking-wide">
+                        {viewingStudentProfile.level} &bull; {viewingStudentProfile.className}
+                      </div>
+                      <h3 className="font-display font-extrabold text-2xl text-white leading-tight">
+                        {viewingStudentProfile.name}
+                      </h3>
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 text-xs text-mauve-100 font-mono">
+                        <span className="bg-white/10 px-2 py-0.5 rounded border border-white/10">
+                          Roll: {viewingStudentProfile.rollNumber}
+                        </span>
+                        <span className="bg-white/10 px-2 py-0.5 rounded border border-white/10">
+                          ID: #{viewingStudentProfile.id.slice(0, 8)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-mauve-200 pt-1">
+                        Official pupil record for the {config.term} ({config.schoolYear}) academic session.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Profile Navigation Tabs */}
+                <div className="flex border-b border-mauve-200 bg-mauve-50/50 px-6">
+                  <button
+                    type="button"
+                    onClick={() => setProfileTab('academic')}
+                    className={`py-3 px-4 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
+                      profileTab === 'academic'
+                        ? 'border-mauve-600 text-mauve-900 bg-white shadow-xs'
+                        : 'border-transparent text-mauve-600 hover:text-mauve-900'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Academic &amp; Term Marks</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfileTab('attendance')}
+                    className={`py-3 px-4 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
+                      profileTab === 'attendance'
+                        ? 'border-mauve-600 text-mauve-900 bg-white shadow-xs'
+                        : 'border-transparent text-mauve-600 hover:text-mauve-900'
+                    }`}
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Attendance Log</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setProfileTab('guardian')}
+                    className={`py-3 px-4 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
+                      profileTab === 'guardian'
+                        ? 'border-mauve-600 text-mauve-900 bg-white shadow-xs'
+                        : 'border-transparent text-mauve-600 hover:text-mauve-900'
+                    }`}
+                  >
+                    <User className="w-3.5 h-3.5" />
+                    <span>Guardian &amp; Contact</span>
+                  </button>
+                </div>
+
+                {/* Tab Contents */}
+                <div className="p-6 overflow-y-auto flex-1 space-y-4 text-sm bg-white">
+                  {profileTab === 'academic' && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-mauve-900 text-xs uppercase tracking-wide">
+                          Term Subject Performance ({config.term})
+                        </h4>
+                        <span className="text-xs text-mauve-600">
+                          {grades.filter(g => g.studentId === viewingStudentProfile.id).length} subject marks recorded
+                        </span>
+                      </div>
+                      {grades.filter(g => g.studentId === viewingStudentProfile.id).length > 0 ? (
+                        <div className="border border-mauve-200 rounded-xl overflow-hidden">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-mauve-50 border-b border-mauve-200 text-[11px] text-mauve-700">
+                                <th className="p-2.5 pl-3">Subject</th>
+                                <th className="p-2.5 text-center">Class Score (50%)</th>
+                                <th className="p-2.5 text-center">Exam Score (50%)</th>
+                                <th className="p-2.5 text-center">Total (100%)</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-mauve-100 text-xs">
+                              {grades
+                                .filter(g => g.studentId === viewingStudentProfile.id)
+                                .map(g => {
+                                  const sub = subjects.find(s => s.id === g.subjectId || s.name === g.subjectId || s.code === g.subjectId);
+                                  const total = (Number(g.classScore) || 0) + (Number(g.examScore) || 0);
+                                  return (
+                                    <tr key={g.id} className="hover:bg-mauve-50/50">
+                                      <td className="p-2.5 pl-3 font-semibold text-gray-900">
+                                        {sub ? sub.name : g.subjectId}
+                                      </td>
+                                      <td className="p-2.5 text-center font-mono text-gray-600">{g.classScore ?? '-'}</td>
+                                      <td className="p-2.5 text-center font-mono text-gray-600">{g.examScore ?? '-'}</td>
+                                      <td className="p-2.5 text-center font-mono font-bold text-mauve-900">{total}</td>
+                                    </tr>
+                                  );
+                                })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="p-8 text-center bg-mauve-50/60 rounded-xl border border-dashed border-mauve-200 text-mauve-600">
+                          <BookOpen className="w-8 h-8 text-mauve-400 mx-auto mb-2 opacity-60" />
+                          <p className="font-semibold text-xs">No subject marks recorded yet for this term.</p>
+                          <p className="text-[11px] text-mauve-500 mt-1">
+                            Class teachers can input term grades in the Student Transcripts / Marks tab.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {profileTab === 'attendance' && (
+                    <div className="space-y-4">
+                      {(() => {
+                        const att =
+                          attendance.find(a => a.studentId === viewingStudentProfile.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear)) ||
+                          attendance.find(a => a.studentId === viewingStudentProfile.id);
+                        return att ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="p-4 bg-green-50 border border-green-200 rounded-xl text-center">
+                              <span className="text-xs font-semibold text-green-700 uppercase block">Days Present</span>
+                              <span className="text-2xl font-extrabold text-green-800 font-mono mt-1 block">
+                                {att.daysPresent}
+                              </span>
+                            </div>
+                            <div className="p-4 bg-mauve-50 border border-mauve-200 rounded-xl text-center">
+                              <span className="text-xs font-semibold text-mauve-700 uppercase block">Total Academic Days</span>
+                              <span className="text-2xl font-extrabold text-mauve-900 font-mono mt-1 block">
+                                {att.totalDays}
+                              </span>
+                            </div>
+                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-center">
+                              <span className="text-xs font-semibold text-blue-700 uppercase block">Attendance Rate</span>
+                              <span className="text-2xl font-extrabold text-blue-800 font-mono mt-1 block">
+                                {att.totalDays ? Math.round((att.daysPresent / att.totalDays) * 100) : 0}%
+                              </span>
+                            </div>
+                            {att.remarks && (
+                              <div className="sm:col-span-3 p-3.5 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700">
+                                <span className="font-bold text-gray-900 block mb-1">Teacher's Conduct Remark:</span>
+                                "{att.remarks}"
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="p-8 text-center bg-mauve-50/60 rounded-xl border border-dashed border-mauve-200 text-mauve-600">
+                            <Calendar className="w-8 h-8 text-mauve-400 mx-auto mb-2 opacity-60" />
+                            <p className="font-semibold text-xs">No attendance logged yet for this student.</p>
+                            <p className="text-[11px] text-mauve-500 mt-1">
+                              Class teachers mark Monday–Friday attendance in the Class Attendance section.
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {profileTab === 'guardian' && (
+                    <div className="space-y-4">
+                      <div className="p-4 bg-mauve-50/60 border border-mauve-200 rounded-xl space-y-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-mauve-200 text-mauve-800 font-bold flex items-center justify-center text-sm shrink-0">
+                            {viewingStudentProfile.guardianName ? viewingStudentProfile.guardianName.charAt(0).toUpperCase() : 'G'}
+                          </div>
+                          <div>
+                            <h5 className="font-bold text-mauve-900 text-sm">
+                              {viewingStudentProfile.guardianName || 'No Guardian Name Recorded'}
+                            </h5>
+                            <span className="text-xs text-mauve-600">Primary Parent / Legal Guardian</span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-mauve-200 text-xs">
+                          <div className="space-y-0.5">
+                            <span className="text-mauve-500 font-semibold block">Email Address:</span>
+                            {viewingStudentProfile.guardianEmail ? (
+                              <a
+                                href={`mailto:${viewingStudentProfile.guardianEmail}`}
+                                className="text-blue-600 font-medium hover:underline flex items-center gap-1"
+                              >
+                                <Mail className="w-3 h-3" />
+                                <span>{viewingStudentProfile.guardianEmail}</span>
+                              </a>
+                            ) : (
+                              <span className="text-gray-400 italic">Not provided</span>
+                            )}
+                          </div>
+
+                          <div className="space-y-0.5">
+                            <span className="text-mauve-500 font-semibold block">WhatsApp / Phone:</span>
+                            {viewingStudentProfile.guardianPhone ? (
+                              <a
+                                href={`tel:${viewingStudentProfile.guardianPhone}`}
+                                className="text-green-700 font-semibold hover:underline flex items-center gap-1"
+                              >
+                                <Phone className="w-3 h-3" />
+                                <span>{viewingStudentProfile.guardianPhone}</span>
+                              </a>
+                            ) : (
+                              <span className="text-gray-400 italic">Not provided</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer Action Bar */}
+                <div className="p-4 bg-gray-50 border-t border-mauve-200 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleEditStudent(viewingStudentProfile);
+                        setViewingStudentProfile(null);
+                      }}
+                      className="px-3.5 py-2 bg-white hover:bg-mauve-50 border border-mauve-300 text-mauve-800 font-bold text-xs rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Edit Student Profile / Photo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedClass(viewingStudentProfile.className);
+                        setSelectedStudentId(viewingStudentProfile.id);
+                        setViewingStudentProfile(null);
+                        setActiveTab('transcripts');
+                      }}
+                      className="px-3.5 py-2 bg-mauve-600 hover:bg-mauve-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Open A4 Term Transcript</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewingStudentProfile(null)}
+                    className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </div>
           )}
