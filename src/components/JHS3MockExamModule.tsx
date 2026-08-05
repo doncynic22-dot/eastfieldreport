@@ -330,8 +330,20 @@ export default function JHS3MockExamModule({
       ? Math.round(broadsheetData.reduce((sum, b) => sum + b.calcs.rawScore, 0) / totalCandidates)
       : 0;
 
-  // Print Notice Board Broadsheet
+  // Print Notice Board Broadsheet in Landscape A4
   const handlePrintNoticeBoard = () => {
+    let styleEl = document.getElementById('broadsheet-print-page-style') as HTMLStyleElement;
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'broadsheet-print-page-style';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.innerHTML = `
+      @page {
+        size: A4 landscape !important;
+        margin: 6mm !important;
+      }
+    `;
     window.print();
   };
 
@@ -342,7 +354,7 @@ export default function JHS3MockExamModule({
     csv += `Date Exported: ${new Date().toLocaleDateString()}\n\n`;
 
     const subHeaders = jhsSubjects.map((s) => `${s.code || s.name} Score,${s.code || s.name} Grade`).join(',');
-    csv += `Rank,Index/Roll No,Student Name,${subHeaders},Core Aggregate,Best 2 Electives Aggr,Total BECE Aggregate,Raw Total Score,Performance Band\n`;
+    csv += `Rank,Index/Roll No,Student Name,${subHeaders},Core Aggregate,Best 2 Electives Aggr,Total Aggregate,Raw Total Score,Performance Band\n`;
 
     broadsheetData.forEach((row) => {
       const subCols = jhsSubjects
@@ -507,7 +519,7 @@ export default function JHS3MockExamModule({
                 <Award className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-[10px] font-bold text-gray-500 uppercase">Top BECE Aggregate</p>
+                <p className="text-[10px] font-bold text-gray-500 uppercase">Top Aggregate</p>
                 <p className="text-xl font-black text-emerald-800">
                   {topCandidate ? `Aggr ${String(topCandidate.calcs.totalAggregate).padStart(2, '0')}` : 'N/A'}
                 </p>
@@ -632,7 +644,7 @@ export default function JHS3MockExamModule({
                           }`}
                         >
                           <div className="truncate max-w-[80px] mx-auto">{sub.code || sub.name}</div>
-                          <div className="text-[8px] opacity-80 font-normal text-blue-200">BECE Grade</div>
+                          <div className="text-[8px] opacity-80 font-normal text-blue-200">Grade</div>
                         </th>
                       );
                     })}
@@ -643,7 +655,7 @@ export default function JHS3MockExamModule({
                       BEST 2 ELECT
                     </th>
                     <th className="py-2.5 px-3 text-center border-r border-blue-800 bg-blue-950 text-amber-300 font-black text-[11px] w-28">
-                      BECE AGGREGATE
+                      AGGREGATE
                     </th>
                     <th className="py-2.5 px-2.5 text-center border-r border-blue-800 bg-blue-950 text-white font-black text-[10px] w-20">
                       RAW TOTAL
@@ -883,7 +895,7 @@ export default function JHS3MockExamModule({
                   <th className="py-3 px-3.5 border-r border-blue-800 text-center w-36 bg-blue-950 text-amber-300">
                     MARKS OBTAINED (0-100)
                   </th>
-                  <th className="py-3 px-3.5 border-r border-blue-800 text-center w-36">BECE GRADE</th>
+                  <th className="py-3 px-3.5 border-r border-blue-800 text-center w-36">GRADE</th>
                   <th className="py-3 px-3.5 text-center">GRADE REMARK</th>
                 </tr>
               </thead>
@@ -966,7 +978,7 @@ export default function JHS3MockExamModule({
           {/* SUBMIT BUTTON BAR */}
           <div className="flex items-center justify-between pt-2 border-t border-gray-200">
             <div className="text-xs text-gray-500 font-medium">
-              💡 Tip: Entering a score automatically calculates the BECE grade from Grade 1 (90-100) to Grade 9 (0-39).
+              💡 Tip: Entering a score automatically calculates the grade from Grade 1 (90-100) to Grade 9 (0-39).
             </div>
             <button
               type="button"

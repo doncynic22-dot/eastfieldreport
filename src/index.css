@@ -822,4 +822,95 @@
     page-break-after: always !important;
     break-after: page !important;
   }
+
+  /* =========================================================================
+     JHS MOCK MASTER SHEET (BROADSHEET) A4 LANDSCAPE PRINT CONFIGURATION
+     All columns visible, font size 12px for maximum legibility.
+     ========================================================================= */
+  @page broadsheet {
+    size: A4 landscape !important;
+    margin: 6mm !important;
+  }
+
+  .printable-noticeboard {
+    page: broadsheet !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    font-size: 12px !important;
+    color: #000000 !important;
+  }
+
+  .printable-noticeboard .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  .printable-noticeboard table {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 12px !important;
+    table-layout: auto !important;
+  }
+
+  .printable-noticeboard th,
+  .printable-noticeboard td {
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+    padding: 4px 6px !important;
+    border: 1px solid #1e3a8a !important; /* Crisp blue-900 border */
+    word-break: normal !important;
+    white-space: nowrap !important;
+  }
+
+  .printable-noticeboard th {
+    background-color: #1c053e !important; /* Dark violet-navy header */
+    color: #ffffff !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .printable-noticeboard td {
+    color: #0f172a !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+  }
+
+  .printable-noticeboard .text-xs,
+  .printable-noticeboard .text-sm,
+  .printable-noticeboard .text-base,
+  .printable-noticeboard .text-\[8px\],
+  .printable-noticeboard .text-\[9px\],
+  .printable-noticeboard .text-\[10px\],
+  .printable-noticeboard .text-\[11px\] {
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+  }
+
+  .printable-noticeboard span,
+  .printable-noticeboard div,
+  .printable-noticeboard p {
+    font-size: 12px !important;
+  }
+
+  .printable-noticeboard h2 {
+    font-size: 18px !important;
+    font-weight: 900 !important;
+  }
+
+  .printable-noticeboard .p-6 {
+    padding: 12px 16px !important;
+  }
+
+  .printable-noticeboard .p-4,
+  .printable-noticeboard .p-2.5 {
+    padding: 8px 12px !important;
+  }
 }

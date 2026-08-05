@@ -1136,7 +1136,7 @@ export default function App() {
                   EASTFIELD ACADEMY SCHOOL MANAGEMENT SYSTEM
                 </h1>
                 <p className="text-xs text-gray-600 max-w-xl mx-auto leading-relaxed">
-                  A high-fidelity record platform designed for Eastfield Academy teachers and administrators to automate pupil evaluations, log term attendances, and generate crisp transcript cards.
+                  An integrated portal for Eastfield Academy teachers and administrators to manage pupil assessments, academic records, fee tracking, and official report cards.
                 </p>
               </div>
  
