@@ -5,11 +5,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel } from '../types';
-import { BookOpen, UserCheck, Search, CheckCircle2, Save, Users, Calendar, Award, LogIn, LogOut, UserPlus, ShieldAlert, School, Eye, EyeOff, KeyRound, Lock, Mail, Send, Copy, Check, ExternalLink, ShieldCheck, RefreshCw } from 'lucide-react';
+import { BookOpen, UserCheck, Search, CheckCircle2, Save, Users, Calendar, Award, LogIn, LogOut, UserPlus, ShieldAlert, School, Eye, EyeOff, KeyRound, Lock, Mail, Send, Copy, Check, ExternalLink, ShieldCheck, RefreshCw, FileSpreadsheet } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { sendPasswordResetEmail } from '../services/emailDispatcher';
 import { getSupabaseCredentials, saveSupabaseGrades, saveSupabaseAttendance } from '../lib/supabase';
 import { matchesSubject, findMatchingGrade } from '../utils/subjectUtils';
+import JHS3MockExamModule from './JHS3MockExamModule';
 
 interface TeacherDashboardProps {
   students: Student[];
@@ -72,6 +73,9 @@ export default function TeacherDashboard({
   const [sentPin, setSentPin] = useState('');
   const [enteredPin, setEnteredPin] = useState('');
   const [copiedResetLink, setCopiedResetLink] = useState(false);
+
+  // Tab State: 'gradebook' or 'jhs3-mock'
+  const [teacherActiveTab, setTeacherActiveTab] = useState<'gradebook' | 'jhs3-mock'>('gradebook');
 
   // Check if password reset link was opened from email link
   useEffect(() => {
@@ -1504,10 +1508,12 @@ export default function TeacherDashboard({
     setSelectedSubject(subId);
   };
 
+  const isJHSTeacher = currentUser?.role === 'ADMIN' || (currentUser?.level as string) === 'ALL' || currentUser?.level?.toUpperCase() === 'JHS';
+
   return (
     <div className="w-full space-y-6 animate-fadeIn">
-      {/* Teacher Profile Banner */}
-      <div className="bg-white p-4 rounded-lg border border-mauve-500/20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm">
+      {/* Teacher Profile Banner & Navigation Tabs */}
+      <div className="bg-white p-4 rounded-xl border border-mauve-500/20 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
         <div className="flex items-center gap-4">
           {config.schoolLogoUrl ? (
             <img 
@@ -1522,28 +1528,98 @@ export default function TeacherDashboard({
             </div>
           )}
           <div>
-            <span className="text-[10px] font-bold font-mono uppercase tracking-wider text-mauve-900 bg-mauve-100 px-2 py-0.5 rounded">Teacher Workspace</span>
-            <h2 className="font-display font-bold text-lg text-mauve-900 mt-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold font-mono uppercase tracking-wider text-mauve-900 bg-mauve-100 px-2 py-0.5 rounded">Teacher Workspace</span>
+            </div>
+            <h2 className="font-display font-bold text-lg text-mauve-900 mt-1">
               Welcome back, {currentUser.name}
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">Division: {currentUser.level} | Staff ID: EA-TEA-{currentUser.id.slice(-4).toUpperCase()}</p>
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            setCurrentUser(null);
-            setSelectedLevel('');
-            setSelectedClass('');
-            setSelectedSubject('');
-          }}
-          className="bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-extrabold px-4 py-2 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center gap-2 shadow-sm border border-red-700 hover:shadow-md"
-          title="Sign out of Teacher Portal and clear session"
-        >
-          <LogOut className="w-4 h-4 shrink-0" />
-          <span>Sign Out</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          <div className="bg-mauve-100 p-1 rounded-xl flex items-center gap-1 border border-mauve-300/60 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => setTeacherActiveTab('gradebook')}
+              className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg font-extrabold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                teacherActiveTab === 'gradebook'
+                  ? 'bg-mauve-950 text-white shadow-sm font-black'
+                  : 'text-mauve-900 hover:bg-mauve-200/60'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>Assessment Register</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTeacherActiveTab('jhs3-mock')}
+              className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg font-extrabold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                teacherActiveTab === 'jhs3-mock'
+                  ? 'bg-blue-900 text-white shadow-sm font-black'
+                  : 'text-mauve-900 hover:bg-mauve-200/60'
+              }`}
+              title={!isJHSTeacher ? "Restricted exclusively to JHS Level Teachers" : "Access JHS 3 Mock Examination Register"}
+            >
+              <Award className="w-4 h-4 text-amber-500" />
+              <span>JHS 3 Mock Portal</span>
+              {!isJHSTeacher && <Lock className="w-3 h-3 text-red-500 ml-0.5 shrink-0" />}
+            </button>
+          </div>
+
+          <button
+            onClick={() => {
+              setCurrentUser(null);
+              setSelectedLevel('');
+              setSelectedClass('');
+              setSelectedSubject('');
+            }}
+            className="bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-extrabold px-3.5 py-2 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center gap-2 shadow-sm border border-red-700 shrink-0"
+            title="Sign out of Teacher Portal and clear session"
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            <span>Sign Out</span>
+          </button>
+        </div>
       </div>
+
+      {teacherActiveTab === 'jhs3-mock' && (
+        isJHSTeacher ? (
+          <JHS3MockExamModule
+            students={students}
+            subjects={subjects}
+            currentUser={currentUser}
+            isAdminAuthenticated={isAdminAuthenticated}
+            config={config}
+          />
+        ) : (
+          <div className="bg-white p-8 rounded-xl border border-red-200 text-center space-y-4 max-w-lg mx-auto shadow-sm my-8 animate-fadeIn">
+            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto border border-red-200">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-gray-900">Access Restricted</h3>
+              <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                The <strong>JHS 3 Mock Examination Portal</strong> is restricted exclusively to registered <strong>JHS Teachers</strong> and School Administrators.
+              </p>
+              <div className="mt-4 p-3 bg-red-50/60 rounded-lg text-xs font-mono text-red-900 border border-red-200/60">
+                Your Registered Division: <span className="font-bold">{currentUser.level || 'Non-JHS'}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTeacherActiveTab('gradebook')}
+              className="px-5 py-2.5 bg-mauve-950 text-white font-extrabold rounded-xl text-xs hover:bg-mauve-800 transition cursor-pointer shadow-sm"
+            >
+              Return to Assessment Register
+            </button>
+          </div>
+        )
+      )}
+
+      {teacherActiveTab === 'gradebook' && (
+        <>
 
       {/* INTERCEPTOR PANEL: MUST SELECT SUBJECT, CLASS & LEVEL BEFORE ACCESSING GRADEBOOKS */}
       {!isInterceptorsResolved ? (
@@ -1973,6 +2049,8 @@ export default function TeacherDashboard({
             </button>
           </div>
         </form>
+      )}
+        </>
       )}
     </div>
   );

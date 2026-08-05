@@ -5,11 +5,12 @@
 
 import React, { useState } from 'react';
 import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill, User } from '../types';
-import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes } from 'lucide-react';
+import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import FeesCollectionModule from './FeesCollectionModule';
 import FeesDashboard from './FeesDashboard';
 import SchoolInventoryModule from './SchoolInventoryModule';
+import JHS3MockExamModule from './JHS3MockExamModule';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, uploadStudentPhotoToSupabase } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion } from '../services/promotionService';
@@ -43,7 +44,7 @@ interface AdminDashboardProps {
 }
 
 
-type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'transcripts' | 'students' | 'teachers' | 'class-assignments' | 'inventory' | 'config';
+type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'transcripts' | 'jhs3-mock' | 'students' | 'teachers' | 'class-assignments' | 'inventory' | 'config';
 
 export default function AdminDashboard({
   students,
@@ -1044,6 +1045,7 @@ export default function AdminDashboard({
           { id: 'fees-dashboard', label: 'Fees Dashboard', icon: BarChart3 },
           { id: 'fees', label: 'Fees Collection', icon: CreditCard },
           { id: 'transcripts', label: 'Transcripts', icon: FileSpreadsheet },
+          { id: 'jhs3-mock', label: 'JHS 3 Mock Portal', icon: Award },
           { id: 'students', label: 'Admissions', icon: GraduationCap },
           { id: 'teachers', label: 'Teachers', icon: BookOpen },
           { id: 'class-assignments', label: 'Assign Class Teacher', icon: School },
@@ -1352,6 +1354,19 @@ export default function AdminDashboard({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* JHS 3 BECE MOCK EXAM PORTAL VIEW */}
+      {activeTab === 'jhs3-mock' && (
+        <div className="animate-fadeIn">
+          <JHS3MockExamModule
+            students={students}
+            subjects={subjects}
+            currentUser={{ name: 'School Administrator', id: 'admin-01', email: 'admin@eastfield.com', role: 'ADMIN' }}
+            isAdminAuthenticated={true}
+            config={config}
+          />
         </div>
       )}
 
@@ -1869,9 +1884,9 @@ export default function AdminDashboard({
           {/* FULL STUDENT PROFILE MODAL WITH PASSPORT PHOTO */}
           {viewingStudentProfile && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
-              <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-mauve-200 flex flex-col max-h-[90vh]">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-blue-200 flex flex-col max-h-[90vh]">
                 {/* Header with Background Accent */}
-                <div className="bg-gradient-to-r from-mauve-900 via-mauve-800 to-mauve-700 p-6 text-white relative">
+                <div className="bg-gradient-to-r from-blue-950 via-blue-900 to-blue-800 p-6 text-white relative">
                   <button
                     type="button"
                     onClick={() => setViewingStudentProfile(null)}
@@ -1882,7 +1897,7 @@ export default function AdminDashboard({
                   </button>
                   <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
                     {/* Passport Size Photograph Display */}
-                    <div className="relative w-28 h-36 rounded-xl overflow-hidden border-2 border-white/80 bg-mauve-950/40 shadow-xl shrink-0 flex items-center justify-center">
+                    <div className="relative w-28 h-36 rounded-xl overflow-hidden border-2 border-white/80 bg-blue-950/50 shadow-xl shrink-0 flex items-center justify-center">
                       {viewingStudentProfile.photoUrl ? (
                         <img
                           src={viewingStudentProfile.photoUrl}
@@ -1891,8 +1906,8 @@ export default function AdminDashboard({
                         />
                       ) : (
                         <div className="text-center p-2">
-                          <UserIcon className="w-12 h-12 text-mauve-300 mx-auto mb-1 opacity-80" />
-                          <span className="text-[10px] text-mauve-200 font-semibold uppercase tracking-wider">No Photo</span>
+                          <UserIcon className="w-12 h-12 text-blue-300 mx-auto mb-1 opacity-80" />
+                          <span className="text-[10px] text-blue-200 font-semibold uppercase tracking-wider">No Photo</span>
                         </div>
                       )}
                       <button
@@ -1901,7 +1916,7 @@ export default function AdminDashboard({
                           triggerEditStudent(viewingStudentProfile);
                           setViewingStudentProfile(null);
                         }}
-                        className="absolute bottom-1 right-1 bg-mauve-900/90 hover:bg-mauve-950 text-white p-1.5 rounded-lg text-[10px] flex items-center gap-1 shadow transition cursor-pointer"
+                        className="absolute bottom-1 right-1 bg-blue-900/90 hover:bg-blue-950 text-white p-1.5 rounded-lg text-[10px] flex items-center gap-1 shadow transition cursor-pointer"
                         title="Upload or Change Photograph"
                       >
                         <Camera className="w-3.5 h-3.5" />
@@ -1910,221 +1925,81 @@ export default function AdminDashboard({
 
                     {/* Basic Info */}
                     <div className="flex-1 text-center sm:text-left space-y-2">
-                      <div className="inline-block px-2.5 py-0.5 rounded-full bg-white/15 text-white text-[11px] font-bold uppercase tracking-wide">
+                      <div className="inline-block px-3 py-1 rounded-full bg-blue-600 text-white border border-blue-400/50 text-[11px] font-black uppercase tracking-wider shadow-xs">
                         {viewingStudentProfile.level} &bull; {viewingStudentProfile.className}
                       </div>
                       <h3 className="font-display font-extrabold text-2xl text-white leading-tight">
                         {viewingStudentProfile.name}
                       </h3>
-                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 text-xs text-mauve-100 font-mono">
-                        <span className="bg-white/10 px-2 py-0.5 rounded border border-white/10">
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 text-xs text-blue-100 font-mono">
+                        <span className="bg-blue-900/90 text-blue-100 px-2.5 py-1 rounded-lg border border-blue-400/40 font-bold shadow-xs">
                           Roll: {viewingStudentProfile.rollNumber}
                         </span>
-                        <span className="bg-white/10 px-2 py-0.5 rounded border border-white/10">
+                        <span className="bg-blue-900/90 text-blue-100 px-2.5 py-1 rounded-lg border border-blue-400/40 font-bold shadow-xs">
                           ID: #{viewingStudentProfile.id.slice(0, 8)}
                         </span>
                       </div>
-                      <p className="text-xs text-mauve-200 pt-1">
-                        Official pupil record for the {config.term} ({config.schoolYear}) academic session.
-                      </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Profile Navigation Tabs */}
-                <div className="flex border-b border-mauve-200 bg-mauve-50/50 px-6">
-                  <button
-                    type="button"
-                    onClick={() => setProfileTab('academic')}
-                    className={`py-3 px-4 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
-                      profileTab === 'academic'
-                        ? 'border-mauve-600 text-mauve-900 bg-white shadow-xs'
-                        : 'border-transparent text-mauve-600 hover:text-mauve-900'
-                    }`}
-                  >
-                    <BookOpen className="w-3.5 h-3.5" />
-                    <span>Academic &amp; Term Marks</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setProfileTab('attendance')}
-                    className={`py-3 px-4 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
-                      profileTab === 'attendance'
-                        ? 'border-mauve-600 text-mauve-900 bg-white shadow-xs'
-                        : 'border-transparent text-mauve-600 hover:text-mauve-900'
-                    }`}
-                  >
-                    <Calendar className="w-3.5 h-3.5" />
-                    <span>Attendance Log</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setProfileTab('guardian')}
-                    className={`py-3 px-4 text-xs font-bold border-b-2 transition cursor-pointer flex items-center gap-1.5 ${
-                      profileTab === 'guardian'
-                        ? 'border-mauve-600 text-mauve-900 bg-white shadow-xs'
-                        : 'border-transparent text-mauve-600 hover:text-mauve-900'
-                    }`}
-                  >
-                    <UserIcon className="w-3.5 h-3.5" />
-                    <span>Guardian &amp; Contact</span>
-                  </button>
-                </div>
-
-                {/* Tab Contents */}
+                {/* Profile Information */}
                 <div className="p-6 overflow-y-auto flex-1 space-y-4 text-sm bg-white">
-                  {profileTab === 'academic' && (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-mauve-900 text-xs uppercase tracking-wide">
-                          Term Subject Performance ({config.term})
-                        </h4>
-                        <span className="text-xs text-mauve-600">
-                          {grades.filter(g => g.studentId === viewingStudentProfile.id).length} subject marks recorded
-                        </span>
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-blue-950 text-xs uppercase tracking-wide flex items-center gap-1.5 border-b border-blue-100 pb-2">
+                      <UserIcon className="w-4 h-4 text-blue-600" />
+                      <span>Guardian &amp; Contact Details</span>
+                    </h4>
+                    <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-sm shrink-0">
+                          {viewingStudentProfile.guardianName ? viewingStudentProfile.guardianName.charAt(0).toUpperCase() : 'G'}
+                        </div>
+                        <div>
+                          <h5 className="font-bold text-blue-950 text-sm">
+                            {viewingStudentProfile.guardianName || 'No Guardian Name Recorded'}
+                          </h5>
+                          <span className="text-xs text-blue-700 font-medium">Primary Parent / Legal Guardian</span>
+                        </div>
                       </div>
-                      {grades.filter(g => g.studentId === viewingStudentProfile.id).length > 0 ? (
-                        <div className="border border-mauve-200 rounded-xl overflow-hidden">
-                          <table className="w-full text-left border-collapse">
-                            <thead>
-                              <tr className="bg-mauve-50 border-b border-mauve-200 text-[11px] text-mauve-700">
-                                <th className="p-2.5 pl-3">Subject</th>
-                                <th className="p-2.5 text-center">Class Score (50%)</th>
-                                <th className="p-2.5 text-center">Exam Score (50%)</th>
-                                <th className="p-2.5 text-center">Total (100%)</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-mauve-100 text-xs">
-                              {grades
-                                .filter(g => g.studentId === viewingStudentProfile.id)
-                                .map((g, idx) => {
-                                  const sub = subjects.find(s => s.id === g.subjectId || s.name === g.subjectId || s.code === g.subjectId);
-                                  const total = (Number(g.classScore) || 0) + (Number(g.examScore) || 0);
-                                  return (
-                                    <tr key={`${g.studentId}-${g.subjectId}-${idx}`} className="hover:bg-mauve-50/50">
-                                      <td className="p-2.5 pl-3 font-semibold text-gray-900">
-                                        {sub ? sub.name : g.subjectId}
-                                      </td>
-                                      <td className="p-2.5 text-center font-mono text-gray-600">{g.classScore ?? '-'}</td>
-                                      <td className="p-2.5 text-center font-mono text-gray-600">{g.examScore ?? '-'}</td>
-                                      <td className="p-2.5 text-center font-mono font-bold text-mauve-900">{total}</td>
-                                    </tr>
-                                  );
-                                })}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="p-8 text-center bg-mauve-50/60 rounded-xl border border-dashed border-mauve-200 text-mauve-600">
-                          <BookOpen className="w-8 h-8 text-mauve-400 mx-auto mb-2 opacity-60" />
-                          <p className="font-semibold text-xs">No subject marks recorded yet for this term.</p>
-                          <p className="text-[11px] text-mauve-500 mt-1">
-                            Class teachers can input term grades in the Student Transcripts / Marks tab.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
 
-                  {profileTab === 'attendance' && (
-                    <div className="space-y-4">
-                      {(() => {
-                        const att =
-                          attendance.find(a => a.studentId === viewingStudentProfile.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear)) ||
-                          attendance.find(a => a.studentId === viewingStudentProfile.id);
-                        return att ? (
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div className="p-4 bg-green-50 border border-green-200 rounded-xl text-center">
-                              <span className="text-xs font-semibold text-green-700 uppercase block">Days Present</span>
-                              <span className="text-2xl font-extrabold text-green-800 font-mono mt-1 block">
-                                {att.daysPresent}
-                              </span>
-                            </div>
-                            <div className="p-4 bg-mauve-50 border border-mauve-200 rounded-xl text-center">
-                              <span className="text-xs font-semibold text-mauve-700 uppercase block">Total Academic Days</span>
-                              <span className="text-2xl font-extrabold text-mauve-900 font-mono mt-1 block">
-                                {att.totalDays}
-                              </span>
-                            </div>
-                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl text-center">
-                              <span className="text-xs font-semibold text-blue-700 uppercase block">Attendance Rate</span>
-                              <span className="text-2xl font-extrabold text-blue-800 font-mono mt-1 block">
-                                {att.totalDays ? Math.round((att.daysPresent / att.totalDays) * 100) : 0}%
-                              </span>
-                            </div>
-                            {att.remarks && (
-                              <div className="sm:col-span-3 p-3.5 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700">
-                                <span className="font-bold text-gray-900 block mb-1">Teacher's Conduct Remark:</span>
-                                "{att.remarks}"
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="p-8 text-center bg-mauve-50/60 rounded-xl border border-dashed border-mauve-200 text-mauve-600">
-                            <Calendar className="w-8 h-8 text-mauve-400 mx-auto mb-2 opacity-60" />
-                            <p className="font-semibold text-xs">No attendance logged yet for this student.</p>
-                            <p className="text-[11px] text-mauve-500 mt-1">
-                              Class teachers mark Monday–Friday attendance in the Class Attendance section.
-                            </p>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-
-                  {profileTab === 'guardian' && (
-                    <div className="space-y-4">
-                      <div className="p-4 bg-mauve-50/60 border border-mauve-200 rounded-xl space-y-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-mauve-200 text-mauve-800 font-bold flex items-center justify-center text-sm shrink-0">
-                            {viewingStudentProfile.guardianName ? viewingStudentProfile.guardianName.charAt(0).toUpperCase() : 'G'}
-                          </div>
-                          <div>
-                            <h5 className="font-bold text-mauve-900 text-sm">
-                              {viewingStudentProfile.guardianName || 'No Guardian Name Recorded'}
-                            </h5>
-                            <span className="text-xs text-mauve-600">Primary Parent / Legal Guardian</span>
-                          </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-blue-200 text-xs">
+                        <div className="space-y-0.5">
+                          <span className="text-blue-900 font-bold block">Email Address:</span>
+                          {viewingStudentProfile.guardianEmail ? (
+                            <a
+                              href={`mailto:${viewingStudentProfile.guardianEmail}`}
+                              className="text-blue-700 font-semibold hover:underline flex items-center gap-1"
+                            >
+                              <Mail className="w-3 h-3" />
+                              <span>{viewingStudentProfile.guardianEmail}</span>
+                            </a>
+                          ) : (
+                            <span className="text-gray-400 italic">Not provided</span>
+                          )}
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-mauve-200 text-xs">
-                          <div className="space-y-0.5">
-                            <span className="text-mauve-500 font-semibold block">Email Address:</span>
-                            {viewingStudentProfile.guardianEmail ? (
-                              <a
-                                href={`mailto:${viewingStudentProfile.guardianEmail}`}
-                                className="text-blue-600 font-medium hover:underline flex items-center gap-1"
-                              >
-                                <Mail className="w-3 h-3" />
-                                <span>{viewingStudentProfile.guardianEmail}</span>
-                              </a>
-                            ) : (
-                              <span className="text-gray-400 italic">Not provided</span>
-                            )}
-                          </div>
-
-                          <div className="space-y-0.5">
-                            <span className="text-mauve-500 font-semibold block">WhatsApp / Phone:</span>
-                            {viewingStudentProfile.guardianPhone ? (
-                              <a
-                                href={`tel:${viewingStudentProfile.guardianPhone}`}
-                                className="text-green-700 font-semibold hover:underline flex items-center gap-1"
-                              >
-                                <Phone className="w-3 h-3" />
-                                <span>{viewingStudentProfile.guardianPhone}</span>
-                              </a>
-                            ) : (
-                              <span className="text-gray-400 italic">Not provided</span>
-                            )}
-                          </div>
+                        <div className="space-y-0.5">
+                          <span className="text-blue-900 font-bold block">WhatsApp / Phone:</span>
+                          {viewingStudentProfile.guardianPhone ? (
+                            <a
+                              href={`tel:${viewingStudentProfile.guardianPhone}`}
+                              className="text-blue-800 font-bold hover:underline flex items-center gap-1"
+                            >
+                              <Phone className="w-3 h-3" />
+                              <span>{viewingStudentProfile.guardianPhone}</span>
+                            </a>
+                          ) : (
+                            <span className="text-gray-400 italic">Not provided</span>
+                          )}
                         </div>
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* Footer Action Bar */}
-                <div className="p-4 bg-gray-50 border-t border-mauve-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="p-4 bg-blue-50/50 border-t border-blue-200 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -2132,7 +2007,7 @@ export default function AdminDashboard({
                         triggerEditStudent(viewingStudentProfile);
                         setViewingStudentProfile(null);
                       }}
-                      className="px-3.5 py-2 bg-white hover:bg-mauve-50 border border-mauve-300 text-mauve-800 font-bold text-xs rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                      className="px-3.5 py-2 bg-white hover:bg-blue-100/70 border border-blue-300 text-blue-900 font-bold text-xs rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-xs"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                       <span>Edit Student Profile / Photo</span>
@@ -2145,7 +2020,7 @@ export default function AdminDashboard({
                         setViewingStudentProfile(null);
                         setActiveTab('transcripts');
                       }}
-                      className="px-3.5 py-2 bg-mauve-600 hover:bg-mauve-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                      className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-xs"
                     >
                       <FileText className="w-3.5 h-3.5" />
                       <span>Open A4 Term Transcript</span>
@@ -2155,7 +2030,7 @@ export default function AdminDashboard({
                   <button
                     type="button"
                     onClick={() => setViewingStudentProfile(null)}
-                    className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold text-xs rounded-xl transition cursor-pointer"
+                    className="px-4 py-2 bg-blue-950 hover:bg-blue-900 text-white font-bold text-xs rounded-xl transition cursor-pointer"
                   >
                     Close
                   </button>

@@ -307,6 +307,21 @@ ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS custom_items TEXT;
 ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
 
+CREATE TABLE IF NOT EXISTS public.ea_jhs_mock_exams (
+  id VARCHAR PRIMARY KEY,
+  student_id VARCHAR NOT NULL,
+  student_name VARCHAR NOT NULL,
+  roll_number VARCHAR,
+  class_name VARCHAR DEFAULT 'JHS 3',
+  exam_title VARCHAR DEFAULT 'Mock Examination 1',
+  academic_year VARCHAR DEFAULT '2025/2026',
+  scores JSONB DEFAULT '{}'::jsonb,
+  remarks TEXT,
+  updated_by VARCHAR,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE public.ea_jhs_mock_exams DISABLE ROW LEVEL SECURITY;
+
 -- 8. Disable Row Level Security (RLS) on all tables to ensure public frontend sync operates correctly
 ALTER TABLE public.ea_config DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_students DISABLE ROW LEVEL SECURITY;
