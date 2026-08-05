@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel } from '../types';
-import { BookOpen, UserCheck, Search, CheckCircle2, Save, Users, Calendar, Award, LogIn, UserPlus, ShieldAlert, School, Eye, EyeOff, KeyRound, Lock, Mail, Send, Copy, Check, ExternalLink, ShieldCheck, RefreshCw } from 'lucide-react';
+import { BookOpen, UserCheck, Search, CheckCircle2, Save, Users, Calendar, Award, LogIn, LogOut, UserPlus, ShieldAlert, School, Eye, EyeOff, KeyRound, Lock, Mail, Send, Copy, Check, ExternalLink, ShieldCheck, RefreshCw } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { sendPasswordResetEmail } from '../services/emailDispatcher';
 import { getSupabaseCredentials, saveSupabaseGrades, saveSupabaseAttendance } from '../lib/supabase';
@@ -531,7 +531,7 @@ export default function TeacherDashboard({
         : classes.JHS;
 
   const teacherAllowedClasses = currentUser 
-    ? (currentUser.role === 'ADMIN' || (currentUser.level as string) === 'ALL' || !currentUser.level
+    ? (currentUser.role === 'ADMIN' || (currentUser.level as string) === 'ALL' || !currentUser.level || currentUser.level === 'JHS' || selectedLevel === 'JHS'
         ? allLevelClasses
         : (currentUser.classes && currentUser.classes.length > 0
             ? allLevelClasses.filter(c => currentUser.classes?.includes(c))
@@ -973,7 +973,7 @@ export default function TeacherDashboard({
                 setResetError('');
                 setLoginError('');
               }}
-              className={`flex-1 pb-2 text-xs uppercase tracking-wider font-bold transition cursor-pointer ${authMode === 'login' ? 'text-mauve-900 border-b-2 border-mauve-900' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`flex-1 pb-2 text-xs uppercase tracking-wider font-extrabold transition cursor-pointer ${authMode === 'login' ? 'text-mauve-950 border-b-2 border-mauve-900' : 'text-mauve-800 hover:text-mauve-950'}`}
             >
               <LogIn className="w-3.5 h-3.5 inline-block mr-1 shrink-0" />
               Sign In Account
@@ -984,7 +984,7 @@ export default function TeacherDashboard({
                 setRegError('');
                 setLoginError('');
               }}
-              className={`flex-1 pb-2 text-xs uppercase tracking-wider font-bold transition cursor-pointer ${authMode === 'register' ? 'text-mauve-900 border-b-2 border-mauve-900' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`flex-1 pb-2 text-xs uppercase tracking-wider font-extrabold transition cursor-pointer ${authMode === 'register' ? 'text-mauve-950 border-b-2 border-mauve-900' : 'text-mauve-800 hover:text-mauve-950'}`}
             >
               <UserPlus className="w-3.5 h-3.5 inline-block mr-1 shrink-0" />
               Register New Teacher
@@ -1537,9 +1537,11 @@ export default function TeacherDashboard({
             setSelectedClass('');
             setSelectedSubject('');
           }}
-          className="bg-mauve-100 hover:bg-mauve-200 text-mauve-900 border border-mauve-500/10 font-bold px-3 py-1.5 rounded text-[10px] uppercase tracking-wider transition cursor-pointer"
+          className="bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-extrabold px-4 py-2 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center gap-2 shadow-sm border border-red-700 hover:shadow-md"
+          title="Sign out of Teacher Portal and clear session"
         >
-          Sign Out Portal
+          <LogOut className="w-4 h-4 shrink-0" />
+          <span>Sign Out</span>
         </button>
       </div>
 
@@ -1557,8 +1559,8 @@ export default function TeacherDashboard({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 text-xs">
             {/* Step 1: Select Academic Level */}
             <div className="space-y-3 p-3 rounded border border-mauve-500/15 bg-mauve-50">
-              <span className="text-xs font-bold text-mauve-900 uppercase tracking-wider block">1. Staff Division</span>
-              <p className="text-[11px] text-gray-400">JHS teachers must strictly select the JHS level to unlock curriculum books.</p>
+              <span className="text-xs font-extrabold text-mauve-950 uppercase tracking-wider block">1. Staff Division</span>
+              <p className="text-[11px] text-mauve-800 font-medium leading-relaxed">JHS teachers must strictly select the JHS level to unlock curriculum books.</p>
               <div className="space-y-1.5">
                 {['NURSERY', 'KINDERGARTEN', 'PRIMARY', 'JHS'].map((lvl) => {
                   const isAvailable = currentUser.role === 'ADMIN' || (currentUser.level as string) === 'ALL' || !currentUser.level || currentUser.level === lvl;
@@ -1573,12 +1575,12 @@ export default function TeacherDashboard({
                           ? 'bg-mauve-900 text-white border-mauve-900' 
                           : isAvailable 
                             ? 'bg-white border-mauve-500/20 hover:bg-mauve-100 text-mauve-900'
-                            : 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
+                            : 'bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed'
                       }`}
                     >
                       <div className="flex justify-between items-center">
                         <span>{lvl} DIVISION</span>
-                        {!isAvailable && <span className="text-[9px] text-gray-400 font-normal">Locked</span>}
+                        {!isAvailable && <span className="text-[9px] text-gray-500 font-semibold">Locked</span>}
                       </div>
                     </button>
                   );
@@ -1588,11 +1590,15 @@ export default function TeacherDashboard({
 
             {/* Step 2: Select Class */}
             <div className="space-y-3 p-3 rounded border border-mauve-500/15 bg-mauve-50">
-              <span className="text-xs font-bold text-mauve-900 uppercase tracking-wider block">2. Grade Class Group</span>
-              <p className="text-[11px] text-gray-400">Choose from your registered class lists within the selected level division.</p>
+              <span className="text-xs font-extrabold text-mauve-950 uppercase tracking-wider block">2. Grade Class Group</span>
+              <p className="text-[11px] text-mauve-800 font-medium leading-relaxed">
+                {selectedLevel === 'JHS' || currentUser?.level === 'JHS'
+                  ? 'JHS teachers can access all JHS classes (JHS 1, JHS 2, JHS 3) in the assessment register.'
+                  : 'Choose from your registered class lists within the selected level division.'}
+              </p>
               <div className="space-y-1.5">
                 {!selectedLevel ? (
-                  <div className="text-center p-6 text-xs text-gray-400 italic">Select level first</div>
+                  <div className="text-center p-6 text-xs text-mauve-700 font-bold italic">Select level first</div>
                 ) : (
                   teacherAllowedClasses.map((cls) => {
                     const isSelected = selectedClass === cls;
@@ -1625,12 +1631,12 @@ export default function TeacherDashboard({
             {/* Step 3: Select Subject */}
             <div className="space-y-3 p-3 rounded border border-mauve-500/15 bg-mauve-50">
               <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-mauve-900 uppercase tracking-wider block">3. Syllabus Subject</span>
+                <span className="text-xs font-extrabold text-mauve-950 uppercase tracking-wider block">3. Syllabus Subject</span>
               </div>
-              <p className="text-[11px] text-gray-400">Pick from the standard syllabus subjects to proceed to markings.</p>
+              <p className="text-[11px] text-mauve-800 font-medium leading-relaxed">Pick from the standard syllabus subjects to proceed to markings.</p>
               <div className="space-y-1.5">
                 {!selectedClass ? (
-                  <div className="text-center p-6 text-xs text-gray-400 italic">Select class first</div>
+                  <div className="text-center p-6 text-xs text-mauve-700 font-bold italic">Select class first</div>
                 ) : (
                   teacherAllowedSubjects.map((sub) => {
                     const isSelected = selectedSubject === sub.id;
@@ -1709,17 +1715,33 @@ export default function TeacherDashboard({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedLevel('');
-                setSelectedClass('');
-                setSelectedSubject('');
-              }}
-              className="text-xs font-bold text-mauve-900 hover:text-mauve-700 underline cursor-pointer uppercase tracking-wider text-[10px]"
-            >
-              Full Selection View
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedLevel('');
+                  setSelectedClass('');
+                  setSelectedSubject('');
+                }}
+                className="text-xs font-bold text-mauve-900 hover:text-mauve-700 underline cursor-pointer uppercase tracking-wider text-[10px]"
+              >
+                Full Selection View
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentUser(null);
+                  setSelectedLevel('');
+                  setSelectedClass('');
+                  setSelectedSubject('');
+                }}
+                className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-1 rounded-lg text-[10px] uppercase tracking-wider transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                title="Sign out of Teacher Portal"
+              >
+                <LogOut className="w-3.5 h-3.5 shrink-0" />
+                <span>Sign Out</span>
+              </button>
+            </div>
           </div>
 
           {/* MAIN GRADE ENTRY SHEET TABLE */}

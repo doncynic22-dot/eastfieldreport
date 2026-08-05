@@ -759,10 +759,10 @@ export default function FeesDashboard({
                     <h2 className="text-xl sm:text-2xl font-extrabold text-[#1C053E] uppercase tracking-tight font-display">
                       {config?.schoolName || 'Eastfield Academy'}
                     </h2>
-                    <p className="text-xs text-gray-600 font-bold uppercase tracking-wider">
+                    <p className="text-xs text-gray-800 font-extrabold uppercase tracking-wider">
                       {config?.schoolMotto || 'Excellence in Academic Discipline & Leadership'}
                     </p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">
+                    <p className="text-[11px] text-mauve-900 font-bold mt-0.5">
                       Academic Year {config?.schoolYear || '2025/2026'} • {config?.term || 'Term 1'}
                     </p>
                   </div>
@@ -775,7 +775,7 @@ export default function FeesDashboard({
                   <span className="text-base sm:text-lg font-extrabold text-gray-900 block mt-0.5">
                     {activeReceiptModal.receiptNumber}
                   </span>
-                  <span className="text-[11px] text-gray-500 block">
+                  <span className="text-[11px] text-mauve-900 font-bold block">
                     Date: {activeReceiptModal.paymentDate}
                   </span>
                 </div>
@@ -785,20 +785,20 @@ export default function FeesDashboard({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-gray-50 border border-gray-200 text-xs">
                 <div className="space-y-1.5">
                   <div className="flex justify-between">
-                    <span className="text-gray-500 font-bold">Student Name:</span>
+                    <span className="text-mauve-900 font-bold">Student Name:</span>
                     <span className="font-extrabold text-gray-900">
                       {activeReceiptModal.studentName}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500 font-bold">Class / Grade:</span>
+                    <span className="text-mauve-900 font-bold">Class / Grade:</span>
                     <span className="font-extrabold text-gray-900">
                       {activeReceiptModal.className}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500 font-bold">Student ID:</span>
-                    <span className="font-mono font-bold text-gray-700">
+                    <span className="text-mauve-900 font-bold">Student ID:</span>
+                    <span className="font-mono font-extrabold text-gray-900">
                       {activeReceiptModal.studentId}
                     </span>
                   </div>
@@ -806,13 +806,13 @@ export default function FeesDashboard({
 
                 <div className="space-y-1.5">
                   <div className="flex justify-between">
-                    <span className="text-gray-500 font-bold">Payment Method:</span>
+                    <span className="text-mauve-900 font-bold">Payment Method:</span>
                     <span className="font-extrabold text-gray-900">
                       {activeReceiptModal.paymentMethod}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500 font-bold">Transaction Status:</span>
+                    <span className="text-mauve-900 font-bold">Transaction Status:</span>
                     <span
                       className={`font-extrabold uppercase ${
                         activeReceiptModal.status === 'Paid'
@@ -830,8 +830,8 @@ export default function FeesDashboard({
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500 font-bold">Recorded By:</span>
-                    <span className="font-bold text-gray-700">
+                    <span className="text-mauve-900 font-bold">Recorded By:</span>
+                    <span className="font-bold text-gray-900">
                       {activeReceiptModal.recordedBy || 'Bursar Office'}
                     </span>
                   </div>

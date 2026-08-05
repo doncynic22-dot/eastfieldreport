@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Student, User, Subject, ReportConfig, Grade, Attendance, StudentBill } from './types';
+import { Student, User, Subject, ReportConfig, Grade, Attendance, StudentBill, DailyAttendanceRecord } from './types';
 import { 
   INITIAL_CLASSES, 
   INITIAL_SUBJECTS, 
@@ -16,6 +16,7 @@ import {
 } from './data/mockData';
 import AdminDashboard from './components/AdminDashboard';
 import TeacherDashboard from './components/TeacherDashboard';
+import StudentAttendancePortal from './components/StudentAttendancePortal';
 import { School, ShieldCheck, GraduationCap, Users2, FileCheck, CheckCircle2, Lock, Sparkles, BookOpen, Eye, EyeOff, Database, AlertTriangle, X, Menu } from 'lucide-react';
 import {
   getSupabaseCredentials,
@@ -48,6 +49,23 @@ export default function App() {
   const [teachers, setTeachers] = useState<User[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [dailyAttendance, setDailyAttendance] = useState<DailyAttendanceRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('ea_daily_attendance');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ea_daily_attendance', JSON.stringify(dailyAttendance));
+    } catch (e) {
+      console.warn('Failed saving daily attendance to localStorage', e);
+    }
+  }, [dailyAttendance]);
+
   const [bills, setBills] = useState<StudentBill[]>([]);
   const [config, setConfig] = useState<ReportConfig>(DEFAULT_REPORT_CONFIG);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -62,8 +80,8 @@ export default function App() {
     });
   };
 
-  // Nav State: 'hub' | 'admin' | 'teacher'
-  const [activePortal, setActivePortal] = useState<'hub' | 'admin' | 'teacher'>(() => {
+  // Nav State: 'hub' | 'admin' | 'teacher' | 'attendance'
+  const [activePortal, setActivePortal] = useState<'hub' | 'admin' | 'teacher' | 'attendance'>(() => {
     if (typeof window !== 'undefined') {
       const q = window.location.search || '';
       const h = window.location.hash || '';
@@ -924,7 +942,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#160330] text-white font-sans pb-12 print:pb-0">
+    <div className="min-h-screen bg-[#F8F6FC] text-[#1A043B] font-sans pb-12 print:pb-0">
       {/* GLOBAL HIGH-CONTRAST HEADER NAVBAR - HIDE IN PRINT */}
       <header className="bg-[#1C053E] border-b border-white/15 text-white sticky top-0 z-40 shadow-sm no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -944,11 +962,11 @@ export default function App() {
             )}
             <div className="truncate max-w-[170px] sm:max-w-none">
               <div className="flex items-center gap-2">
-                <span className="font-display font-extrabold text-xs sm:text-sm tracking-tight text-mauve-900 block uppercase truncate">
+                <span className="font-display font-extrabold text-xs sm:text-sm tracking-tight text-white block uppercase truncate">
                   {config.schoolName}
                 </span>
               </div>
-              <span className="text-[8px] sm:text-[9px] font-mono tracking-wider text-mauve-600 uppercase block truncate">
+              <span className="text-[8px] sm:text-[9px] font-mono tracking-wider text-purple-200 uppercase block truncate">
                 School Management System
               </span>
             </div>
@@ -979,6 +997,17 @@ export default function App() {
                 Teacher Portal
               </button>
             )}
+            <button
+              onClick={() => setActivePortal('attendance')}
+              className={`px-4 py-2 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition cursor-pointer ${
+                activePortal === 'attendance'
+                  ? 'bg-mauve-900 text-white border border-white/40 shadow-sm'
+                  : 'text-white hover:bg-white/10 border border-transparent'
+              }`}
+              id="nav-attendance-portal"
+            >
+              Attendance Portal
+            </button>
             {!currentUser && (
               <button
                 onClick={() => setActivePortal('admin')}
@@ -1039,6 +1068,20 @@ export default function App() {
                 Teacher Portal
               </button>
             )}
+
+            <button
+              onClick={() => {
+                setActivePortal('attendance');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`w-full text-left px-4 py-3 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition ${
+                activePortal === 'attendance'
+                  ? 'bg-mauve-900 text-white border border-white/40'
+                  : 'text-white bg-white/5 hover:bg-white/10 border border-transparent'
+              }`}
+            >
+              Attendance Portal
+            </button>
 
             {!currentUser && (
               <button
@@ -1310,6 +1353,25 @@ export default function App() {
               isAdminAuthenticated={isAdminAuthenticated}
             />
           )
+        )}
+
+        {/* D. STUDENT ATTENDANCE PORTAL ROUTE */}
+        {activePortal === 'attendance' && (
+          <StudentAttendancePortal
+            students={students}
+            setStudents={setStudents}
+            teachers={teachers}
+            attendance={attendance}
+            setAttendance={setAttendance}
+            dailyAttendance={dailyAttendance}
+            setDailyAttendance={setDailyAttendance}
+            classes={INITIAL_CLASSES}
+            config={config}
+            currentUser={currentUser}
+            setCurrentUser={setCurrentUser}
+            isAdminAuthenticated={isAdminAuthenticated}
+            setActivePortal={setActivePortal}
+          />
         )}
       </main>
 

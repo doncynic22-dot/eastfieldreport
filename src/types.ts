@@ -3,6 +3,31 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export interface CustomInventoryItem {
+  id?: string;
+  name: string;
+  quantity: number;
+}
+
+export interface ClassroomInventoryRecord {
+  id: string;
+  locationName: string; // e.g., 'Primary 1', 'Staff Room', 'Main Yard'
+  category: 'Classroom' | 'Administrative' | 'Facility' | 'Transport' | 'Other';
+  studentChairs: number;
+  studentTables: number;
+  textbooks: number;
+  washrooms: number;
+  sinks: number;
+  buses: number;
+  teacherChairs: number;
+  teacherTables: number;
+  computers?: number;
+  projectors?: number;
+  customItems?: CustomInventoryItem[];
+  notes?: string;
+  updatedAt: string;
+}
+
 export type UserRole = 'ADMIN' | 'TEACHER';
 
 export type AcademicLevel = 'NURSERY' | 'KINDERGARTEN' | 'PRIMARY' | 'JHS';
@@ -61,6 +86,20 @@ export interface Attendance {
   daysPresent: number;
   remarks: string;
   teacherId: string;
+  updatedAt: string;
+}
+
+export type DailyAttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
+
+export interface DailyAttendanceRecord {
+  id: string;
+  studentId: string;
+  date: string; // YYYY-MM-DD
+  status: DailyAttendanceStatus;
+  term: string;
+  year: string;
+  teacherId: string;
+  notes?: string;
   updatedAt: string;
 }
 

@@ -686,7 +686,7 @@ export default function FeesCollectionModule({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 no-print">
         <div className="p-4 rounded-xl border border-white/15 bg-white/5 shadow-sm flex items-center justify-between">
           <div>
-            <span className="text-xs font-extrabold uppercase tracking-wider text-gray-300 block">
+            <span className="text-xs font-black uppercase tracking-wider text-white block">
               Total Collections
             </span>
             <span className="text-2xl font-extrabold text-white mt-1 block">
@@ -704,13 +704,13 @@ export default function FeesCollectionModule({
 
         <div className="p-4 rounded-xl border border-white/15 bg-white/5 shadow-sm flex items-center justify-between">
           <div>
-            <span className="text-xs font-extrabold uppercase tracking-wider text-gray-300 block">
+            <span className="text-xs font-black uppercase tracking-wider text-white block">
               School Fees Tuition
             </span>
             <span className="text-2xl font-extrabold text-white mt-1 block">
               GH₵ {schoolFeesCollected.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </span>
-            <span className="text-[11px] text-purple-300 font-bold mt-0.5 block">
+            <span className="text-[11px] text-purple-200 font-bold mt-0.5 block">
               Core academic fee revenue
             </span>
           </div>
@@ -721,13 +721,13 @@ export default function FeesCollectionModule({
 
         <div className="p-4 rounded-xl border border-white/15 bg-white/5 shadow-sm flex items-center justify-between">
           <div>
-            <span className="text-xs font-extrabold uppercase tracking-wider text-gray-300 block">
+            <span className="text-xs font-black uppercase tracking-wider text-white block">
               Outstanding Arrears
             </span>
-            <span className="text-2xl font-extrabold text-amber-300 mt-1 block">
+            <span className="text-2xl font-extrabold text-yellow-300 mt-1 block">
               GH₵ {totalArrears.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </span>
-            <span className="text-[11px] text-amber-400 font-bold mt-0.5 block">
+            <span className="text-[11px] text-amber-300 font-bold mt-0.5 block">
               Remaining unpaid balances
             </span>
           </div>
@@ -738,13 +738,13 @@ export default function FeesCollectionModule({
 
         <div className="p-4 rounded-xl border border-white/15 bg-white/5 shadow-sm flex items-center justify-between">
           <div>
-            <span className="text-xs font-extrabold uppercase tracking-wider text-gray-300 block">
+            <span className="text-xs font-black uppercase tracking-wider text-white block">
               Active Receipts
             </span>
             <span className="text-2xl font-extrabold text-white mt-1 block">
               {feePayments.length}
             </span>
-            <span className="text-[11px] text-blue-300 font-bold mt-0.5 block">
+            <span className="text-[11px] text-blue-200 font-bold mt-0.5 block">
               All printable official receipts
             </span>
           </div>
@@ -764,7 +764,7 @@ export default function FeesCollectionModule({
                 <CreditCard className="w-5 h-5 text-purple-300" />
                 <span>Record Fee Payment</span>
               </h3>
-              <p className="text-xs text-gray-300 mt-0.5">
+              <p className="text-xs text-purple-100 font-medium mt-0.5">
                 Dynamic dependent selection by Class/Form → Student → Fee Type with automated status grading
               </p>
             </div>
@@ -779,7 +779,7 @@ export default function FeesCollectionModule({
                   <span>View Fees Dashboard</span>
                 </button>
               )}
-              <span className="px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 text-xs font-bold border border-purple-400/30 hidden sm:inline-block">
+              <span className="px-3 py-1 rounded-full bg-purple-500/20 text-purple-200 text-xs font-bold border border-purple-400/30 hidden sm:inline-block">
                 Receipt Auto-Generates
               </span>
             </div>
@@ -790,7 +790,7 @@ export default function FeesCollectionModule({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* DEPENDENT DROPDOWN 1: CLASS / GRADE LEVEL */}
               <div>
-                <label className="text-xs font-extrabold uppercase tracking-wider text-gray-200 block mb-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-white block mb-1.5">
                   1. Select Class / Form *
                 </label>
                 <select
@@ -804,14 +804,14 @@ export default function FeesCollectionModule({
                     </option>
                   ))}
                 </select>
-                <span className="text-[11px] text-gray-300 block mt-1">
+                <span className="text-[11px] text-purple-100 font-medium block mt-1">
                   Filters student selection to enrolled pupils only
                 </span>
               </div>
 
               {/* DEPENDENT DROPDOWN 2: FEE TYPE */}
               <div>
-                <label className="text-xs font-extrabold uppercase tracking-wider text-gray-200 block mb-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-white block mb-1.5">
                   2. Select Fee Type *
                 </label>
                 <select
@@ -875,7 +875,7 @@ export default function FeesCollectionModule({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-gray-300 font-bold mr-1">Days Covered:</span>
+                  <span className="text-xs text-white font-black mr-1">Days Covered:</span>
                   {WEEKDAYS_MON_FRI.map((day) => {
                     const isChecked = selectedWeekdays.includes(day);
                     return (
@@ -886,7 +886,7 @@ export default function FeesCollectionModule({
                         className={`px-3 py-1.5 rounded-lg text-xs font-extrabold border transition cursor-pointer flex items-center gap-1.5 ${
                           isChecked
                             ? 'bg-purple-600 text-white border-purple-300 shadow-sm'
-                            : 'bg-[#1A0438] text-gray-400 border-white/15 hover:border-white/30'
+                            : 'bg-[#1A0438] text-purple-200 border-white/20 hover:border-white/40'
                         }`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-current" />
@@ -898,7 +898,7 @@ export default function FeesCollectionModule({
 
                 <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-white/10 text-xs">
                   <div className="flex items-center gap-2">
-                    <label className="text-gray-300 font-bold">Daily Rate (GH₵/day):</label>
+                    <label className="text-white font-black">Daily Rate (GH₵/day):</label>
                     <input
                       type="number"
                       min="1"
@@ -965,8 +965,8 @@ export default function FeesCollectionModule({
                   <div className="p-3.5 rounded-xl bg-gradient-to-r from-purple-950/90 via-[#2A0E5A]/90 to-purple-950/90 border border-purple-400/40 shadow-lg space-y-2.5 text-xs">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
                       <div className="flex items-center gap-2">
-                        <School className="w-4 h-4 text-purple-300" />
-                        <span className="font-extrabold text-white tracking-wide uppercase">
+                        <School className="w-4 h-4 text-white" />
+                        <span className="font-black text-white text-xs sm:text-sm tracking-wide uppercase">
                           Next Term School Fees Bill ({currentStudent.level})
                         </span>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
@@ -991,53 +991,49 @@ export default function FeesCollectionModule({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 pt-1 text-gray-200">
-                      <div className="p-2 rounded-lg bg-[#1A0438]/80 border border-white/10">
-                        <span className="text-[10px] text-gray-400 uppercase block font-bold">Tuition</span>
-                        <span className="font-mono font-extrabold text-white">GH₵ {currentStudentBill.tuition.toFixed(2)}</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 pt-1">
+                      <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 shadow-md flex flex-col justify-between">
+                        <span className="text-xs sm:text-sm text-blue-300 uppercase block font-black tracking-wider">Tuition</span>
+                        <span className="font-mono font-black text-blue-200 text-sm sm:text-base block mt-1">GH₵ {currentStudentBill.tuition.toFixed(2)}</span>
                       </div>
-                      <div className="p-2 rounded-lg bg-[#1A0438]/80 border border-white/10">
-                        <span className="text-[10px] text-gray-400 uppercase block font-bold">Arrears B/F</span>
-                        <span className="font-mono font-extrabold text-amber-300">GH₵ {currentStudentBill.arrears.toFixed(2)}</span>
+                      <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 shadow-md flex flex-col justify-between">
+                        <span className="text-xs sm:text-sm text-blue-300 uppercase block font-black tracking-wider">Arrears B/F</span>
+                        <span className="font-mono font-black text-blue-200 text-sm sm:text-base block mt-1">GH₵ {currentStudentBill.arrears.toFixed(2)}</span>
                       </div>
-                      <div className="p-2 rounded-lg bg-[#1A0438]/80 border border-white/10">
-                        <span className="text-[10px] text-gray-400 uppercase block font-bold">Computing</span>
-                        <span className="font-mono font-extrabold text-white">GH₵ {currentStudentBill.computing.toFixed(2)}</span>
+                      <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 shadow-md flex flex-col justify-between">
+                        <span className="text-xs sm:text-sm text-blue-300 uppercase block font-black tracking-wider">Computing</span>
+                        <span className="font-mono font-black text-blue-200 text-sm sm:text-base block mt-1">GH₵ {currentStudentBill.computing.toFixed(2)}</span>
                       </div>
-                      <div className="p-2 rounded-lg bg-[#1A0438]/80 border border-white/10">
-                        <span className="text-[10px] text-gray-400 uppercase block font-bold">Utility</span>
-                        <span className="font-mono font-extrabold text-white">GH₵ {currentStudentBill.utility.toFixed(2)}</span>
+                      <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 shadow-md flex flex-col justify-between">
+                        <span className="text-xs sm:text-sm text-blue-300 uppercase block font-black tracking-wider">Utility</span>
+                        <span className="font-mono font-black text-blue-200 text-sm sm:text-base block mt-1">GH₵ {currentStudentBill.utility.toFixed(2)}</span>
                       </div>
-                      <div className="p-2 rounded-lg bg-[#1A0438]/80 border border-white/10">
-                        <span className="text-[10px] text-gray-400 uppercase block font-bold">Stationery</span>
-                        <span className="font-mono font-extrabold text-white">GH₵ {currentStudentBill.stationery.toFixed(2)}</span>
+                      <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 shadow-md flex flex-col justify-between">
+                        <span className="text-xs sm:text-sm text-blue-300 uppercase block font-black tracking-wider">Stationery</span>
+                        <span className="font-mono font-black text-blue-200 text-sm sm:text-base block mt-1">GH₵ {currentStudentBill.stationery.toFixed(2)}</span>
                       </div>
-                      <div className="p-2 rounded-lg bg-[#1A0438]/80 border border-white/10">
-                        <span className="text-[10px] text-gray-400 uppercase block font-bold">PTA Dues</span>
-                        <span className="font-mono font-extrabold text-white">GH₵ {currentStudentBill.pta.toFixed(2)}</span>
+                      <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 shadow-md flex flex-col justify-between">
+                        <span className="text-xs sm:text-sm text-blue-300 uppercase block font-black tracking-wider">PTA Dues</span>
+                        <span className="font-mono font-black text-blue-200 text-sm sm:text-base block mt-1">GH₵ {currentStudentBill.pta.toFixed(2)}</span>
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-white/10 font-mono">
+                    <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-white/20 font-mono">
                       <div className="flex items-center gap-2">
-                        <span className="text-gray-300 font-bold">Total Term Bill:</span>
-                        <span className="text-white font-extrabold bg-white/10 px-2 py-0.5 rounded border border-white/20">
+                        <span className="text-blue-300 font-black uppercase text-xs tracking-wider">Total Term Bill:</span>
+                        <span className="text-white font-black bg-blue-600 px-2.5 py-1 rounded-lg border border-blue-300 shadow-sm text-xs sm:text-sm">
                           GH₵ {currentStudentBill.totalNextTermFee.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-gray-300 font-bold">Paid to Date:</span>
-                        <span className="text-emerald-300 font-extrabold bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-400/30">
+                        <span className="text-blue-300 font-black uppercase text-xs tracking-wider">Paid to Date:</span>
+                        <span className="text-white font-black bg-emerald-600 px-2.5 py-1 rounded-lg border border-emerald-300 shadow-sm text-xs sm:text-sm">
                           GH₵ {currentStudentBill.alreadyPaidSchoolFees.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-gray-300 font-bold">Balance Due:</span>
-                        <span className={`font-extrabold px-2.5 py-0.5 rounded border ${
-                          currentStudentBill.balanceDue === 0
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30'
-                            : 'bg-amber-500/20 text-amber-300 border-amber-400/30'
-                        }`}>
+                        <span className="text-blue-300 font-black uppercase text-xs tracking-wider">Balance Due:</span>
+                        <span className="text-white font-black bg-amber-500 px-2.5 py-1 rounded-lg border border-amber-300 shadow-sm text-xs sm:text-sm">
                           GH₵ {currentStudentBill.balanceDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </span>
                       </div>
@@ -1051,7 +1047,7 @@ export default function FeesCollectionModule({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-extrabold uppercase tracking-wider text-gray-200 block">
+                  <label className="text-xs font-black uppercase tracking-wider text-white block">
                     Total Payable (GH₵) *
                   </label>
                   {feeTypeOption === 'School Fees' && (
@@ -1093,7 +1089,7 @@ export default function FeesCollectionModule({
               </div>
 
               <div>
-                <label className="text-xs font-extrabold uppercase tracking-wider text-gray-200 block mb-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-white block mb-1.5">
                   Payment Method *
                 </label>
                 <select
@@ -1113,7 +1109,7 @@ export default function FeesCollectionModule({
             {/* ROW 4: PAYMENT DATE + TRANSACTION REMARKS */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="text-xs font-extrabold uppercase tracking-wider text-gray-200 block mb-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-white block mb-1.5">
                   Payment Date *
                 </label>
                 <input
@@ -1125,7 +1121,7 @@ export default function FeesCollectionModule({
               </div>
 
               <div className="sm:col-span-2">
-                <label className="text-xs font-extrabold uppercase tracking-wider text-gray-200 block mb-1.5">
+                <label className="text-xs font-black uppercase tracking-wider text-white block mb-1.5">
                   Transaction Note / Reference (Optional)
                 </label>
                 <input
@@ -1141,7 +1137,7 @@ export default function FeesCollectionModule({
             {/* STATUS PREVIEW & SUBMIT BAR */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-3 border-t border-white/15">
               <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-gray-300">Auto-calculated Status:</span>
+                <span className="text-xs font-extrabold text-white">Auto-calculated Status:</span>
                 <span
                   className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider border ${
                     calculatedStatus === 'Paid'
@@ -1341,7 +1337,7 @@ export default function FeesCollectionModule({
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-white/20 text-gray-300 text-xs font-extrabold uppercase tracking-wider">
+              <tr className="border-b border-white/20 text-white text-xs font-black uppercase tracking-wider">
                 <th className="py-3 px-3 w-8">
                   <input
                     type="checkbox"
@@ -1382,12 +1378,12 @@ export default function FeesCollectionModule({
                           className="w-4 h-4 rounded border-white/30 text-purple-600 focus:ring-purple-500 cursor-pointer"
                         />
                       </td>
-                      <td className="py-3 px-3 font-mono font-extrabold text-purple-300 whitespace-nowrap">
+                      <td className="py-3 px-3 font-mono font-black text-amber-300 whitespace-nowrap">
                         {p.receiptNumber}
                       </td>
                       <td className="py-3 px-3">
                         <span className="font-extrabold text-white block">{p.studentName}</span>
-                        <span className="text-[11px] text-gray-300">{p.className}</span>
+                        <span className="text-[11px] text-purple-200 font-bold">{p.className}</span>
                       </td>
                       <td className="py-3 px-3">
                         <div className="font-bold text-white flex items-center gap-1.5">
@@ -1399,7 +1395,7 @@ export default function FeesCollectionModule({
                           )}
                         </div>
                         {p.remarks && (
-                          <span className="text-[11px] text-gray-300 block italic mt-0.5 max-w-[200px] truncate" title={p.remarks}>
+                          <span className="text-[11px] text-purple-200 font-medium block italic mt-0.5 max-w-[200px] truncate" title={p.remarks}>
                             {p.remarks}
                           </span>
                         )}
@@ -1407,10 +1403,10 @@ export default function FeesCollectionModule({
                       <td className="py-3 px-3 text-right font-mono font-extrabold text-emerald-300">
                         GH₵ {p.amountPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
-                      <td className="py-3 px-3 text-right font-mono text-gray-300">
+                      <td className="py-3 px-3 text-right font-mono font-extrabold text-white">
                         GH₵ {p.totalFeeAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                       </td>
-                      <td className="py-3 px-3 font-bold text-gray-200">{p.paymentMethod}</td>
+                      <td className="py-3 px-3 font-extrabold text-white">{p.paymentMethod}</td>
                       <td className="py-3 px-3 whitespace-nowrap">
                         <span
                           className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold uppercase border ${
@@ -1424,7 +1420,7 @@ export default function FeesCollectionModule({
                           {p.status}
                         </span>
                       </td>
-                      <td className="py-3 px-3 font-mono text-gray-300 whitespace-nowrap">
+                      <td className="py-3 px-3 font-mono font-extrabold text-white whitespace-nowrap">
                         {p.paymentDate}
                       </td>
                       <td className="py-3 px-3 text-center">

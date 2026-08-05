@@ -2260,17 +2260,17 @@ export default function ReportPDF({
                     <h1 className="font-display font-bold text-xl sm:text-2xl tracking-tight text-mauve-900 uppercase">
                       {config.schoolName}
                     </h1>
-                    <p className="text-[10px] font-mono uppercase tracking-widest text-mauve-900/60 mt-0.5">
+                    <p className="text-[10px] font-mono uppercase tracking-widest text-mauve-900 font-bold mt-0.5">
                       Academic Report & Transcript
                     </p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">
+                    <p className="text-[10px] text-mauve-800 font-medium mt-0.5">
                       P.O. Box 24, Legon-Accra, Ghana | info@eastfieldacademy.edu.gh
                     </p>
                   </div>
                 </div>
 
                 <div className="bg-mauve-50 px-3 py-1.5 rounded text-center md:text-right border border-mauve-500/10 shrink-0">
-                  <span className="block text-[9px] uppercase font-mono tracking-wider text-gray-400">Academic Season</span>
+                  <span className="block text-[9px] uppercase font-mono tracking-wider text-mauve-800 font-bold">Academic Season</span>
                   <span className="block font-bold text-mauve-900 text-xs mt-0.5">{config.schoolYear}</span>
                   <span className="inline-block mt-1 px-2 py-0.5 bg-mauve-900 text-white text-[9px] font-bold rounded uppercase tracking-wider">
                     {config.term}
@@ -2317,22 +2317,22 @@ export default function ReportPDF({
 
               {/* 3. Performance Summary Badges */}
               <div className="grid grid-cols-3 gap-3 text-center">
-                <div className="p-3 rounded border border-mauve-500/15 bg-white shadow-sm flex flex-col items-center justify-center">
-                  <span className="text-[9px] font-mono uppercase tracking-wider text-gray-400 font-semibold">Subjects Recorded</span>
-                  <span className="text-lg font-display font-bold text-mauve-900 mt-0.5">
+                <div className="p-3 rounded border border-mauve-500/20 bg-white shadow-sm flex flex-col items-center justify-center">
+                  <span className="text-[9.5px] font-mono uppercase tracking-wider text-mauve-900 font-bold">Subjects Recorded</span>
+                  <span className="text-lg font-display font-black text-mauve-950 mt-0.5">
                     {totalSubjectsCount}
                   </span>
                 </div>
-                <div className={`p-3 rounded border border-mauve-500/15 bg-white shadow-sm flex flex-col items-center justify-center font-bold ${getAverageColor(studentAverage)}`}>
-                  <span className="text-[9px] font-mono uppercase tracking-wider text-gray-400 font-semibold">Terminal Average</span>
-                  <span className="text-lg font-display font-bold mt-0.5">
+                <div className={`p-3 rounded border border-mauve-500/20 bg-white shadow-sm flex flex-col items-center justify-center font-bold ${getAverageColor(studentAverage)}`}>
+                  <span className="text-[9.5px] font-mono uppercase tracking-wider text-mauve-900 font-bold">Terminal Average</span>
+                  <span className="text-lg font-display font-black mt-0.5">
                     {studentAverage.toFixed(1)}%
                   </span>
                 </div>
-                <div className="p-3 rounded border border-mauve-500/15 bg-white shadow-sm flex flex-col items-center justify-center">
-                  <span className="text-[9px] font-mono uppercase tracking-wider text-gray-400 font-semibold">Class Rank</span>
-                  <span className="text-lg font-display font-bold text-mauve-900 mt-0.5">
-                    {studentRank} <span className="text-xs text-gray-400 font-normal">of {customClassRoll}</span>
+                <div className="p-3 rounded border border-mauve-500/20 bg-white shadow-sm flex flex-col items-center justify-center">
+                  <span className="text-[9.5px] font-mono uppercase tracking-wider text-mauve-900 font-bold">Class Rank</span>
+                  <span className="text-lg font-display font-black text-mauve-950 mt-0.5">
+                    {studentRank} <span className="text-xs text-mauve-700 font-semibold">of {customClassRoll}</span>
                   </span>
                 </div>
               </div>
@@ -2468,7 +2468,7 @@ export default function ReportPDF({
               {showSignature && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 border-t border-mauve-500/10 pt-4">
                   <div className="space-y-2">
-                    <span className="block text-[9px] uppercase font-mono tracking-wider text-gray-400 font-semibold">
+                    <span className="block text-[9px] uppercase font-mono tracking-wider text-mauve-900 font-bold">
                       Class Teacher's Authentication
                     </span>
                     <div className="h-12 flex items-end">
@@ -2477,13 +2477,13 @@ export default function ReportPDF({
                       </div>
                     </div>
                     <div className="text-[10px]">
-                      <span className="block font-bold text-gray-800">Class Teacher Code: ET-{student.className.replace(/\s+/g, '')}</span>
-                      <span className="text-gray-400">Eastfield Academy Staff</span>
+                      <span className="block font-bold text-gray-900">Class Teacher Code: ET-{student.className.replace(/\s+/g, '')}</span>
+                      <span className="text-mauve-800 font-medium">Eastfield Academy Staff</span>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <span className="block text-[9px] uppercase font-mono tracking-wider text-gray-400 font-semibold">
+                    <span className="block text-[9px] uppercase font-mono tracking-wider text-mauve-900 font-bold">
                       Principal's Endorsement & Stamp
                     </span>
                     <div className="h-12 flex items-end">

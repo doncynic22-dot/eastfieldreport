@@ -33,133 +33,544 @@
 }
 
 /* =========================================================================
-   DEEP VIOLET & WHITE SCHOOL MANAGEMENT THEME (Screen Mode)
+   BALANCED VIOLET & WHITE SCHOOL MANAGEMENT THEME (Screen Mode)
    ========================================================================= */
 @media screen {
+  /* Crisp, airy violet-tinted white background for balanced contrast */
   body,
   #root,
   .min-h-screen {
-    background-color: #160330 !important;
-    color: #FFFFFF !important;
+    background-color: #F8F6FC !important;
+    color: #1A043B !important;
   }
 
-  header,
-  footer {
+  /* Deep Violet High-Contrast Brand Header */
+  header {
     background-color: #1C053E !important;
     border-color: rgba(255, 255, 255, 0.15) !important;
     color: #FFFFFF !important;
   }
 
+  /* Crisp White Cards & Containers with subtle violet border */
   .bg-white:not(.print-container):not(.print-container *),
+  .bg-\[\#210747\]:not(.print-container):not(.print-container *) {
+    background-color: #FFFFFF !important;
+    color: #1A043B !important;
+    border-color: rgba(80, 33, 173, 0.15) !important;
+  }
+
+  .bg-\[\#210747\]:not(.print-container *) .text-white,
+  .bg-\[\#210747\]:not(.print-container *) .text-gray-300,
+  .bg-\[\#210747\]:not(.print-container *) .text-gray-400 {
+    color: #1A043B !important;
+  }
+
+  .bg-\[\#210747\]:not(.print-container *) .text-purple-300,
+  .bg-\[\#210747\]:not(.print-container *) .text-purple-400 {
+    color: #5021AD !important;
+  }
+
+  /* Light background containers & subtle cards */
+  .bg-\[\#1A0438\]:not(.print-container *),
+  .bg-\[\#1A0438\]\/80:not(.print-container *),
+  .bg-white\/5:not(.print-container *),
+  .bg-white\/10:not(.print-container *),
+  .bg-white\/15:not(.print-container *),
+  .bg-white\/20:not(.print-container *),
+  .bg-white\/30:not(.print-container *),
+  .bg-white\/40:not(.print-container *) {
+    background-color: #F3EFFC !important;
+    color: #120229 !important;
+    border-color: rgba(80, 33, 173, 0.2) !important;
+  }
+
   .bg-mauve-50:not(.print-container):not(.print-container *),
   .bg-mauve-50\/50:not(.print-container):not(.print-container *),
   .bg-mauve-50\/80:not(.print-container):not(.print-container *),
+  .bg-mauve-100:not(.print-container):not(.print-container *),
+  .bg-mauve-100\/50:not(.print-container):not(.print-container *),
+  .bg-mauve-100\/80:not(.print-container):not(.print-container *),
+  .bg-mauve-200:not(.print-container):not(.print-container *),
+  .bg-mauve-200\/50:not(.print-container):not(.print-container *),
+  .bg-mauve-200\/80:not(.print-container):not(.print-container *),
+  .bg-purple-50:not(.print-container):not(.print-container *),
+  .bg-purple-100:not(.print-container):not(.print-container *),
+  .bg-purple-200:not(.print-container):not(.print-container *),
+  .bg-purple-500\/10:not(.print-container):not(.print-container *),
+  .bg-purple-500\/20:not(.print-container):not(.print-container *),
+  .bg-purple-600\/10:not(.print-container):not(.print-container *),
+  .bg-purple-600\/20:not(.print-container):not(.print-container *),
+  .bg-indigo-50:not(.print-container):not(.print-container *),
+  .bg-indigo-100:not(.print-container):not(.print-container *),
+  .bg-indigo-200:not(.print-container):not(.print-container *),
+  .bg-indigo-500\/10:not(.print-container):not(.print-container *),
+  .bg-indigo-500\/20:not(.print-container):not(.print-container *),
   .bg-gray-50:not(.print-container):not(.print-container *),
   .bg-gray-100:not(.print-container):not(.print-container *),
-  .bg-slate-50:not(.print-container):not(.print-container *) {
-    background-color: #210747 !important;
-    color: #FFFFFF !important;
-    border-color: rgba(255, 255, 255, 0.18) !important;
+  .bg-gray-200:not(.print-container):not(.print-container *),
+  .bg-slate-50:not(.print-container):not(.print-container *),
+  .bg-slate-100:not(.print-container):not(.print-container *),
+  .bg-slate-200:not(.print-container):not(.print-container *) {
+    background-color: #F3EFFC !important;
+    color: #120229 !important;
+    border-color: rgba(80, 33, 173, 0.18) !important;
   }
 
-  .text-gray-900:not(.print-container *),
-  .text-gray-800:not(.print-container *),
+  /* Colored Light Background Badges */
+  .bg-amber-50:not(.print-container *),
+  .bg-amber-100:not(.print-container *),
+  .bg-amber-200:not(.print-container *),
+  .bg-amber-500\/10:not(.print-container *),
+  .bg-amber-500\/20:not(.print-container *),
+  .bg-yellow-50:not(.print-container *),
+  .bg-yellow-100:not(.print-container *),
+  .bg-yellow-200:not(.print-container *) {
+    background-color: #FEF3C7 !important;
+    color: #78350F !important;
+    border-color: #FCD34D !important;
+  }
+
+  .bg-emerald-50:not(.print-container *),
+  .bg-emerald-100:not(.print-container *),
+  .bg-emerald-200:not(.print-container *),
+  .bg-emerald-500\/10:not(.print-container *),
+  .bg-emerald-500\/20:not(.print-container *),
+  .bg-green-50:not(.print-container *),
+  .bg-green-100:not(.print-container *),
+  .bg-green-200:not(.print-container *) {
+    background-color: #ECFDF5 !important;
+    color: #065F46 !important;
+    border-color: #6EE7B7 !important;
+  }
+
+  .bg-rose-50:not(.print-container *),
+  .bg-rose-100:not(.print-container *),
+  .bg-rose-200:not(.print-container *),
+  .bg-rose-500\/10:not(.print-container *),
+  .bg-rose-500\/20:not(.print-container *),
+  .bg-red-50:not(.print-container *),
+  .bg-red-100:not(.print-container *),
+  .bg-red-200:not(.print-container *) {
+    background-color: #FFF1F2 !important;
+    color: #881337 !important;
+    border-color: #FDA4AF !important;
+  }
+
+  .bg-blue-50:not(.print-container *),
+  .bg-blue-100:not(.print-container *),
+  .bg-blue-200:not(.print-container *),
+  .bg-blue-500\/10:not(.print-container *),
+  .bg-blue-500\/20:not(.print-container *),
+  .bg-sky-50:not(.print-container *),
+  .bg-sky-100:not(.print-container *),
+  .bg-sky-200:not(.print-container *) {
+    background-color: #EFF6FF !important;
+    color: #1E3A8A !important;
+    border-color: #93C5FD !important;
+  }
+
+  /* -----------------------------------------------------------------------
+     1. COMPREHENSIVE TEXT CONTRAST FOR LIGHT THEME (Screen Mode)
+     Every text class is mapped to high-contrast dark violet / slate
+     for 100% crisp readability (WCAG AAA / AA compliant).
+     ----------------------------------------------------------------------- */
+  .text-white:not(.print-container *),
+  .text-gray-100:not(.print-container *),
+  .text-gray-200:not(.print-container *),
+  .text-gray-300:not(.print-container *),
   .text-gray-700:not(.print-container *),
-  .text-gray-600:not(.print-container *),
-  .text-gray-500:not(.print-container *),
-  .text-mauve-900:not(.print-container *),
-  .text-mauve-800:not(.print-container *),
-  .text-mauve-700:not(.print-container *),
-  .text-mauve-600:not(.print-container *),
-  [class*="text-mauve-"]:not(.print-container *),
-  [class*="text-gray-"]:not(.print-container *),
-  [class*="text-slate-"]:not(.print-container *),
-  .text-black:not(.print-container *),
-  .text-slate-900:not(.print-container *),
-  .text-slate-800:not(.print-container *),
+  .text-gray-800:not(.print-container *),
+  .text-gray-900:not(.print-container *),
+  .text-slate-100:not(.print-container *),
+  .text-slate-200:not(.print-container *),
+  .text-slate-300:not(.print-container *),
   .text-slate-700:not(.print-container *),
-  .text-white:not(.print-container *) {
+  .text-slate-800:not(.print-container *),
+  .text-slate-900:not(.print-container *),
+  .text-slate-950:not(.print-container *),
+  .text-mauve-100:not(.print-container *),
+  .text-mauve-200:not(.print-container *),
+  .text-mauve-300:not(.print-container *),
+  .text-mauve-700:not(.print-container *),
+  .text-mauve-800:not(.print-container *),
+  .text-mauve-900:not(.print-container *),
+  .text-mauve-950:not(.print-container *),
+  .text-purple-100:not(.print-container *),
+  .text-purple-200:not(.print-container *),
+  .text-purple-300:not(.print-container *),
+  .text-purple-700:not(.print-container *),
+  .text-purple-800:not(.print-container *),
+  .text-purple-900:not(.print-container *),
+  .text-purple-950:not(.print-container *),
+  .text-indigo-100:not(.print-container *),
+  .text-indigo-200:not(.print-container *),
+  .text-indigo-300:not(.print-container *),
+  .text-indigo-700:not(.print-container *),
+  .text-indigo-800:not(.print-container *),
+  .text-indigo-900:not(.print-container *),
+  .text-\[\#1C053E\]:not(.print-container *),
+  [class*="text-mauve-900/"]:not(.print-container *),
+  [class*="text-mauve-800/"]:not(.print-container *),
+  [class*="text-mauve-700/"]:not(.print-container *),
+  [class*="text-white/"]:not(.print-container *),
+  [class*="text-purple-300/"]:not(.print-container *),
+  [class*="text-purple-200/"]:not(.print-container *) {
+    color: #120229 !important; /* Ultra-crisp dark violet-black (WCAG AAA) */
+  }
+
+  .text-gray-400:not(.print-container *),
+  .text-gray-500:not(.print-container *),
+  .text-gray-600:not(.print-container *),
+  .text-slate-400:not(.print-container *),
+  .text-slate-500:not(.print-container *),
+  .text-slate-600:not(.print-container *),
+  .text-mauve-400:not(.print-container *),
+  .text-mauve-500:not(.print-container *),
+  .text-mauve-600:not(.print-container *),
+  .text-purple-400:not(.print-container *),
+  .text-purple-500:not(.print-container *),
+  .text-purple-600:not(.print-container *),
+  .text-indigo-400:not(.print-container *),
+  .text-indigo-500:not(.print-container *),
+  .text-indigo-600:not(.print-container *) {
+    color: #3D2C63 !important; /* Deep readable violet-slate (WCAG AA) */
+  }
+
+  /* Colored text maps to dark high-contrast WCAG equivalents */
+  .text-emerald-300:not(.print-container *),
+  .text-emerald-400:not(.print-container *),
+  .text-emerald-500:not(.print-container *),
+  .text-emerald-600:not(.print-container *),
+  .text-green-300:not(.print-container *),
+  .text-green-400:not(.print-container *),
+  .text-green-500:not(.print-container *),
+  .text-green-600:not(.print-container *) {
+    color: #047857 !important; /* Deep emerald-700 */
+  }
+
+  .text-yellow-300:not(.print-container *),
+  .text-yellow-400:not(.print-container *),
+  .text-yellow-500:not(.print-container *),
+  .text-yellow-600:not(.print-container *),
+  .text-amber-300:not(.print-container *),
+  .text-amber-400:not(.print-container *),
+  .text-amber-500:not(.print-container *),
+  .text-amber-600:not(.print-container *) {
+    color: #9A3412 !important; /* Deep amber/orange-800 */
+  }
+
+  .text-rose-300:not(.print-container *),
+  .text-rose-400:not(.print-container *),
+  .text-rose-500:not(.print-container *),
+  .text-rose-600:not(.print-container *),
+  .text-red-300:not(.print-container *),
+  .text-red-400:not(.print-container *),
+  .text-red-500:not(.print-container *),
+  .text-red-600:not(.print-container *) {
+    color: #B91C1C !important; /* Deep red-700 */
+  }
+
+  .text-blue-300:not(.print-container *),
+  .text-blue-400:not(.print-container *),
+  .text-blue-500:not(.print-container *),
+  .text-blue-600:not(.print-container *),
+  .text-sky-300:not(.print-container *),
+  .text-sky-400:not(.print-container *),
+  .text-sky-500:not(.print-container *),
+  .text-sky-600:not(.print-container *),
+  .text-cyan-300:not(.print-container *),
+  .text-cyan-400:not(.print-container *),
+  .text-cyan-500:not(.print-container *),
+  .text-cyan-600:not(.print-container *) {
+    color: #1D4ED8 !important; /* Deep blue-700 */
+  }
+
+  /* -----------------------------------------------------------------------
+     2. DARK BADGES, BUTTONS, HEADERS, FOOTERS PRESERVE CRISP WHITE TEXT
+     Any element inside a dark background container overrides light-theme rules
+     and displays crisp white or accent text for perfect legibility.
+     ----------------------------------------------------------------------- */
+  header,
+  header *,
+  footer,
+  footer *,
+  .bg-mauve-900:not(.print-container *),
+  .bg-mauve-900:not(.print-container *) *,
+  .bg-mauve-800:not(.print-container *),
+  .bg-mauve-800:not(.print-container *) *,
+  .bg-mauve-700:not(.print-container *),
+  .bg-mauve-700:not(.print-container *) *,
+  .bg-mauve-600:not(.print-container *),
+  .bg-mauve-600:not(.print-container *) *,
+  .bg-mauve-500:not(.print-container *),
+  .bg-mauve-500:not(.print-container *) *,
+  .bg-\[\#1C053E\]:not(.print-container *),
+  .bg-\[\#1C053E\]:not(.print-container *) *,
+  .bg-\[\#1E0650\]:not(.print-container *),
+  .bg-\[\#1E0650\]:not(.print-container *) *,
+  .bg-\[\#2B0D5D\]:not(.print-container *),
+  .bg-\[\#2B0D5D\]:not(.print-container *) *,
+  .bg-\[\#160330\]:not(.print-container *),
+  .bg-\[\#160330\]:not(.print-container *) *,
+  .bg-\[\#5021AD\]:not(.print-container *),
+  .bg-\[\#5021AD\]:not(.print-container *) *,
+  .bg-\[\#3E168D\]:not(.print-container *),
+  .bg-\[\#3E168D\]:not(.print-container *) *,
+  .bg-purple-900:not(.print-container *),
+  .bg-purple-900:not(.print-container *) *,
+  .bg-purple-800:not(.print-container *),
+  .bg-purple-800:not(.print-container *) *,
+  .bg-purple-700:not(.print-container *),
+  .bg-purple-700:not(.print-container *) *,
+  .bg-purple-600:not(.print-container *),
+  .bg-purple-600:not(.print-container *) *,
+  .bg-purple-500:not(.print-container *),
+  .bg-purple-500:not(.print-container *) *,
+  .bg-indigo-900:not(.print-container *),
+  .bg-indigo-900:not(.print-container *) *,
+  .bg-indigo-800:not(.print-container *),
+  .bg-indigo-800:not(.print-container *) *,
+  .bg-indigo-700:not(.print-container *),
+  .bg-indigo-700:not(.print-container *) *,
+  .bg-indigo-600:not(.print-container *),
+  .bg-indigo-600:not(.print-container *) *,
+  .bg-indigo-500:not(.print-container *),
+  .bg-indigo-500:not(.print-container *) *,
+  .bg-emerald-900:not(.print-container *),
+  .bg-emerald-900:not(.print-container *) *,
+  .bg-emerald-800:not(.print-container *),
+  .bg-emerald-800:not(.print-container *) *,
+  .bg-emerald-700:not(.print-container *),
+  .bg-emerald-700:not(.print-container *) *,
+  .bg-emerald-600:not(.print-container *),
+  .bg-emerald-600:not(.print-container *) *,
+  .bg-emerald-500:not(.print-container *),
+  .bg-emerald-500:not(.print-container *) *,
+  .bg-green-900:not(.print-container *),
+  .bg-green-900:not(.print-container *) *,
+  .bg-green-800:not(.print-container *),
+  .bg-green-800:not(.print-container *) *,
+  .bg-green-700:not(.print-container *),
+  .bg-green-700:not(.print-container *) *,
+  .bg-green-600:not(.print-container *),
+  .bg-green-600:not(.print-container *) *,
+  .bg-green-500:not(.print-container *),
+  .bg-green-500:not(.print-container *) *,
+  .bg-rose-900:not(.print-container *),
+  .bg-rose-900:not(.print-container *) *,
+  .bg-rose-800:not(.print-container *),
+  .bg-rose-800:not(.print-container *) *,
+  .bg-rose-700:not(.print-container *),
+  .bg-rose-700:not(.print-container *) *,
+  .bg-rose-600:not(.print-container *),
+  .bg-rose-600:not(.print-container *) *,
+  .bg-rose-500:not(.print-container *),
+  .bg-rose-500:not(.print-container *) *,
+  .bg-red-900:not(.print-container *),
+  .bg-red-900:not(.print-container *) *,
+  .bg-red-800:not(.print-container *),
+  .bg-red-800:not(.print-container *) *,
+  .bg-red-700:not(.print-container *),
+  .bg-red-700:not(.print-container *) *,
+  .bg-red-600:not(.print-container *),
+  .bg-red-600:not(.print-container *) *,
+  .bg-red-500:not(.print-container *),
+  .bg-red-500:not(.print-container *) *,
+  .bg-blue-900:not(.print-container *),
+  .bg-blue-900:not(.print-container *) *,
+  .bg-blue-800:not(.print-container *),
+  .bg-blue-800:not(.print-container *) *,
+  .bg-blue-700:not(.print-container *),
+  .bg-blue-700:not(.print-container *) *,
+  .bg-blue-600:not(.print-container *),
+  .bg-blue-600:not(.print-container *) *,
+  .bg-blue-500:not(.print-container *),
+  .bg-blue-500:not(.print-container *) *,
+  .bg-amber-800:not(.print-container *),
+  .bg-amber-800:not(.print-container *) *,
+  .bg-amber-700:not(.print-container *),
+  .bg-amber-700:not(.print-container *) *,
+  .bg-amber-600:not(.print-container *),
+  .bg-amber-600:not(.print-container *) *,
+  .bg-amber-500:not(.print-container *),
+  .bg-amber-500:not(.print-container *) *,
+  .bg-gray-900:not(.print-container *),
+  .bg-gray-900:not(.print-container *) *,
+  .bg-gray-800:not(.print-container *),
+  .bg-gray-800:not(.print-container *) *,
+  .bg-gray-700:not(.print-container *),
+  .bg-gray-700:not(.print-container *) *,
+  .bg-slate-900:not(.print-container *),
+  .bg-slate-900:not(.print-container *) *,
+  .bg-slate-800:not(.print-container *),
+  .bg-slate-800:not(.print-container *) *,
+  .bg-slate-700:not(.print-container *),
+  .bg-slate-700:not(.print-container *) *,
+  .bg-black:not(.print-container *),
+  .bg-black:not(.print-container *) *,
+  [class*="bg-gradient"]:not(.print-container *),
+  [class*="bg-gradient"]:not(.print-container *) * {
     color: #FFFFFF !important;
   }
 
-  /* Increase font size across all pages in screen mode */
+  /* Allow accent gold / emerald / lavender / sky / rose text inside dark headers/banners to shine */
+  header .text-yellow-300:not(.print-container *),
+  header .text-yellow-400:not(.print-container *),
+  header .text-amber-300:not(.print-container *),
+  header .text-amber-400:not(.print-container *),
+  [class*="bg-mauve"] .text-yellow-300:not(.print-container *),
+  [class*="bg-mauve"] .text-yellow-400:not(.print-container *),
+  [class*="bg-purple"] .text-yellow-300:not(.print-container *),
+  [class*="bg-purple"] .text-yellow-400:not(.print-container *),
+  [class*="bg-[#1C053E]"] .text-yellow-300:not(.print-container *),
+  [class*="bg-[#1C053E]"] .text-yellow-400:not(.print-container *),
+  [class*="bg-[#1E0650]"] .text-yellow-300:not(.print-container *),
+  [class*="bg-[#1E0650]"] .text-yellow-400:not(.print-container *),
+  [class*="bg-amber"] .text-yellow-300:not(.print-container *),
+  [class*="bg-amber"] .text-yellow-400:not(.print-container *) {
+    color: #FBBF24 !important; /* Crisp gold */
+  }
+
+  header .text-purple-200:not(.print-container *),
+  header .text-purple-300:not(.print-container *),
+  header .text-mauve-200:not(.print-container *),
+  header .text-mauve-300:not(.print-container *),
+  [class*="bg-mauve"] .text-purple-200:not(.print-container *),
+  [class*="bg-mauve"] .text-purple-300:not(.print-container *),
+  [class*="bg-[#1C053E]"] .text-purple-200:not(.print-container *),
+  [class*="bg-[#1C053E]"] .text-purple-300:not(.print-container *),
+  [class*="bg-[#1E0650]"] .text-purple-200:not(.print-container *),
+  [class*="bg-[#1E0650]"] .text-purple-300:not(.print-container *) {
+    color: #E9E3F5 !important; /* Lavender accent */
+  }
+
+  header .text-emerald-300:not(.print-container *),
+  header .text-emerald-400:not(.print-container *),
+  header .text-green-300:not(.print-container *),
+  header .text-green-400:not(.print-container *),
+  [class*="bg-[#1C053E]"] .text-emerald-300:not(.print-container *),
+  [class*="bg-[#1C053E]"] .text-emerald-400:not(.print-container *),
+  [class*="bg-[#1E0650]"] .text-emerald-300:not(.print-container *),
+  [class*="bg-[#1E0650]"] .text-emerald-400:not(.print-container *) {
+    color: #34D399 !important; /* Bright mint accent */
+  }
+
+  header .text-rose-300:not(.print-container *),
+  header .text-rose-400:not(.print-container *),
+  [class*="bg-[#1C053E]"] .text-rose-300:not(.print-container *),
+  [class*="bg-[#1C053E]"] .text-rose-400:not(.print-container *) {
+    color: #FB7185 !important; /* Bright rose accent */
+  }
+
+  header .text-sky-300:not(.print-container *),
+  header .text-sky-400:not(.print-container *),
+  header .text-blue-300:not(.print-container *),
+  [class*="bg-[#1C053E]"] .text-sky-300:not(.print-container *),
+  [class*="bg-[#1C053E]"] .text-sky-400:not(.print-container *) {
+    color: #38BDF8 !important; /* Bright sky blue accent */
+  }
+
+  /* Deep Violet primary buttons and badges stay bold & white */
+  .bg-mauve-900:not(.print-container *),
+  .bg-mauve-800:not(.print-container *),
+  .bg-\[\#1C053E\]:not(.print-container *),
+  .bg-\[\#1E0650\]:not(.print-container *) {
+    background-color: #4F1FA3 !important;
+    color: #FFFFFF !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+  }
+
+  .bg-mauve-900:hover:not(.print-container *),
+  .bg-mauve-800:hover:not(.print-container *) {
+    background-color: #38137A !important;
+    color: #FFFFFF !important;
+  }
+
+  /* Ensure any light background pill, button, or badge inside dark headers/containers has crisp dark text */
+  header .bg-white:not(.print-container *),
+  header .bg-white:not(.print-container *) *,
+  header .bg-mauve-50:not(.print-container *),
+  header .bg-mauve-50:not(.print-container *) *,
+  header .bg-mauve-100:not(.print-container *),
+  header .bg-mauve-100:not(.print-container *) *,
+  header .bg-gray-50:not(.print-container *),
+  header .bg-gray-50:not(.print-container *) *,
+  header .bg-gray-100:not(.print-container *),
+  header .bg-gray-100:not(.print-container *) *,
+  [class*="bg-mauve-900"] .bg-white:not(.print-container *),
+  [class*="bg-mauve-900"] .bg-white:not(.print-container *) *,
+  [class*="bg-mauve-900"] .bg-mauve-50:not(.print-container *),
+  [class*="bg-mauve-900"] .bg-mauve-50:not(.print-container *) * {
+    color: #120229 !important;
+  }
+
+  /* Crisp visible borders and dividers in tables and cards */
+  table:not(.print-container *),
+  th:not(.print-container *),
+  td:not(.print-container *),
+  tr:not(.print-container *),
+  .border-white\/10:not(.print-container *),
+  .border-white\/15:not(.print-container *),
+  .border-white\/20:not(.print-container *),
+  .border-white\/30:not(.print-container *),
+  .border-white\/40:not(.print-container *),
+  .divide-white\/10 > *:not(.print-container *),
+  .divide-white\/15 > *:not(.print-container *),
+  .divide-white\/20 > *:not(.print-container *) {
+    border-color: rgba(80, 33, 173, 0.18) !important;
+  }
+
+  /* Clean white inputs with violet focus and border */
+  input:not(.print-container *),
+  select:not(.print-container *),
+  textarea:not(.print-container *),
+  option:not(.print-container *) {
+    background-color: #FFFFFF !important;
+    color: #1A043B !important;
+    border-color: rgba(80, 33, 173, 0.25) !important;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #9283B4 !important;
+  }
+
+  /* Increase font size across all pages in screen mode for readability */
   html {
-    font-size: 17px;
+    font-size: 16.5px;
   }
 
   .text-xs:not(.print-container *),
   .text-\[9px\]:not(.print-container *),
   .text-\[10px\]:not(.print-container *),
   .text-\[11px\]:not(.print-container *) {
-    font-size: 0.9rem !important;
+    font-size: 0.88rem !important;
     line-height: 1.35rem !important;
   }
 
   .text-sm:not(.print-container *) {
-    font-size: 1.05rem !important;
+    font-size: 1.0rem !important;
     line-height: 1.5rem !important;
   }
 
   .text-base:not(.print-container *) {
-    font-size: 1.15rem !important;
-    line-height: 1.7rem !important;
+    font-size: 1.12rem !important;
+    line-height: 1.65rem !important;
   }
 
   .text-lg:not(.print-container *) {
-    font-size: 1.3rem !important;
-    line-height: 1.85rem !important;
+    font-size: 1.25rem !important;
+    line-height: 1.8rem !important;
   }
 
   .text-xl:not(.print-container *) {
-    font-size: 1.5rem !important;
-    line-height: 2.1rem !important;
+    font-size: 1.45rem !important;
+    line-height: 2.0rem !important;
   }
 
   .text-2xl:not(.print-container *) {
-    font-size: 1.85rem !important;
-    line-height: 2.35rem !important;
-  }
-
-  .text-gray-400:not(.print-container *),
-  .text-slate-400:not(.print-container *) {
-    color: rgba(255, 255, 255, 0.85) !important;
-  }
-
-  input:not(.print-container *),
-  select:not(.print-container *),
-  textarea:not(.print-container *) {
-    background-color: #1A0438 !important;
-    color: #FFFFFF !important;
-    border-color: rgba(255, 255, 255, 0.3) !important;
-  }
-
-  input::placeholder,
-  textarea::placeholder {
-    color: rgba(255, 255, 255, 0.55) !important;
-  }
-
-  table:not(.print-container *),
-  th:not(.print-container *),
-  td:not(.print-container *),
-  tr:not(.print-container *),
-  .border-mauve-500\/20:not(.print-container *),
-  .border-mauve-200:not(.print-container *),
-  .border-mauve-150:not(.print-container *),
-  .border-gray-200:not(.print-container *) {
-    border-color: rgba(255, 255, 255, 0.15) !important;
-  }
-
-  .bg-mauve-900:not(.print-container *),
-  .bg-mauve-800:not(.print-container *) {
-    background-color: #4F1FA3 !important;
-    color: #FFFFFF !important;
-    border: 1px solid rgba(255, 255, 255, 0.3) !important;
-  }
-
-  .bg-mauve-900:hover:not(.print-container *),
-  .bg-mauve-800:hover:not(.print-container *) {
-    background-color: #6428C9 !important;
-    color: #FFFFFF !important;
+    font-size: 1.75rem !important;
+    line-height: 2.25rem !important;
   }
 }
 

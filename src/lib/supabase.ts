@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog } from '../types';
+import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord } from '../types';
 
 // Helper to retrieve credentials from env or localStorage
 export function getSupabaseCredentials() {
@@ -274,10 +274,51 @@ ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '
 ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS timestamp VARCHAR;
 ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
 
+CREATE TABLE IF NOT EXISTS public.ea_inventory (
+  id VARCHAR PRIMARY KEY,
+  location_name VARCHAR NOT NULL,
+  category VARCHAR DEFAULT 'Classroom',
+  student_chairs INTEGER DEFAULT 0,
+  student_tables INTEGER DEFAULT 0,
+  textbooks INTEGER DEFAULT 0,
+  washrooms INTEGER DEFAULT 0,
+  sinks INTEGER DEFAULT 0,
+  buses INTEGER DEFAULT 0,
+  teacher_chairs INTEGER DEFAULT 0,
+  teacher_tables INTEGER DEFAULT 0,
+  computers INTEGER DEFAULT 0,
+  projectors INTEGER DEFAULT 0,
+  notes TEXT,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS location_name VARCHAR;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS category VARCHAR DEFAULT 'Classroom';
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS student_chairs INTEGER DEFAULT 0;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS student_tables INTEGER DEFAULT 0;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS textbooks INTEGER DEFAULT 0;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS washrooms INTEGER DEFAULT 0;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS sinks INTEGER DEFAULT 0;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS buses INTEGER DEFAULT 0;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS teacher_chairs INTEGER DEFAULT 0;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS teacher_tables INTEGER DEFAULT 0;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS computers INTEGER DEFAULT 0;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS projectors INTEGER DEFAULT 0;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS custom_items TEXT;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
 -- 8. Disable Row Level Security (RLS) on all tables to ensure public frontend sync operates correctly
 ALTER TABLE public.ea_config DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_students DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_teachers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_grades DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_attendance DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_bills DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_fee_payments DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_fee_structures DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_daily_collections DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_sync_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_inventory DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_grades DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_attendance DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_bills DISABLE ROW LEVEL SECURITY;
@@ -1849,6 +1890,112 @@ export async function saveSupabaseSyncLogs(logs: SyncAuditLog[]): Promise<boolea
   }
 }
 
+// 11. SYNC INVENTORY RECORDS
+export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord[] | null> {
+  const client = getSupabaseClient();
+  if (!client) {
+    const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
+    return cached ? JSON.parse(cached) : null;
+  }
+  try {
+    const { data, error } = await client.from('ea_inventory').select('*');
+    if (error) {
+      const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
+      return cached ? JSON.parse(cached) : null;
+    }
+    if (!data || data.length === 0) {
+      const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
+      return cached ? JSON.parse(cached) : null;
+    }
+    return data.map(item => ({
+      id: item.id || `inv_${Math.random()}`,
+      locationName: item.location_name || item.locationName || '',
+      category: item.category || 'Classroom',
+      studentChairs: Number(item.student_chairs ?? item.studentChairs) || 0,
+      studentTables: Number(item.student_tables ?? item.studentTables) || 0,
+      textbooks: Number(item.textbooks) || 0,
+      washrooms: Number(item.washrooms) || 0,
+      sinks: Number(item.sinks) || 0,
+      buses: Number(item.buses) || 0,
+      teacherChairs: Number(item.teacher_chairs ?? item.teacherChairs) || 0,
+      teacherTables: Number(item.teacher_tables ?? item.teacherTables) || 0,
+      computers: Number(item.computers) || 0,
+      projectors: Number(item.projectors) || 0,
+      customItems: (() => {
+        if (Array.isArray(item.customItems)) return item.customItems;
+        if (Array.isArray(item.custom_items)) return item.custom_items;
+        if (typeof item.custom_items === 'string') {
+          try { return JSON.parse(item.custom_items); } catch(e) {}
+        }
+        return [];
+      })(),
+      notes: item.notes || '',
+      updatedAt: item.updated_at || item.updatedAt || new Date().toISOString()
+    }));
+  } catch (err: any) {
+    const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
+    return cached ? JSON.parse(cached) : null;
+  }
+}
+
+export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[], deletedIds: string[] = []): Promise<boolean> {
+  localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(inventory));
+  localStorage.setItem('ea_school_inventory', JSON.stringify(inventory));
+
+  try {
+    window.dispatchEvent(new Event('ea_inventory_updated'));
+  } catch (e) {}
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+
+  try {
+    if (deletedIds && deletedIds.length > 0) {
+      try {
+        await client.from('ea_inventory').delete().in('id', deletedIds);
+      } catch (e) {}
+    }
+
+    const payloads = inventory.map(item => ({
+      id: item.id,
+      location_name: item.locationName,
+      category: item.category,
+      student_chairs: item.studentChairs,
+      student_tables: item.studentTables,
+      textbooks: item.textbooks,
+      washrooms: item.washrooms,
+      sinks: item.sinks,
+      buses: item.buses,
+      teacher_chairs: item.teacherChairs,
+      teacher_tables: item.teacherTables,
+      computers: item.computers || 0,
+      projectors: item.projectors || 0,
+      custom_items: JSON.stringify(item.customItems || []),
+      notes: item.notes || '',
+      updated_at: item.updatedAt || new Date().toISOString()
+    }));
+
+    const { error } = await safeUpsert('ea_inventory', payloads, client, 'id');
+    if (error) {
+      console.warn('Supabase ea_inventory upsert notice:', error);
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('saveSupabaseInventory exception:', err);
+    return true;
+  }
+}
+
+export async function deleteSupabaseInventoryRecord(id: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('ea_inventory').delete().eq('id', id);
+    } catch (e) {}
+  }
+  return true;
+}
+
 // Global setup helper that tries to execute the setup via RPC or instructions
 export async function createTablesInSupabase(): Promise<{ success: boolean; message: string }> {
   const client = getSupabaseClient();
@@ -1929,7 +2076,7 @@ export async function compressPassportPhoto(file: File): Promise<{ blob: Blob; d
 }
 
 /**
- * Uploads a student passport photograph to the dedicated Supabase Storage bucket ('student-photos').
+ * Uploads a student passport photograph directly to the Supabase Storage bucket ('ea' or 'student-photos').
  * Returns the global CDN public URL so the image synchronizes across all authorized user devices.
  * Gracefully falls back to a compressed data URL if storage upload is offline or restricted.
  */
@@ -1941,33 +2088,63 @@ export async function uploadStudentPhotoToSupabase(file: File, studentId: string
       return dataUrl;
     }
 
-    // Attempt to ensure the student-photos public bucket exists
+    const cleanId = studentId ? studentId.replace(/[^a-zA-Z0-9_-]/g, '_') : `student_${Date.now()}`;
+    const fileExt = file.name.split('.').pop() || 'jpg';
+    const fileName = `student-photos/${cleanId}_${Date.now()}.${fileExt}`;
+
+    // 1. First attempt upload directly to the user's created 'ea' storage bucket
+    try {
+      const { error: eaErr } = await client.storage
+        .from('ea')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: file.type || 'image/jpeg',
+        });
+
+      if (!eaErr) {
+        const { data: urlData } = client.storage
+          .from('ea')
+          .getPublicUrl(fileName);
+
+        if (urlData?.publicUrl) {
+          console.log('Successfully uploaded student photograph to Supabase bucket "ea":', urlData.publicUrl);
+          return urlData.publicUrl;
+        }
+      } else {
+        console.warn('Upload to bucket "ea" notice:', eaErr.message);
+      }
+    } catch (e: any) {
+      console.warn('Bucket "ea" upload exception, attempting secondary bucket:', e?.message || e);
+    }
+
+    // 2. Secondary fallback: Attempt upload to 'student-photos' storage bucket
     await client.storage.createBucket('student-photos', {
       public: true,
       fileSizeLimit: 5242880,
     }).catch(() => {});
 
-    const cleanId = studentId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const fileName = `passport/${cleanId}_${Date.now()}.jpg`;
-
+    const altFileName = `passport/${cleanId}_${Date.now()}.jpg`;
     const { error: uploadErr } = await client.storage
       .from('student-photos')
-      .upload(fileName, blob, {
+      .upload(altFileName, blob, {
         cacheControl: '3600',
         upsert: true,
         contentType: 'image/jpeg',
       });
 
-    if (uploadErr) {
-      console.warn('Supabase Storage bucket upload fallback to compressed database storage:', uploadErr.message);
-      return dataUrl;
+    if (!uploadErr) {
+      const { data: urlData } = client.storage
+        .from('student-photos')
+        .getPublicUrl(altFileName);
+
+      if (urlData?.publicUrl) {
+        return urlData.publicUrl;
+      }
     }
 
-    const { data: urlData } = client.storage
-      .from('student-photos')
-      .getPublicUrl(fileName);
-
-    return urlData?.publicUrl || dataUrl;
+    // 3. Fallback to optimized data URL if bucket permissions/network restrict direct upload
+    return dataUrl;
   } catch (err) {
     console.warn('Student photo storage upload error, falling back to data URL:', err);
     return new Promise((resolve) => {

@@ -4,12 +4,13 @@
  */
 
 import React, { useState } from 'react';
-import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill } from '../types';
-import { User, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera } from 'lucide-react';
+import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill, User } from '../types';
+import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import FeesCollectionModule from './FeesCollectionModule';
 import FeesDashboard from './FeesDashboard';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig } from '../lib/supabase';
+import SchoolInventoryModule from './SchoolInventoryModule';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, uploadStudentPhotoToSupabase } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
@@ -42,7 +43,7 @@ interface AdminDashboardProps {
 }
 
 
-type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'transcripts' | 'students' | 'teachers' | 'config';
+type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'transcripts' | 'students' | 'teachers' | 'class-assignments' | 'inventory' | 'config';
 
 export default function AdminDashboard({
   students,
@@ -115,6 +116,7 @@ export default function AdminDashboard({
   const [viewingStudentProfile, setViewingStudentProfile] = useState<Student | null>(null);
   const [profileTab, setProfileTab] = useState<'academic' | 'attendance' | 'guardian'>('academic');
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [isUploadingStudentPhoto, setIsUploadingStudentPhoto] = useState(false);
   const [studentForm, setStudentForm] = useState({
     name: '',
     rollNumber: '',
@@ -535,9 +537,10 @@ export default function AdminDashboard({
       return;
     }
 
+    let updatedStudentsList: Student[];
     if (editingStudent) {
       // Edit Student
-      setStudents(prev => prev.map(s => s.id === editingStudent.id ? { ...s, ...studentForm } : s));
+      updatedStudentsList = students.map(s => s.id === editingStudent.id ? { ...s, ...studentForm } : s);
     } else {
       // Add Student
       const newStudent: Student = {
@@ -551,7 +554,14 @@ export default function AdminDashboard({
         guardianPhone: studentForm.guardianPhone,
         photoUrl: studentForm.photoUrl
       };
-      setStudents(prev => [...prev, newStudent]);
+      updatedStudentsList = [...students, newStudent];
+    }
+
+    setStudents(updatedStudentsList);
+
+    // Global Supabase Sync
+    if (onPushToSupabase) {
+      onPushToSupabase(updatedStudentsList, config);
     }
 
     // Reset Form
@@ -639,17 +649,15 @@ export default function AdminDashboard({
       return;
     }
 
-    if (teacherForm.level === 'NURSERY' || teacherForm.level === 'KINDERGARTEN' || teacherForm.level === 'PRIMARY') {
-      if (teacherForm.classes.length > 1) {
-        setTeacherError('Academy Staff Policy: Nursery, KG, and Primary division teachers cannot be assigned to more than one class.');
+    if (teacherForm.classes.length > 1) {
+      setTeacherError('Academy Staff Policy: Teachers across all divisions (including JHS) cannot be assigned to more than one class.');
+      return;
+    }
+    for (const cls of teacherForm.classes) {
+      const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(cls));
+      if (assignedTeacher) {
+        setTeacherError(`Class Assignment Conflict: "${cls}" is already assigned to ${assignedTeacher.name}. Each classroom is assigned exclusively to one teacher for the attendance register across all levels.`);
         return;
-      }
-      for (const cls of teacherForm.classes) {
-        const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(cls));
-        if (assignedTeacher) {
-          setTeacherError(`Class Assignment Conflict: "${cls}" is already assigned to ${assignedTeacher.name}. In Nursery, KG, and Primary divisions, a class cannot be assigned to more than one teacher.`);
-          return;
-        }
       }
     }
 
@@ -715,28 +723,17 @@ export default function AdminDashboard({
   };
 
   const toggleClassForTeacherForm = (className: string) => {
-    if (teacherForm.level === 'NURSERY' || teacherForm.level === 'KINDERGARTEN' || teacherForm.level === 'PRIMARY') {
-      const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(className));
-      if (assignedTeacher && !teacherForm.classes.includes(className)) {
-        setTeacherError(`Cannot select "${className}": Already assigned to ${assignedTeacher.name}. In Nursery, KG, and Primary, a class cannot be assigned to more than one teacher.`);
-      } else {
-        setTeacherError('');
-      }
+    const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(className));
+    if (assignedTeacher && !teacherForm.classes.includes(className)) {
+      setTeacherError(`Cannot select "${className}": Already assigned to ${assignedTeacher.name}. Each classroom is assigned exclusively to one teacher for attendance register across all levels.`);
+    } else {
+      setTeacherError('');
     }
     setTeacherForm(prev => {
-      if (prev.level === 'NURSERY' || prev.level === 'KINDERGARTEN' || prev.level === 'PRIMARY') {
-        const alreadySelected = prev.classes.includes(className);
-        return {
-          ...prev,
-          classes: alreadySelected ? [] : [className]
-        };
-      }
       const alreadySelected = prev.classes.includes(className);
       return {
         ...prev,
-        classes: alreadySelected 
-          ? prev.classes.filter(c => c !== className)
-          : [...prev.classes, className]
+        classes: alreadySelected ? [] : [className]
       };
     });
   };
@@ -943,7 +940,7 @@ export default function AdminDashboard({
             <h2 className="font-display font-bold text-xl sm:text-2xl text-mauve-900 mt-1.5">
               Academy Records Dashboard
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+            <p className="text-xs text-mauve-800 font-medium mt-0.5 leading-relaxed">
               Overall configurations, student admissions, teacher registries, and consolidated reports of {config.schoolName || 'Eastfield Academy'}.
             </p>
           </div>
@@ -954,7 +951,7 @@ export default function AdminDashboard({
           <div className="bg-mauve-900 text-white px-4 py-2.5 rounded border border-mauve-950 shadow-sm shrink-0 flex items-center gap-3">
             <School className="w-4 h-4 text-white" />
             <div className="text-left">
-              <span className="block text-[9px] uppercase font-mono tracking-wider text-mauve-200">Active Term</span>
+              <span className="block text-[9px] uppercase font-mono tracking-wider text-amber-200 font-bold">Active Term</span>
               <span className="block font-bold text-xs">{config.term} ({config.schoolYear})</span>
             </div>
           </div>
@@ -1040,16 +1037,18 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {/* 2. TAB TOGGLES */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 max-w-full border-b border-mauve-500/10 no-print whitespace-nowrap">
+      {/* 2. TAB TOGGLES (HORIZONTALLY ARRANGED WITH TWO IN A COLUMN) */}
+      <div className="grid grid-flow-col grid-rows-2 auto-cols-fr sm:auto-cols-[minmax(170px,1fr)] gap-2 overflow-x-auto pb-3 border-b border-mauve-500/10 no-print">
         {[
           { id: 'analytics', label: 'Overview Metrics', icon: Users },
           { id: 'fees-dashboard', label: 'Fees Dashboard', icon: BarChart3 },
-          { id: 'fees', label: 'Fees Collection & Receipts', icon: CreditCard },
-          { id: 'transcripts', label: 'Transcript Center', icon: FileSpreadsheet },
-          { id: 'students', label: 'Student Admissions', icon: GraduationCap },
-          { id: 'teachers', label: 'Teacher Directory', icon: BookOpen },
-          { id: 'config', label: 'Settings & Security', icon: Settings }
+          { id: 'fees', label: 'Fees Collection', icon: CreditCard },
+          { id: 'transcripts', label: 'Transcripts', icon: FileSpreadsheet },
+          { id: 'students', label: 'Admissions', icon: GraduationCap },
+          { id: 'teachers', label: 'Teachers', icon: BookOpen },
+          { id: 'class-assignments', label: 'Assign Class Teacher', icon: School },
+          { id: 'inventory', label: 'School Inventory', icon: Boxes },
+          { id: 'config', label: 'Settings', icon: Settings }
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -1057,15 +1056,15 @@ export default function AdminDashboard({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as AdminTab)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-all duration-150 cursor-pointer border ${
+              className={`flex items-center justify-start gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-150 cursor-pointer border w-full ${
                 isActive
-                  ? 'bg-mauve-900 text-white shadow-sm border-mauve-900'
-                  : 'bg-white text-mauve-900/80 hover:bg-mauve-100 border-mauve-500/15'
+                  ? 'bg-mauve-950 text-white shadow-md border-amber-400 ring-2 ring-amber-400/60 font-black'
+                  : 'bg-mauve-900 text-white/90 hover:bg-mauve-800 hover:text-white border-mauve-700/80'
               }`}
               id={`admin-tab-${tab.id}`}
             >
-              <Icon className="w-3.5 h-3.5" />
-              {tab.label}
+              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-amber-400' : 'text-amber-300/80'}`} />
+              <span className="truncate">{tab.label}</span>
             </button>
           );
         })}
@@ -1088,9 +1087,9 @@ export default function AdminDashboard({
               return (
                 <div key={i} className="bg-white p-4 rounded border border-mauve-500/20 flex items-center justify-between shadow-sm">
                   <div>
-                    <span className="text-[10px] uppercase font-bold text-gray-400 block">{card.label}</span>
-                    <span className="text-xl font-display font-extrabold text-mauve-900 mt-1 block">{card.val}</span>
-                    <span className="text-[10px] text-gray-500 mt-0.5 block">{card.desc}</span>
+                    <span className="text-[10px] uppercase font-black text-mauve-900/90 tracking-wider block">{card.label}</span>
+                    <span className="text-xl font-display font-black text-mauve-950 mt-0.5 block">{card.val}</span>
+                    <span className="text-[10px] text-mauve-800 font-medium mt-0.5 block">{card.desc}</span>
                   </div>
                   <div className={`p-2.5 rounded border ${card.color}`}>
                     <Icon className="w-4 h-4" />
@@ -1123,10 +1122,10 @@ export default function AdminDashboard({
                 </div>
 
                 <div className="text-xs">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Classes Managed:</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-mauve-900">Classes Managed:</span>
                   <div className="flex flex-wrap gap-1 mt-1.5">
                     {lvl.classes.map((cls, idx) => (
-                      <span key={`${cls}-${idx}`} className="text-[10px] px-1.5 py-0.5 bg-gray-50 border border-gray-200 text-gray-600 rounded">
+                      <span key={`${cls}-${idx}`} className="text-[10px] px-1.5 py-0.5 bg-mauve-100/60 border border-mauve-200 text-mauve-900 font-semibold rounded">
                         {cls}
                       </span>
                     ))}
@@ -1223,7 +1222,7 @@ export default function AdminDashboard({
               </button>
             </div>
 
-            <div className="pt-2 border-t border-mauve-500/10 text-[11px] text-gray-500 space-y-1 bg-mauve-100/50 p-2.5 rounded border border-mauve-500/10 leading-relaxed">
+            <div className="pt-2 border-t border-mauve-500/10 text-[11px] text-mauve-800 font-medium space-y-1 bg-mauve-100/50 p-2.5 rounded border border-mauve-500/10 leading-relaxed">
               <span className="font-bold text-mauve-900 uppercase block text-[10px]">System Assistant</span>
               <p>Selecting a student dynamically loads their term marks, calculated class rank, and attendance review sheets into the A4 viewer.</p>
             </div>
@@ -1402,7 +1401,7 @@ export default function AdminDashboard({
           {/* Search filters */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-white p-3 rounded border border-mauve-500/20 shadow-sm">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-mauve-400 absolute left-2.5 top-2.5" />
+              <Search className="w-3.5 h-3.5 text-mauve-700 absolute left-2.5 top-2.5" />
               <input
                 type="text"
                 placeholder="Search by name or ID..."
@@ -1510,7 +1509,7 @@ export default function AdminDashboard({
                 <tbody className="divide-y divide-mauve-50 text-xs text-gray-800">
                   {filteredStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-6 text-center text-gray-400">No student matching selected filters.</td>
+                      <td colSpan={6} className="p-6 text-center text-mauve-800 font-bold">No student matching selected filters.</td>
                     </tr>
                   ) : (
                     filteredStudents.map((s) => (
@@ -1559,7 +1558,7 @@ export default function AdminDashboard({
                         <td className="p-3">
                           <div className="space-y-0.5 text-[10px]">
                             <span className="block font-bold text-gray-800">{s.guardianName || 'N/A'}</span>
-                            <span className="block text-gray-500 font-mono">{s.guardianEmail || 'No Email'}</span>
+                            <span className="block text-mauve-900 font-semibold font-mono">{s.guardianEmail || 'No Email'}</span>
                             {s.guardianPhone && (
                               <span className="block text-green-700 font-mono flex items-center gap-1 font-semibold">
                                 <MessageSquare className="w-2.5 h-2.5 shrink-0" /> {s.guardianPhone}
@@ -1578,7 +1577,7 @@ export default function AdminDashboard({
                               className="px-2 py-1 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 font-bold rounded text-[10px] flex items-center gap-1 transition cursor-pointer"
                               title="Open Full Student Profile & Photograph"
                             >
-                              <User className="w-3 h-3 shrink-0" />
+                              <UserIcon className="w-3 h-3 shrink-0" />
                               <span>Profile</span>
                             </button>
                             <button
@@ -1662,7 +1661,12 @@ export default function AdminDashboard({
                     </label>
                     <div className="flex items-center gap-4">
                       <div className="relative w-16 h-20 rounded-lg border-2 border-dashed border-mauve-300 bg-white flex flex-col items-center justify-center overflow-hidden shrink-0 shadow-inner">
-                        {studentForm.photoUrl ? (
+                        {isUploadingStudentPhoto ? (
+                          <div className="flex flex-col items-center gap-1 p-2 text-center">
+                            <Sparkles className="w-5 h-5 text-amber-500 animate-spin" />
+                            <span className="text-[8px] font-bold text-mauve-800 uppercase">Syncing...</span>
+                          </div>
+                        ) : studentForm.photoUrl ? (
                           <>
                             <img
                               src={studentForm.photoUrl}
@@ -1683,31 +1687,48 @@ export default function AdminDashboard({
                         )}
                       </div>
                       <div className="flex-1 space-y-1.5">
-                        <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-mauve-100/50 border border-mauve-200 text-mauve-700 rounded-lg text-xs font-semibold cursor-pointer transition shadow-sm">
+                        <label className={`inline-flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-mauve-100/50 border border-mauve-200 text-mauve-700 rounded-lg text-xs font-semibold cursor-pointer transition shadow-sm ${isUploadingStudentPhoto ? 'opacity-50 pointer-events-none' : ''}`}>
                           <Upload className="w-3.5 h-3.5" />
-                          <span>{studentForm.photoUrl ? 'Change Photo' : 'Upload Photograph'}</span>
+                          <span>{isUploadingStudentPhoto ? 'Syncing Photo...' : studentForm.photoUrl ? 'Change Photo' : 'Upload Photograph'}</span>
                           <input
                             type="file"
                             accept="image/*"
                             className="hidden"
-                            onChange={(e) => {
+                            disabled={isUploadingStudentPhoto}
+                            onChange={async (e) => {
                               const file = e.target.files?.[0];
                               if (file) {
                                 if (file.size > 2 * 1024 * 1024) {
                                   alert('Image size exceeds 2MB limit.');
                                   return;
                                 }
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setStudentForm((prev) => ({ ...prev, photoUrl: reader.result as string }));
-                                };
-                                reader.readAsDataURL(file);
+                                setIsUploadingStudentPhoto(true);
+                                try {
+                                  const tempId = editingStudent?.id || studentForm.rollNumber || studentForm.name || `st-${Date.now()}`;
+                                  const uploadedUrl = await uploadStudentPhotoToSupabase(file, tempId);
+                                  setStudentForm((prev) => ({ ...prev, photoUrl: uploadedUrl }));
+                                } catch (err) {
+                                  console.warn('Fallback to reader base64:', err);
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    setStudentForm((prev) => ({ ...prev, photoUrl: reader.result as string }));
+                                  };
+                                  reader.readAsDataURL(file);
+                                } finally {
+                                  setIsUploadingStudentPhoto(false);
+                                }
                               }
                             }}
                           />
                         </label>
+                        {studentForm.photoUrl && studentForm.photoUrl.startsWith('http') && (
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 w-fit">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Synced to Supabase Bucket 'ea'</span>
+                          </div>
+                        )}
                         <p className="text-[11px] text-mauve-600 leading-tight">
-                          Standard passport portrait (JPG/PNG). Used on official term report cards & ID records.
+                          Standard passport portrait (JPG/PNG). Synchronizes directly into Supabase Storage Bucket 'ea' for global cross-device access.
                         </p>
                       </div>
                     </div>
@@ -1870,7 +1891,7 @@ export default function AdminDashboard({
                         />
                       ) : (
                         <div className="text-center p-2">
-                          <User className="w-12 h-12 text-mauve-300 mx-auto mb-1 opacity-80" />
+                          <UserIcon className="w-12 h-12 text-mauve-300 mx-auto mb-1 opacity-80" />
                           <span className="text-[10px] text-mauve-200 font-semibold uppercase tracking-wider">No Photo</span>
                         </div>
                       )}
@@ -1945,7 +1966,7 @@ export default function AdminDashboard({
                         : 'border-transparent text-mauve-600 hover:text-mauve-900'
                     }`}
                   >
-                    <User className="w-3.5 h-3.5" />
+                    <UserIcon className="w-3.5 h-3.5" />
                     <span>Guardian &amp; Contact</span>
                   </button>
                 </div>
@@ -1980,7 +2001,7 @@ export default function AdminDashboard({
                                   const sub = subjects.find(s => s.id === g.subjectId || s.name === g.subjectId || s.code === g.subjectId);
                                   const total = (Number(g.classScore) || 0) + (Number(g.examScore) || 0);
                                   return (
-                                    <tr key={`${g.id}-${idx}`} className="hover:bg-mauve-50/50">
+                                    <tr key={`${g.studentId}-${g.subjectId}-${idx}`} className="hover:bg-mauve-50/50">
                                       <td className="p-2.5 pl-3 font-semibold text-gray-900">
                                         {sub ? sub.name : g.subjectId}
                                       </td>
@@ -2150,6 +2171,24 @@ export default function AdminDashboard({
         <div className="space-y-4 animate-fadeIn no-print">
           <div className="flex justify-between items-center">
             <h3 className="font-display font-bold text-mauve-900 text-base uppercase tracking-wide">Staff Directory</h3>
+            <button
+              onClick={() => {
+                setEditingTeacher(null);
+                setTeacherForm({
+                  name: '',
+                  email: '',
+                  level: 'PRIMARY',
+                  classes: [],
+                  subjects: []
+                });
+                setTeacherError('');
+                setShowTeacherModal(true);
+              }}
+              className="bg-mauve-800 hover:bg-mauve-900 text-white font-bold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Register New Teacher</span>
+            </button>
           </div>
 
           <div className="bg-white p-3 rounded border border-mauve-500/20 text-xs text-mauve-900 leading-relaxed flex items-start gap-2 bg-mauve-50/15 shadow-sm">
@@ -2178,7 +2217,7 @@ export default function AdminDashboard({
                   <tr key={t.id} className="hover:bg-mauve-50/10">
                     <td className="p-3 pl-4">
                       <span className="block font-bold text-gray-900 text-xs">{t.name}</span>
-                      <span className="block text-gray-400 font-mono text-[10px]">{t.email}</span>
+                      <span className="block text-mauve-800 font-semibold font-mono text-[10px]">{t.email}</span>
                     </td>
                     <td className="p-3">
                       <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
@@ -2193,7 +2232,7 @@ export default function AdminDashboard({
                     <td className="p-3">
                       <div className="flex flex-wrap gap-1 max-w-xs">
                         {t.classes?.map((c, idx) => (
-                          <span key={`${c}-${idx}`} className="bg-gray-50 border border-gray-150 px-1.5 py-0.5 rounded text-[10px] text-gray-600 font-bold">
+                          <span key={`${c}-${idx}`} className="bg-mauve-100/60 border border-mauve-200 px-1.5 py-0.5 rounded text-[10px] text-mauve-900 font-bold">
                             {c}
                           </span>
                         ))}
@@ -2219,7 +2258,7 @@ export default function AdminDashboard({
                           JHS STRICT: {t.subjects?.length}/2 Subjects
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded text-[9px] font-bold font-mono bg-gray-50 text-gray-400 border border-gray-150">
+                        <span className="px-2 py-0.5 rounded text-[9px] font-bold font-mono bg-mauve-100/60 text-mauve-900 border border-mauve-200">
                           Primary Multi-subject
                         </span>
                       )}
@@ -2440,14 +2479,27 @@ export default function AdminDashboard({
                       })}
                       {teacherForm.level === 'JHS' && classes.JHS.map(c => {
                         const isSel = teacherForm.classes.includes(c);
+                        const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(c));
                         return (
                           <button
                             key={c}
                             type="button"
                             onClick={() => toggleClassForTeacherForm(c)}
-                            className={`px-2.5 py-1 text-xs border rounded-lg transition cursor-pointer ${isSel ? 'bg-mauve-600 text-white border-mauve-700 font-bold' : 'bg-white text-mauve-700 border-mauve-200 hover:bg-mauve-50'}`}
+                            className={`px-2.5 py-1 text-xs border rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+                              isSel 
+                                ? 'bg-mauve-600 text-white border-mauve-700 font-bold' 
+                                : assignedTeacher 
+                                  ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100' 
+                                  : 'bg-white text-mauve-700 border-mauve-200 hover:bg-mauve-50'
+                            }`}
+                            title={assignedTeacher ? `Assigned to ${assignedTeacher.name}` : 'Available'}
                           >
-                            {c}
+                            <span>{c}</span>
+                            {assignedTeacher && !isSel && (
+                              <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-mono font-medium">
+                                Assigned: {assignedTeacher.name.split(' ')[0]}
+                              </span>
+                            )}
                           </button>
                         );
                       })}
@@ -2528,13 +2580,157 @@ export default function AdminDashboard({
         </div>
       )}
 
+      {/* E. CLASS TEACHER ASSIGNMENTS VIEW */}
+      {activeTab === 'class-assignments' && (
+        <div className="space-y-6 animate-fadeIn no-print">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-mauve-900 via-purple-900 to-indigo-900 text-white p-6 rounded-2xl shadow-sm border border-mauve-800 space-y-3">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <School className="w-6 h-6 text-amber-400" />
+                  <h3 className="font-display font-bold text-lg sm:text-xl uppercase tracking-wide">Classroom Roll Call Teacher Assignments</h3>
+                </div>
+                <p className="text-xs text-purple-100 font-medium mt-1 max-w-2xl leading-relaxed">
+                  Assign official Class Teachers to each classroom across Nursery, Kindergarten, Primary, and JHS divisions. Assigned teachers gain immediate real-time access to take daily attendance roll calls for their assigned classroom in the Attendance Portal. (Note: Assigning a JHS teacher to a class affects only the attendance roll call register; in the assessment register, JHS teachers retain access to all JHS classes: JHS 1, JHS 2, JHS 3).
+                </p>
+              </div>
+
+              {/* Assignment Quick Summary Stats */}
+              {(() => {
+                const allSchoolClasses = [
+                  ...(classes.NURSERY || []),
+                  ...(classes.KINDERGARTEN || ["Kindergarten 1", "Kindergarten 2"]),
+                  ...(classes.PRIMARY || []),
+                  ...(classes.JHS || [])
+                ];
+                const assignedCount = allSchoolClasses.filter(c => teachers.some(t => t.classes?.includes(c))).length;
+                const unassignedCount = allSchoolClasses.length - assignedCount;
+
+                return (
+                  <div className="flex gap-2 sm:gap-3 shrink-0">
+                    <div className="bg-blue-600 px-3.5 py-2 rounded-xl text-center border border-blue-300 shadow-md">
+                      <div className="text-lg font-black text-white">{allSchoolClasses.length}</div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-blue-100">Classes</div>
+                    </div>
+                    <div className="bg-blue-600 px-3.5 py-2 rounded-xl text-center border border-blue-300 shadow-md">
+                      <div className="text-lg font-black text-white">{assignedCount}</div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-blue-100">Assigned</div>
+                    </div>
+                    <div className="bg-blue-600 px-3.5 py-2 rounded-xl text-center border border-blue-300 shadow-md">
+                      <div className="text-lg font-black text-white">{unassignedCount}</div>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-blue-100">Pending</div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Academic Divisions Assignment Grid */}
+          {[
+            { levelKey: 'NURSERY', title: 'Nursery Division', color: 'border-pink-200 bg-pink-50/20', classList: classes.NURSERY || [] },
+            { levelKey: 'KINDERGARTEN', title: 'Kindergarten Division', color: 'border-purple-200 bg-purple-50/20', classList: classes.KINDERGARTEN || ["Kindergarten 1", "Kindergarten 2"] },
+            { levelKey: 'PRIMARY', title: 'Primary School Division (P1 - P6)', color: 'border-indigo-200 bg-indigo-50/20', classList: classes.PRIMARY || [] },
+            { levelKey: 'JHS', title: 'Junior High School Division (JHS 1 - JHS 3)', color: 'border-amber-200 bg-amber-50/20', classList: classes.JHS || [] }
+          ].map(div => (
+            <div key={div.levelKey} className={`bg-white rounded-2xl border ${div.color} p-5 space-y-4 shadow-2xs`}>
+              <div className="flex items-center justify-between border-b border-mauve-100 pb-3">
+                <h4 className="font-display font-bold text-mauve-900 text-sm uppercase tracking-wide flex items-center gap-2">
+                  <School className="w-4 h-4 text-mauve-700" />
+                  <span>{div.title}</span>
+                </h4>
+                <span className="text-xs font-bold text-mauve-600 bg-mauve-100/80 px-2.5 py-0.5 rounded-full">
+                  {div.classList.length} Classrooms
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {div.classList.map(clsName => {
+                  const assignedTeacher = teachers.find(t => t.classes?.includes(clsName));
+                  const classPupils = students.filter(s => s.className === clsName || s.level === clsName);
+
+                  return (
+                    <div key={clsName} className={`p-4 rounded-xl border transition-all ${assignedTeacher ? 'bg-emerald-50/30 border-emerald-200/80' : 'bg-amber-50/30 border-amber-200/80'}`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h5 className="font-bold text-mauve-900 text-sm">{clsName}</h5>
+                          <span className="text-[11px] text-mauve-800 font-bold">
+                            {classPupils.length} Enrolled Pupils
+                          </span>
+                        </div>
+                        {assignedTeacher ? (
+                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300/60 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shrink-0">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Assigned
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300/60 rounded text-[10px] font-bold uppercase tracking-wider shrink-0">
+                            Unassigned
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Current Teacher Info */}
+                      {assignedTeacher ? (
+                        <div className="p-2.5 bg-white rounded-lg border border-emerald-200 text-xs mb-3 space-y-0.5 shadow-2xs">
+                          <div className="font-bold text-emerald-950">{assignedTeacher.name}</div>
+                          <div className="text-[10px] text-emerald-700 truncate">{assignedTeacher.email}</div>
+                        </div>
+                      ) : (
+                        <div className="p-2.5 bg-white/80 rounded-lg border border-dashed border-amber-300 text-xs text-amber-800 mb-3 italic">
+                          No roll call teacher selected for {clsName}. Select a staff member below.
+                        </div>
+                      )}
+
+                      {/* Teacher Selection Dropdown */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-mauve-800 uppercase tracking-wider block">
+                          Assign Roll Call Teacher:
+                        </label>
+                        <select
+                          value={assignedTeacher ? assignedTeacher.id : ''}
+                          onChange={(e) => {
+                            const newTeacherId = e.target.value;
+                            setTeachers(prev => prev.map(t => {
+                              if (newTeacherId && t.id === newTeacherId) {
+                                return { ...t, classes: [clsName] };
+                              } else if (t.classes?.includes(clsName)) {
+                                return { ...t, classes: (t.classes || []).filter(c => c !== clsName) };
+                              }
+                              return t;
+                            }));
+                          }}
+                          className="w-full px-2.5 py-1.5 bg-white border border-mauve-300 rounded-lg text-xs font-medium text-mauve-900 focus:ring-2 focus:ring-mauve-500 focus:outline-none cursor-pointer"
+                        >
+                          <option value="">-- Unassigned (None) --</option>
+                          {teachers
+                            .filter(t => t.role === 'TEACHER')
+                            .map(t => {
+                              const alreadyHasOtherClass = t.classes && t.classes.length > 0 && !t.classes.includes(clsName);
+                              return (
+                                <option key={t.id} value={t.id}>
+                                  {t.name} ({t.email}){alreadyHasOtherClass ? ` [In: ${t.classes?.join(', ')}]` : ''}
+                                </option>
+                              );
+                            })}
+                        </select>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* E. GENERAL REPORT CONFIGURATION VIEW */}
       {activeTab === 'config' && (
         <div className="bg-white p-6 rounded-2xl border border-mauve-100 mauve-glow space-y-6 animate-fadeIn no-print">
           <div className="border-b border-mauve-100 pb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
               <h3 className="font-display font-bold text-mauve-900 text-lg">System Configurations</h3>
-              <p className="text-xs text-mauve-500 mt-0.5">Edit academic term, continuous assessment weightings, and global evaluation parameters.</p>
+              <p className="text-xs text-mauve-800 font-medium mt-0.5">Edit academic term, continuous assessment weightings, and global evaluation parameters.</p>
             </div>
             <button
               type="button"
@@ -2620,7 +2816,7 @@ export default function AdminDashboard({
                       }}
                       className="w-full p-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none text-mauve-900 bg-white"
                     />
-                    <span className="text-[10px] text-gray-500 block">Target date for First Term migration roll.</span>
+                    <span className="text-[10px] text-mauve-800 font-medium block">Target date for First Term migration roll.</span>
                   </div>
 
                   <div className="space-y-2 flex flex-col justify-end">
@@ -2657,7 +2853,7 @@ export default function AdminDashboard({
                   <option value="high-fidelity">JHS & Primary Structured (Elegant Blue Header & Metadata)</option>
                   <option value="classic">Classic Simple Layout (Traditional Clean Design)</option>
                 </select>
-                <span className="text-[10px] text-gray-500 block leading-tight">
+                <span className="text-[10px] text-mauve-800 font-medium block leading-tight">
                   Choose the default layout theme for student report cards. This choice synchronizes directly to the database.
                 </span>
               </div>
@@ -2681,7 +2877,7 @@ export default function AdminDashboard({
                       <div className="w-10 h-10 rounded bg-mauve-900 text-white font-display font-extrabold text-xs flex items-center justify-center shadow shrink-0">
                         {config.schoolLogoText || '??'}
                       </div>
-                      <span className="text-[10px] text-gray-500 leading-tight">Default text avatar preview</span>
+                      <span className="text-[10px] text-mauve-800 font-medium leading-tight">Default text avatar preview</span>
                     </div>
                   </div>
 
@@ -2700,7 +2896,7 @@ export default function AdminDashboard({
                           />
                           <div className="space-y-0.5">
                             <span className="text-xs font-bold text-mauve-900 block">Custom Logo Active</span>
-                            <span className="text-[10px] text-gray-500 block leading-tight">Appears on all PDF Transcripts</span>
+                            <span className="text-[10px] text-mauve-800 font-medium block leading-tight">Appears on all PDF Transcripts</span>
                             {config.schoolLogoUrl.startsWith('data:') ? (
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 uppercase" title="Stored directly inside database config payload. Synchronizes globally.">
                                 Database-Synced Base64
@@ -2762,7 +2958,7 @@ export default function AdminDashboard({
                             <span className="text-xs font-bold text-mauve-900 block">
                               Click to select or drag & drop logo
                             </span>
-                            <span className="text-[10px] text-gray-400 block">
+                            <span className="text-[10px] text-mauve-800 font-medium block">
                               PNG, JPG, or JPEG (Max 2MB, Square recommended)
                             </span>
                           </div>
@@ -2784,7 +2980,7 @@ export default function AdminDashboard({
                     )}
 
                     {/* Synchronization Explainer */}
-                    <p className="text-[10px] text-gray-500 leading-normal bg-mauve-50/40 p-2.5 rounded-lg border border-mauve-100/60">
+                    <p className="text-[10px] text-mauve-900 leading-normal bg-mauve-50/60 p-2.5 rounded-lg border border-mauve-200 font-medium">
                       <strong>Global Synchronization Note:</strong> When you connect your own custom database credentials in the section below, any uploaded logo will automatically sync across devices. For maximum compatibility, files are optimized and stored directly inside the configuration schema to ensure perfect cross-device replication.
                     </p>
                   </div>
@@ -2811,7 +3007,7 @@ export default function AdminDashboard({
                       placeholder="e.g. Knowledge, Character & Excellence"
                       className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
                     />
-                    <span className="text-[10px] text-gray-500 block">Displayed prominently below the school title on PDF report cards.</span>
+                    <span className="text-[10px] text-mauve-800 font-medium block">Displayed prominently below the school title on PDF report cards.</span>
                   </div>
 
                   {/* Watermark Text */}
@@ -2824,7 +3020,7 @@ export default function AdminDashboard({
                       placeholder="e.g. EASTFIELD ACADEMY"
                       className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white font-mono"
                     />
-                    <span className="text-[10px] text-gray-500 block">Subtle diagonal watermark overlay rendered on official transcripts.</span>
+                    <span className="text-[10px] text-mauve-800 font-medium block">Subtle diagonal watermark overlay rendered on official transcripts.</span>
                   </div>
 
                   {/* Custom Administrative Notice Note */}
@@ -2837,7 +3033,7 @@ export default function AdminDashboard({
                       placeholder="e.g. Next term fees are due on reopening date. All students are requested to be in full ceremonial uniform."
                       className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
                     />
-                    <span className="text-[10px] text-gray-500 block">Broadcasting note displayed in a dedicated callout on report cards and parent emails.</span>
+                    <span className="text-[10px] text-mauve-800 font-medium block">Broadcasting note displayed in a dedicated callout on report cards and parent emails.</span>
                   </div>
 
                   {/* Digital Principal Signature Upload */}
@@ -2870,7 +3066,7 @@ export default function AdminDashboard({
                           </button>
                         </div>
                       ) : (
-                        <div className="w-32 h-10 border border-dashed border-mauve-300 rounded flex items-center justify-center text-gray-400 text-[10px] italic bg-white shrink-0">
+                        <div className="w-32 h-10 border border-dashed border-mauve-300 rounded flex items-center justify-center text-mauve-700 font-bold text-[10px] italic bg-white shrink-0">
                           No signature image
                         </div>
                       )}
@@ -2886,7 +3082,7 @@ export default function AdminDashboard({
                             onChange={handleSignatureChange}
                           />
                         </label>
-                        <p className="text-[10px] text-gray-500">PNG or JPG signature on transparent or white background. Auto-embeds in PDF Principal Endorsement block.</p>
+                        <p className="text-[10px] text-mauve-800 font-medium">PNG or JPG signature on transparent or white background. Auto-embeds in PDF Principal Endorsement block.</p>
                         {signatureUploadError && (
                           <p className="text-[10px] text-red-600">{signatureUploadError}</p>
                         )}
@@ -3087,6 +3283,18 @@ export default function AdminDashboard({
         </div>
       )}
 
+      {/* SCHOOL INVENTORY TAB VIEW */}
+      {activeTab === 'inventory' && (
+        <SchoolInventoryModule
+          allSchoolClasses={[
+            ...classes.NURSERY,
+            ...(classes.KINDERGARTEN || []),
+            ...classes.PRIMARY,
+            ...classes.JHS
+          ]}
+        />
+      )}
+
       {/* BATCH EMAIL DISPATCH MODAL */}
       {showBatchEmailModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn no-print">
@@ -3104,7 +3312,7 @@ export default function AdminDashboard({
                       {selectedClass}
                     </span>
                   </h4>
-                  <p className="text-xs text-mauve-500">
+                  <p className="text-xs text-mauve-800 font-medium">
                     Automatically generate and dispatch individual academic report card emails to parents and guardians.
                   </p>
                 </div>
@@ -3208,19 +3416,19 @@ export default function AdminDashboard({
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-mauve-900 text-xs">{item.student.name}</span>
-                        <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{item.student.rollNumber}</span>
+                        <span className="text-[10px] font-mono text-mauve-900 bg-mauve-100/80 px-1.5 py-0.5 rounded font-bold">{item.student.rollNumber}</span>
                         {status === 'SENT' && (
                           <span className="text-[10px] font-bold bg-green-100 text-green-800 border border-green-200 px-2 py-0.5 rounded-full flex items-center gap-1">
                             <Check className="w-3 h-3 text-green-600" /> Dispatched
                           </span>
                         )}
                         {status === 'SKIPPED' && (
-                          <span className="text-[10px] italic bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+                          <span className="text-[10px] italic bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-semibold">
                             No Email
                           </span>
                         )}
                       </div>
-                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-600">
+                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-mauve-900 font-medium">
                         <span>Guardian: <strong>{item.student.guardianName || 'N/A'}</strong></span>
                         {item.hasEmail ? (
                           <span className="text-blue-700 font-mono font-medium flex items-center gap-1">
@@ -3290,7 +3498,7 @@ export default function AdminDashboard({
             </div>
 
             {/* Footer */}
-            <div className="pt-3 border-t border-mauve-100 flex justify-between items-center text-xs text-gray-500">
+            <div className="pt-3 border-t border-mauve-100 flex justify-between items-center text-xs text-mauve-800 font-medium">
               <span>Tip: Click <strong>⚡ Auto Dispatch Queue</strong> to sequentially launch email messages for all guardians in {selectedClass}.</span>
               <button
                 onClick={() => setShowBatchEmailModal(false)}
@@ -3318,7 +3526,7 @@ export default function AdminDashboard({
                   <h4 className="font-display font-bold text-mauve-900 text-base flex items-center gap-2">
                     First Term Student Promotion & Class Migration
                   </h4>
-                  <p className="text-xs text-mauve-500">
+                  <p className="text-xs text-mauve-800 font-medium">
                     Automated grade level progression roll for <strong>{config.schoolYear}</strong> (Reopening Date: {formatReopeningDate(config.reopeningDate)}).
                   </p>
                 </div>
@@ -3377,7 +3585,7 @@ export default function AdminDashboard({
               </div>
 
               <div className="relative flex-1 max-w-xs">
-                <Search className="w-3.5 h-3.5 text-mauve-400 absolute left-2.5 top-2.5" />
+                <Search className="w-3.5 h-3.5 text-mauve-700 absolute left-2.5 top-2.5" />
                 <input
                   type="text"
                   placeholder="Filter pupil name or class..."
@@ -3412,11 +3620,11 @@ export default function AdminDashboard({
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-mauve-900 text-xs">{student.name}</span>
-                          <span className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                          <span className="text-[10px] font-mono text-mauve-900 bg-mauve-100/80 px-1.5 py-0.5 rounded font-bold">
                             {student.rollNumber}
                           </span>
                         </div>
-                        <span className="text-[11px] text-gray-500 block">
+                        <span className="text-[11px] text-mauve-800 font-medium block">
                           Level: {student.level}
                         </span>
                       </div>
@@ -3424,7 +3632,7 @@ export default function AdminDashboard({
                       {/* Migration Arrow */}
                       <div className="flex items-center gap-3">
                         <div className="text-right">
-                          <span className="text-[10px] text-gray-400 block uppercase font-mono">Current</span>
+                          <span className="text-[10px] text-mauve-800 font-bold block uppercase font-mono">Current</span>
                           <span className="text-xs font-semibold text-mauve-800 bg-gray-100 px-2 py-0.5 rounded">
                             {student.className}
                           </span>
@@ -3433,7 +3641,7 @@ export default function AdminDashboard({
                         <ArrowUpRight className="w-4 h-4 text-indigo-600 shrink-0" />
 
                         <div className="text-left">
-                          <span className="text-[10px] text-gray-400 block uppercase font-mono">Promoted</span>
+                          <span className="text-[10px] text-mauve-800 font-bold block uppercase font-mono">Promoted</span>
                           <span
                             className={`text-xs font-bold px-2 py-0.5 rounded ${
                               isGraduated
@@ -3454,7 +3662,7 @@ export default function AdminDashboard({
 
             {/* Note & Action Footer */}
             <div className="pt-3 border-t border-mauve-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <span className="text-[11px] text-gray-500 leading-tight">
+              <span className="text-[11px] text-mauve-800 font-medium leading-tight">
                 ℹ️ Promotion migrates student class levels. Historical grades & attendance for prior terms are preserved in past transcripts.
               </span>
 
@@ -3509,7 +3717,7 @@ export default function AdminDashboard({
                         {bulkPrintClass === 'ALL' ? 'All Classes' : bulkPrintClass}
                       </span>
                     </h4>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-mauve-800 font-medium">
                       Batch generate and hardcopy print official A4 report cards for pupils in <strong>{config.schoolName}</strong> ({config.term} {config.schoolYear}).
                     </p>
                   </div>
@@ -3622,13 +3830,13 @@ export default function AdminDashboard({
                       <span className="font-bold text-mauve-900 uppercase text-[10px] tracking-wider">
                         Pupil Selection Checklist ({selectedBulkStudentIds.length} of {availableList.length} Checked)
                       </span>
-                      <span className="text-gray-500 text-[11px]">
+                      <span className="text-mauve-800 font-medium text-[11px]">
                         Uncheck any pupil you do not wish to include in this print batch.
                       </span>
                     </div>
 
                     {availableList.length === 0 ? (
-                      <div className="p-4 text-center text-gray-500 bg-gray-50 rounded-xl border border-dashed text-xs">
+                      <div className="p-4 text-center text-mauve-900 font-bold bg-mauve-50 rounded-xl border border-dashed border-mauve-200 text-xs">
                         No pupils match the selected class or search filter.
                       </div>
                     ) : (
@@ -3641,7 +3849,7 @@ export default function AdminDashboard({
                               className={`flex items-center gap-2 p-1.5 rounded-lg border cursor-pointer transition select-none ${
                                 isSelected
                                   ? 'bg-mauve-50 border-mauve-300 text-mauve-900 font-semibold'
-                                  : 'bg-gray-50/50 border-gray-200 text-gray-500 opacity-60'
+                                  : 'bg-gray-50/50 border-gray-200 text-mauve-800 font-medium opacity-80'
                               }`}
                             >
                               <input
@@ -3670,10 +3878,10 @@ export default function AdminDashboard({
 
                 if (targetStudents.length === 0) {
                   return (
-                    <div className="p-12 text-center text-gray-500 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 space-y-3 no-print">
-                      <AlertCircle className="w-8 h-8 text-mauve-400 mx-auto" />
+                    <div className="p-12 text-center text-mauve-900 font-bold bg-mauve-50/50 rounded-2xl border-2 border-dashed border-mauve-200 space-y-3 no-print">
+                      <AlertCircle className="w-8 h-8 text-mauve-600 mx-auto" />
                       <p className="font-semibold text-sm">No pupils selected for bulk printing.</p>
-                      <p className="text-xs text-gray-400">Select pupils from the checklist above to load their A4 report cards here.</p>
+                      <p className="text-xs text-mauve-800 font-medium">Select pupils from the checklist above to load their A4 report cards here.</p>
                     </div>
                   );
                 }
@@ -3785,7 +3993,7 @@ export default function AdminDashboard({
 
             {/* Modal Bottom Footer Actions - HIDE IN PRINT */}
             <div className="no-print pt-4 border-t border-mauve-150 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <span className="text-gray-500 text-[11px]">
+              <span className="text-mauve-800 font-medium text-[11px]">
                 💡 Tip: Use your browser's Print dialog to save all selected report cards as a single multi-page PDF document!
               </span>
 
