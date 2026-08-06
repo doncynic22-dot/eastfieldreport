@@ -632,8 +632,8 @@ export default function JHS3MockExamModule({
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[1100px]">
                 <thead>
-                  <tr className="bg-blue-950 text-white text-[11px] uppercase font-black tracking-wider border-b-2 border-amber-400">
-                    <th className="py-3 px-3 border-r border-blue-800 bg-blue-950 text-white">STUDENT NAME</th>
+                  <tr className="bg-blue-900 text-white text-[11px] uppercase font-black tracking-wider border-b-2 border-amber-400">
+                    <th className="py-3 px-3 border-r border-blue-800 bg-blue-900 text-white font-black">STUDENT NAME</th>
                     {jhsSubjects.map((sub) => {
                       const isCore = getCoreSubjectType(sub) !== null;
                       return (
