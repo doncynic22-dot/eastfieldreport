@@ -669,12 +669,6 @@ export default function JHS3MockExamModule({
                         </th>
                       );
                     })}
-                    <th className="py-2.5 px-2 text-center border-r border-blue-800 bg-blue-900 text-amber-300 font-black text-[10px] w-20">
-                      CORE AGGR
-                    </th>
-                    <th className="py-2.5 px-2 text-center border-r border-blue-800 bg-blue-900 text-blue-200 font-black text-[10px] w-20">
-                      BEST 2 ELECT
-                    </th>
                     <th className="py-2.5 px-3 text-center border-r border-blue-800 bg-blue-900 text-white font-black text-[11px] w-28">
                       AGGREGATE
                     </th>
@@ -689,7 +683,7 @@ export default function JHS3MockExamModule({
                 <tbody className="divide-y divide-gray-200 text-xs font-medium text-gray-800">
                   {filteredBroadsheet.length === 0 ? (
                     <tr>
-                      <td colSpan={jhsSubjects.length + 6} className="p-8 text-center text-gray-500 italic bg-gray-50/80">
+                      <td colSpan={jhsSubjects.length + 4} className="p-8 text-center text-gray-500 italic bg-gray-50/80">
                         <div className="space-y-1">
                           <p className="font-bold text-gray-700 text-sm">No registered JHS 3 candidates found.</p>
                           <p className="text-xs text-gray-500">
@@ -763,16 +757,6 @@ export default function JHS3MockExamModule({
                               </td>
                             );
                           })}
-
-                          {/* CORE AGGR */}
-                          <td className="py-2.5 px-2 text-center border-r border-gray-200 bg-blue-50/50 font-black font-mono text-blue-950 text-xs">
-                            {row.calcs.coreAggregate}
-                          </td>
-
-                          {/* BEST 2 ELECTIVES AGGR */}
-                          <td className="py-2.5 px-2 text-center border-r border-gray-200 bg-gray-50 font-bold font-mono text-gray-800 text-xs">
-                            {row.calcs.bestTwoElectiveAggregate}
-                          </td>
 
                           {/* TOTAL BECE AGGREGATE */}
                           <td className="py-2.5 px-3 text-center border-r border-gray-200 bg-amber-50/70">
