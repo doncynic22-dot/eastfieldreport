@@ -670,125 +670,125 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
 
       {/* SUM TOTAL METRICS GRID */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
-          <div className="flex items-center justify-between text-blue-300 mb-1 gap-1">
-            <span className="text-xs font-extrabold uppercase tracking-wider truncate">Chairs</span>
-            <Armchair className="w-4 h-4 shrink-0 text-blue-300" />
+        <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Chairs</span>
+            <Armchair className="w-4 h-4 shrink-0 text-white" />
           </div>
-          <div className="font-mono font-black text-blue-100 text-xl sm:text-2xl my-0.5">
+          <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {totals.studentChairs}
           </div>
-          <span className="text-[10px] text-blue-200/90 font-medium truncate">Student Chairs</span>
+          <span className="text-[10px] text-white font-extrabold truncate">Student Chairs</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
-          <div className="flex items-center justify-between text-blue-300 mb-1 gap-1">
-            <span className="text-xs font-extrabold uppercase tracking-wider truncate">Tables</span>
-            <Table className="w-4 h-4 shrink-0 text-blue-300" />
+        <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Tables</span>
+            <Table className="w-4 h-4 shrink-0 text-white" />
           </div>
-          <div className="font-mono font-black text-blue-100 text-xl sm:text-2xl my-0.5">
+          <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {totals.studentTables}
           </div>
-          <span className="text-[10px] text-blue-200/90 font-medium truncate">Student Desks</span>
+          <span className="text-[10px] text-white font-extrabold truncate">Student Desks</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-indigo-950/90 border-2 border-indigo-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
-          <div className="flex items-center justify-between text-indigo-300 mb-1 gap-1">
-            <span className="text-xs font-extrabold uppercase tracking-wider truncate">Computers</span>
-            <Monitor className="w-4 h-4 shrink-0 text-indigo-300" />
+        <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Computers</span>
+            <Monitor className="w-4 h-4 shrink-0 text-white" />
           </div>
-          <div className="font-mono font-black text-indigo-100 text-xl sm:text-2xl my-0.5">
+          <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {totals.computers}
           </div>
-          <span className="text-[10px] text-indigo-200/90 font-medium truncate">PCs &amp; Laptops</span>
+          <span className="text-[10px] text-white font-extrabold truncate">PCs &amp; Laptops</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-purple-950/90 border-2 border-purple-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
-          <div className="flex items-center justify-between text-purple-300 mb-1 gap-1">
-            <span className="text-xs font-extrabold uppercase tracking-wider truncate">Projectors</span>
-            <Tv className="w-4 h-4 shrink-0 text-purple-300" />
+        <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Projectors</span>
+            <Tv className="w-4 h-4 shrink-0 text-white" />
           </div>
-          <div className="font-mono font-black text-purple-100 text-xl sm:text-2xl my-0.5">
+          <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {totals.projectors}
           </div>
-          <span className="text-[10px] text-purple-200/90 font-medium truncate">AV / Screens</span>
+          <span className="text-[10px] text-white font-extrabold truncate">AV / Screens</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
-          <div className="flex items-center justify-between text-blue-300 mb-1 gap-1">
-            <span className="text-xs font-extrabold uppercase tracking-wider truncate">Textbooks</span>
-            <BookOpen className="w-4 h-4 shrink-0 text-blue-300" />
+        <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Textbooks</span>
+            <BookOpen className="w-4 h-4 shrink-0 text-white" />
           </div>
-          <div className="font-mono font-black text-blue-100 text-xl sm:text-2xl my-0.5">
+          <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {totals.textbooks}
           </div>
-          <span className="text-[10px] text-blue-200/90 font-medium truncate">School Books</span>
+          <span className="text-[10px] text-white font-extrabold truncate">School Books</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
-          <div className="flex items-center justify-between text-blue-300 mb-1 gap-1">
-            <span className="text-xs font-extrabold uppercase tracking-wider truncate">Washrooms</span>
-            <Bath className="w-4 h-4 shrink-0 text-blue-300" />
+        <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Washrooms</span>
+            <Bath className="w-4 h-4 shrink-0 text-white" />
           </div>
-          <div className="font-mono font-black text-blue-100 text-xl sm:text-2xl my-0.5">
+          <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {totals.washrooms}
           </div>
-          <span className="text-[10px] text-blue-200/90 font-medium truncate">Toilets / Cubicles</span>
+          <span className="text-[10px] text-white font-extrabold truncate">Toilets / Cubicles</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
-          <div className="flex items-center justify-between text-blue-300 mb-1 gap-1">
-            <span className="text-xs font-extrabold uppercase tracking-wider truncate">Sinks</span>
-            <Droplets className="w-4 h-4 shrink-0 text-blue-300" />
+        <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Sinks</span>
+            <Droplets className="w-4 h-4 shrink-0 text-white" />
           </div>
-          <div className="font-mono font-black text-blue-100 text-xl sm:text-2xl my-0.5">
+          <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {totals.sinks}
           </div>
-          <span className="text-[10px] text-blue-200/90 font-medium truncate">Wash Taps</span>
+          <span className="text-[10px] text-white font-extrabold truncate">Wash Taps</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
-          <div className="flex items-center justify-between text-blue-300 mb-1 gap-1">
-            <span className="text-xs font-extrabold uppercase tracking-wider truncate">Buses</span>
-            <Bus className="w-4 h-4 shrink-0 text-blue-300" />
+        <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Buses</span>
+            <Bus className="w-4 h-4 shrink-0 text-white" />
           </div>
-          <div className="font-mono font-black text-blue-100 text-xl sm:text-2xl my-0.5">
+          <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {totals.buses}
           </div>
-          <span className="text-[10px] text-blue-200/90 font-medium truncate">Fleet Vehicles</span>
+          <span className="text-[10px] text-white font-extrabold truncate">Fleet Vehicles</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
-          <div className="flex items-center justify-between text-blue-300 mb-1 gap-1">
-            <span className="text-xs font-extrabold uppercase tracking-wider truncate">Teacher Chairs</span>
-            <Armchair className="w-4 h-4 text-amber-300 shrink-0" />
+        <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Teacher Chairs</span>
+            <Armchair className="w-4 h-4 text-white shrink-0" />
           </div>
-          <div className="font-mono font-black text-blue-100 text-xl sm:text-2xl my-0.5">
+          <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {totals.teacherChairs}
           </div>
-          <span className="text-[10px] text-blue-200/90 font-medium truncate">Staff Seating</span>
+          <span className="text-[10px] text-white font-extrabold truncate">Staff Seating</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-blue-950/90 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
-          <div className="flex items-center justify-between text-blue-300 mb-1 gap-1">
-            <span className="text-xs font-extrabold uppercase tracking-wider truncate">Teacher Desks</span>
-            <Table className="w-4 h-4 text-amber-300 shrink-0" />
+        <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Teacher Desks</span>
+            <Table className="w-4 h-4 text-white shrink-0" />
           </div>
-          <div className="font-mono font-black text-blue-100 text-xl sm:text-2xl my-0.5">
+          <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {totals.teacherTables}
           </div>
-          <span className="text-[10px] text-blue-200/90 font-medium truncate">Staff Desks</span>
+          <span className="text-[10px] text-white font-extrabold truncate">Staff Desks</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-mauve-950 border-2 border-amber-400 text-white shadow-md flex flex-col justify-between col-span-2 min-h-[90px]">
-          <div className="flex items-center justify-between text-amber-300 mb-1 gap-1">
-            <span className="text-xs font-black uppercase tracking-wider truncate">Total Registered Assets</span>
-            <PackageCheck className="w-4 h-4 text-amber-400 shrink-0" />
+        <div className="p-3 rounded-xl bg-blue-800 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between col-span-2 min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Total Registered Assets</span>
+            <PackageCheck className="w-4 h-4 text-white shrink-0" />
           </div>
-          <div className="font-mono font-black text-amber-300 text-xl sm:text-2xl my-0.5">
+          <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {grandTotalItems}
           </div>
-          <span className="text-[10px] text-mauve-200/90 font-medium truncate">All School Equipment &amp; Furniture</span>
+          <span className="text-[10px] text-white font-extrabold truncate">All School Equipment &amp; Furniture</span>
         </div>
       </div>
 

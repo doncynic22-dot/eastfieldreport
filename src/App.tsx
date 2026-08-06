@@ -947,16 +947,7 @@ export default function App() {
   };
 
   return (
-    <div 
-      className="min-h-screen text-[#1A043B] font-sans pb-12 print:pb-0 relative"
-      style={{
-        backgroundImage: `url(${academyHubBg})`,
-        backgroundRepeat: 'repeat',
-        backgroundPosition: 'center',
-        backgroundSize: '400px 400px',
-        backgroundColor: '#F8F6FC'
-      }}
-    >
+    <div className="min-h-screen bg-[#F8F6FC] text-[#1A043B] font-sans pb-12 print:pb-0">
       {/* GLOBAL HIGH-CONTRAST HEADER NAVBAR - HIDE IN PRINT */}
       <header className="bg-[#1C053E] border-b border-white/15 text-white sticky top-0 z-40 shadow-sm no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -1168,53 +1159,65 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {/* A. GENERAL HUB INFORMATION SCREEN */}
         {activePortal === 'hub' && (
-          <div className="space-y-6 animate-fadeIn no-print py-4">
-            {/* 1. Hero Welcome Card */}
-            <div className="bg-white/95 backdrop-blur-md p-6 sm:p-10 rounded-2xl border border-mauve-500/20 text-center max-w-3xl mx-auto space-y-5 shadow-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 opacity-5">
-                <School className="w-48 h-48 text-mauve-900" />
-              </div>
-              
-              <div className="mx-auto flex items-center justify-center">
-                {config.schoolLogoUrl ? (
-                  <img 
-                    src={config.schoolLogoUrl} 
-                    alt={`${config.schoolName} logo`} 
-                    className="w-16 h-16 object-contain rounded-lg shadow-md border border-mauve-500/10"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="w-12 h-12 rounded bg-mauve-100 text-mauve-900 flex items-center justify-center border border-mauve-500/10">
-                    <School className="w-6 h-6" />
-                  </div>
-                )}
-              </div>
+          <div 
+            className="p-6 sm:p-10 rounded-2xl border border-mauve-500/30 shadow-xl relative overflow-hidden animate-fadeIn no-print my-4"
+            style={{
+              backgroundImage: `url(${academyHubBg})`,
+              backgroundRepeat: 'repeat',
+              backgroundPosition: 'center',
+              backgroundSize: '400px 400px',
+              backgroundColor: '#f6f2fb'
+            }}
+          >
+            <div className="absolute inset-0 bg-mauve-950/10 pointer-events-none rounded-2xl" />
+            <div className="relative z-10 space-y-6">
+              {/* 1. Hero Welcome Card */}
+              <div className="bg-white/95 backdrop-blur-md p-6 sm:p-10 rounded-2xl border border-mauve-500/20 text-center max-w-3xl mx-auto space-y-5 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-5">
+                  <School className="w-48 h-48 text-mauve-900" />
+                </div>
+                
+                <div className="mx-auto flex items-center justify-center">
+                  {config.schoolLogoUrl ? (
+                    <img 
+                      src={config.schoolLogoUrl} 
+                      alt={`${config.schoolName} logo`} 
+                      className="w-16 h-16 object-contain rounded-lg shadow-md border border-mauve-500/10"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded bg-mauve-100 text-mauve-900 flex items-center justify-center border border-mauve-500/10">
+                      <School className="w-6 h-6" />
+                    </div>
+                  )}
+                </div>
 
-              <div className="space-y-1.5 relative z-10">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-mauve-900 bg-mauve-100 px-2.5 py-0.5 rounded">
-                  Ghanaian Basic Education Framework
-                </span>
-                <h1 className="font-display font-bold text-2xl sm:text-3xl text-mauve-900 tracking-tight uppercase">
-                  EASTFIELD ACADEMY SCHOOL MANAGEMENT SYSTEM
-                </h1>
-                <p className="text-xs text-gray-600 max-w-xl mx-auto leading-relaxed">
-                  An integrated portal for Eastfield Academy teachers and administrators to manage pupil assessments, academic records, fee tracking, and official report cards.
-                </p>
-              </div>
+                <div className="space-y-1.5 relative z-10">
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-mauve-900 bg-mauve-100 px-2.5 py-0.5 rounded">
+                    Ghanaian Basic Education Framework
+                  </span>
+                  <h1 className="font-display font-bold text-2xl sm:text-3xl text-mauve-900 tracking-tight uppercase">
+                    EASTFIELD ACADEMY SCHOOL MANAGEMENT SYSTEM
+                  </h1>
+                  <p className="text-xs text-gray-600 max-w-xl mx-auto leading-relaxed">
+                    An integrated portal for Eastfield Academy teachers and administrators to manage pupil assessments, academic records, fee tracking, and official report cards.
+                  </p>
+                </div>
 
-              <div className="flex flex-col sm:flex-row justify-center gap-3 pt-1 relative z-10">
-                <button
-                  onClick={() => setActivePortal('teacher')}
-                  className="bg-mauve-900 hover:bg-mauve-700 text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer shadow-md uppercase tracking-wider border border-white/30"
-                >
-                  Enter Teacher Portal
-                </button>
-                <button
-                  onClick={() => setActivePortal('admin')}
-                  className="bg-[#1E0650] border border-white/30 hover:bg-[#2B0D5D] text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer uppercase tracking-wider shadow-md"
-                >
-                  Enter Admin Portal
-                </button>
+                <div className="flex flex-col sm:flex-row justify-center gap-3 pt-1 relative z-10">
+                  <button
+                    onClick={() => setActivePortal('teacher')}
+                    className="bg-mauve-900 hover:bg-mauve-700 text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer shadow-md uppercase tracking-wider border border-white/30"
+                  >
+                    Enter Teacher Portal
+                  </button>
+                  <button
+                    onClick={() => setActivePortal('admin')}
+                    className="bg-[#1E0650] border border-white/30 hover:bg-[#2B0D5D] text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer uppercase tracking-wider shadow-md"
+                  >
+                    Enter Admin Portal
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1242,14 +1245,25 @@ export default function App() {
               </div>
             ) : !isAdminAuthenticated ? (
               /* ADMIN SECURITY ACCESS CODES FOR DEMO */
-              <div className="max-w-lg mx-auto bg-white/95 backdrop-blur-md p-6 sm:p-8 rounded-2xl border border-mauve-500/20 shadow-xl space-y-4 no-print animate-fadeIn my-6">
-                <div className="text-center space-y-1.5">
-                  <div className="w-12 h-12 rounded-xl bg-mauve-100 text-mauve-900 mx-auto flex items-center justify-center border border-mauve-500/10 shadow-sm">
-                    <Lock className="w-6 h-6" />
+              <div 
+                className="max-w-lg mx-auto p-6 sm:p-8 rounded-2xl border border-mauve-500/30 shadow-xl relative overflow-hidden space-y-4 no-print animate-fadeIn my-6"
+                style={{
+                  backgroundImage: `url(${academyHubBg})`,
+                  backgroundRepeat: 'repeat',
+                  backgroundPosition: 'center',
+                  backgroundSize: '400px 400px',
+                  backgroundColor: '#f6f2fb'
+                }}
+              >
+                <div className="absolute inset-0 bg-mauve-950/10 pointer-events-none rounded-2xl" />
+                <div className="relative z-10 bg-white/95 backdrop-blur-md p-6 sm:p-8 rounded-2xl border border-mauve-500/20 shadow-xl space-y-4">
+                  <div className="text-center space-y-1.5">
+                    <div className="w-12 h-12 rounded-xl bg-mauve-100 text-mauve-900 mx-auto flex items-center justify-center border border-mauve-500/10 shadow-sm">
+                      <Lock className="w-6 h-6" />
+                    </div>
+                    <h3 className="font-display font-extrabold text-mauve-950 text-lg uppercase tracking-tight">Administrative Access Security</h3>
+                    <p className="text-xs text-gray-600 leading-relaxed font-medium">Sign in with administrative credentials to access student admissions, staff mapping, and report configurations.</p>
                   </div>
-                  <h3 className="font-display font-extrabold text-mauve-950 text-lg uppercase tracking-tight">Administrative Access Security</h3>
-                  <p className="text-xs text-gray-600 leading-relaxed font-medium">Sign in with administrative credentials to access student admissions, staff mapping, and report configurations.</p>
-                </div>
 
                   {adminError && (
                     <div className="bg-rose-50 text-rose-700 p-2.5 rounded-xl border border-rose-200 text-xs text-center font-bold">
@@ -1304,6 +1318,7 @@ export default function App() {
                       Authorize Administrative Credentials
                     </button>
                   </form>
+                </div>
               </div>
             ) : (
               /* AUTHORIZED ADMIN MODULES */

@@ -411,8 +411,18 @@ export default function StudentAttendancePortal({
   // ==========================================
   if (!currentUser && !isAdminAuthenticated) {
     return (
-      <div className="max-w-2xl mx-auto my-6 animate-fadeIn no-print">
-        <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-mauve-500/20 shadow-xl overflow-hidden">
+      <div 
+        className="max-w-2xl mx-auto p-6 sm:p-8 rounded-2xl border border-mauve-500/30 shadow-xl relative overflow-hidden animate-fadeIn no-print my-6"
+        style={{
+          backgroundImage: `url(${academyHubBg})`,
+          backgroundRepeat: 'repeat',
+          backgroundPosition: 'center',
+          backgroundSize: '400px 400px',
+          backgroundColor: '#f6f2fb'
+        }}
+      >
+        <div className="absolute inset-0 bg-mauve-950/10 pointer-events-none rounded-2xl" />
+        <div className="relative z-10 bg-white/95 backdrop-blur-md rounded-2xl border border-mauve-500/20 shadow-xl overflow-hidden">
           {/* Banner */}
           <div className="bg-gradient-to-r from-[#1C053E] via-[#2B0D5D] to-[#1C053E] p-6 text-white text-center relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10">

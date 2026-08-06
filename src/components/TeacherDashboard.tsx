@@ -938,8 +938,18 @@ export default function TeacherDashboard({
   // Render Auth panel if not logged in
   if (!currentUser) {
     return (
-      <div className="max-w-5xl mx-auto my-6 text-xs animate-fadeIn">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div 
+        className="max-w-5xl mx-auto p-6 sm:p-8 rounded-2xl border border-mauve-500/30 shadow-xl relative overflow-hidden animate-fadeIn my-6 text-xs"
+        style={{
+          backgroundImage: `url(${academyHubBg})`,
+          backgroundRepeat: 'repeat',
+          backgroundPosition: 'center',
+          backgroundSize: '400px 400px',
+          backgroundColor: '#f6f2fb'
+        }}
+      >
+        <div className="absolute inset-0 bg-mauve-950/10 pointer-events-none rounded-2xl" />
+        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left column: Quick login instructions & Instant Profiles */}
           <div className="lg:col-span-5 bg-white/95 backdrop-blur-md p-5 rounded-2xl border border-mauve-500/20 space-y-4 shadow-lg">
             <div className="flex items-center gap-3">
