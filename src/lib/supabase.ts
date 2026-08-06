@@ -1910,19 +1910,40 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
   const client = getSupabaseClient();
   if (!client) {
     const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
-    return cached ? JSON.parse(cached) : null;
+    if (cached !== null) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return null;
   }
   try {
     const { data, error } = await client.from('ea_inventory').select('*');
     if (error) {
+      console.warn('Supabase fetch inventory error:', error);
       const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
-      return cached ? JSON.parse(cached) : null;
+      if (cached !== null) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {}
+      }
+      return null;
     }
-    if (!data || data.length === 0) {
-      const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
-      return cached ? JSON.parse(cached) : null;
+    if (!data) {
+      return [];
     }
-    return data.map(item => ({
+    const isInitialized = localStorage.getItem('ea_inventory_initialized');
+    if (data.length === 0 && isInitialized === 'true') {
+      localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify([]));
+      localStorage.setItem('ea_school_inventory', JSON.stringify([]));
+      return [];
+    }
+    if (data.length === 0 && !isInitialized) {
+      return null;
+    }
+    const mapped = data.map(item => ({
       id: item.id || `inv_${Math.random()}`,
       locationName: item.location_name || item.locationName || '',
       category: item.category || 'Classroom',
@@ -1947,15 +1968,28 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
       notes: item.notes || '',
       updatedAt: item.updated_at || item.updatedAt || new Date().toISOString()
     }));
+
+    localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(mapped));
+    localStorage.setItem('ea_school_inventory', JSON.stringify(mapped));
+    localStorage.setItem('ea_inventory_initialized', 'true');
+    return mapped;
   } catch (err: any) {
+    console.warn('fetchSupabaseInventory exception:', err);
     const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
-    return cached ? JSON.parse(cached) : null;
+    if (cached !== null) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return null;
   }
 }
 
 export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[], deletedIds: string[] = []): Promise<boolean> {
   localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(inventory));
   localStorage.setItem('ea_school_inventory', JSON.stringify(inventory));
+  localStorage.setItem('ea_inventory_initialized', 'true');
 
   try {
     window.dispatchEvent(new Event('ea_inventory_updated'));
@@ -1968,7 +2002,13 @@ export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[
     if (deletedIds && deletedIds.length > 0) {
       try {
         await client.from('ea_inventory').delete().in('id', deletedIds);
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Error deleting records from ea_inventory:', e);
+      }
+    }
+
+    if (inventory.length === 0) {
+      return true;
     }
 
     const payloads = inventory.map(item => ({
@@ -2002,11 +2042,30 @@ export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[
 }
 
 export async function deleteSupabaseInventoryRecord(id: string): Promise<boolean> {
+  try {
+    const cached = localStorage.getItem('ea_school_inventory') || localStorage.getItem('mock_supabase_ea_inventory');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) {
+        const updated = parsed.filter((item: any) => item.id !== id);
+        localStorage.setItem('ea_school_inventory', JSON.stringify(updated));
+        localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(updated));
+      }
+    }
+    localStorage.setItem('ea_inventory_initialized', 'true');
+    window.dispatchEvent(new Event('ea_inventory_updated'));
+  } catch (e) {}
+
   const client = getSupabaseClient();
   if (client) {
     try {
-      await client.from('ea_inventory').delete().eq('id', id);
-    } catch (e) {}
+      const { error } = await client.from('ea_inventory').delete().eq('id', id);
+      if (error) {
+        console.warn('deleteSupabaseInventoryRecord Supabase error:', error);
+      }
+    } catch (e) {
+      console.warn('deleteSupabaseInventoryRecord exception:', e);
+    }
   }
   return true;
 }

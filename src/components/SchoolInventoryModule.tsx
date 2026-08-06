@@ -66,7 +66,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
   const [inventory, setInventory] = useState<ClassroomInventoryRecord[]>(() => {
     try {
       const saved = localStorage.getItem('ea_school_inventory') || localStorage.getItem('mock_supabase_ea_inventory');
-      if (saved) {
+      if (saved !== null) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) return parsed;
       }
@@ -111,18 +111,21 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
       try {
         const remote = await fetchSupabaseInventory();
         if (remote && Array.isArray(remote) && isMounted) {
-          if (remote.length > 0) {
-            setInventory(remote);
-            localStorage.setItem('ea_school_inventory', JSON.stringify(remote));
-            localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(remote));
+          setInventory(remote);
+          localStorage.setItem('ea_school_inventory', JSON.stringify(remote));
+          localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(remote));
+          localStorage.setItem('ea_inventory_initialized', 'true');
+        } else if (isMounted) {
+          const saved = localStorage.getItem('ea_school_inventory') || localStorage.getItem('mock_supabase_ea_inventory');
+          if (saved !== null) {
+            try {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed)) setInventory(parsed);
+            } catch (e) {}
           } else {
-            const saved = localStorage.getItem('ea_school_inventory');
-            if (saved !== null) {
-              setInventory(JSON.parse(saved));
-            } else {
-              setInventory(DEFAULT_INVENTORY_DATA);
-              saveSupabaseInventory(DEFAULT_INVENTORY_DATA);
-            }
+            setInventory(DEFAULT_INVENTORY_DATA);
+            saveSupabaseInventory(DEFAULT_INVENTORY_DATA);
+            localStorage.setItem('ea_inventory_initialized', 'true');
           }
         }
       } catch (e) {
@@ -345,6 +348,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
     setInventory(updated);
     localStorage.setItem('ea_school_inventory', JSON.stringify(updated));
     localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(updated));
+    localStorage.setItem('ea_inventory_initialized', 'true');
     showNotification(`Deleted inventory record for ${record.locationName}`);
     setDeleteConfirmRecord(null);
 
@@ -1113,7 +1117,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
       {/* ADD / EDIT MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto no-print">
-          <div className="bg-white rounded-2xl max-w-3xl w-full border-2 border-blue-900 shadow-2xl overflow-hidden animate-scaleUp">
+          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col border-2 border-blue-900 shadow-2xl overflow-hidden animate-scaleUp">
             {/* Modal Header */}
             <div className="bg-blue-900 text-white p-4 flex items-center justify-between border-b border-blue-500">
               <div className="flex items-center gap-2">
