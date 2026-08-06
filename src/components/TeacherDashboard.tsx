@@ -9,6 +9,7 @@ import { BookOpen, UserCheck, Search, CheckCircle2, Save, Users, Calendar, Award
 import { supabase } from '../supabaseClient';
 import { sendPasswordResetEmail } from '../services/emailDispatcher';
 import { getSupabaseCredentials, saveSupabaseGrades, saveSupabaseAttendance } from '../lib/supabase';
+import academyHubBg from '../assets/images/academy_hub_bg_sharp_1786006863900.jpg';
 import { matchesSubject, findMatchingGrade } from '../utils/subjectUtils';
 import JHS3MockExamModule from './JHS3MockExamModule';
 
@@ -937,37 +938,38 @@ export default function TeacherDashboard({
   // Render Auth panel if not logged in
   if (!currentUser) {
     return (
-      <div className="max-w-4xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 items-start py-6 animate-fadeIn text-xs">
-        {/* Left column: Quick login instructions & Instant Profiles */}
-        <div className="lg:col-span-5 bg-white p-5 rounded-lg border border-mauve-500/20 space-y-4 shadow-sm">
-          <div className="flex items-center gap-3">
-            {config.schoolLogoUrl ? (
-              <img 
-                src={config.schoolLogoUrl} 
-                alt={`${config.schoolName} logo`} 
-                className="w-11 h-11 object-contain rounded-lg shadow-sm shrink-0"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="w-11 h-11 rounded bg-mauve-100 text-mauve-900 flex items-center justify-center border border-mauve-500/10 shrink-0">
-                <School className="w-5 h-5" />
+      <div className="max-w-5xl mx-auto my-6 text-xs animate-fadeIn">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left column: Quick login instructions & Instant Profiles */}
+          <div className="lg:col-span-5 bg-white/95 backdrop-blur-md p-5 rounded-2xl border border-mauve-500/20 space-y-4 shadow-lg">
+            <div className="flex items-center gap-3">
+              {config.schoolLogoUrl ? (
+                <img 
+                  src={config.schoolLogoUrl} 
+                  alt={`${config.schoolName} logo`} 
+                  className="w-11 h-11 object-contain rounded-lg shadow-sm shrink-0"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-11 h-11 rounded bg-mauve-100 text-mauve-900 flex items-center justify-center border border-mauve-500/10 shrink-0">
+                  <School className="w-5 h-5" />
+                </div>
+              )}
+              <div>
+                <h3 className="font-display font-extrabold text-mauve-950 text-base sm:text-lg">
+                  Teacher Portal
+                </h3>
+                <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                  Welcome, Eastfield Educator. Log in to your register.
+                </p>
               </div>
-            )}
-            <div>
-              <h3 className="font-display font-extrabold text-white text-base sm:text-lg">
-                Teacher Portal
-              </h3>
-              <p className="text-xs text-gray-300 mt-1 leading-relaxed">
-                Welcome, Eastfield Educator. Log in to your register.
-              </p>
             </div>
+
+
           </div>
 
-
-        </div>
-
-         {/* Right column: Form */}
-        <div className="lg:col-span-7 bg-white p-5 sm:p-6 rounded-lg border border-mauve-500/20 space-y-4 shadow-sm">
+          {/* Right column: Form */}
+          <div className="lg:col-span-7 bg-white/95 backdrop-blur-md p-5 sm:p-6 rounded-2xl border border-mauve-500/20 space-y-4 shadow-lg">
           {/* Tabs for Login / Register / Forgot */}
           <div className="flex border-b border-mauve-500/10">
             <button
@@ -1486,8 +1488,9 @@ export default function TeacherDashboard({
           )}
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // Loaded views once teacher is logged in:
   const isInterceptorsResolved = selectedLevel && selectedClass && selectedSubject;

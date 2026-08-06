@@ -17,6 +17,7 @@ import {
 import AdminDashboard from './components/AdminDashboard';
 import TeacherDashboard from './components/TeacherDashboard';
 import StudentAttendancePortal from './components/StudentAttendancePortal';
+import academyHubBg from './assets/images/academy_hub_bg_sharp_1786006863900.jpg';
 import { School, ShieldCheck, GraduationCap, Users2, FileCheck, CheckCircle2, Lock, Sparkles, BookOpen, Eye, EyeOff, Database, AlertTriangle, X, Menu } from 'lucide-react';
 import {
   getSupabaseCredentials,
@@ -946,7 +947,16 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F6FC] text-[#1A043B] font-sans pb-12 print:pb-0">
+    <div 
+      className="min-h-screen text-[#1A043B] font-sans pb-12 print:pb-0 relative"
+      style={{
+        backgroundImage: `url(${academyHubBg})`,
+        backgroundRepeat: 'repeat',
+        backgroundPosition: 'center',
+        backgroundSize: '400px 400px',
+        backgroundColor: '#F8F6FC'
+      }}
+    >
       {/* GLOBAL HIGH-CONTRAST HEADER NAVBAR - HIDE IN PRINT */}
       <header className="bg-[#1C053E] border-b border-white/15 text-white sticky top-0 z-40 shadow-sm no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -1158,9 +1168,9 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
         {/* A. GENERAL HUB INFORMATION SCREEN */}
         {activePortal === 'hub' && (
-          <div className="space-y-6 animate-fadeIn no-print">
+          <div className="space-y-6 animate-fadeIn no-print py-4">
             {/* 1. Hero Welcome Card */}
-            <div className="bg-white p-6 sm:p-10 rounded-lg border border-mauve-500/20 text-center max-w-3xl mx-auto space-y-5 relative overflow-hidden">
+            <div className="bg-white/95 backdrop-blur-md p-6 sm:p-10 rounded-2xl border border-mauve-500/20 text-center max-w-3xl mx-auto space-y-5 shadow-xl relative overflow-hidden">
               <div className="absolute top-0 right-0 p-4 opacity-5">
                 <School className="w-48 h-48 text-mauve-900" />
               </div>
@@ -1179,7 +1189,7 @@ export default function App() {
                   </div>
                 )}
               </div>
- 
+
               <div className="space-y-1.5 relative z-10">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-mauve-900 bg-mauve-100 px-2.5 py-0.5 rounded">
                   Ghanaian Basic Education Framework
@@ -1191,63 +1201,21 @@ export default function App() {
                   An integrated portal for Eastfield Academy teachers and administrators to manage pupil assessments, academic records, fee tracking, and official report cards.
                 </p>
               </div>
- 
+
               <div className="flex flex-col sm:flex-row justify-center gap-3 pt-1 relative z-10">
                 <button
                   onClick={() => setActivePortal('teacher')}
-                  className="bg-mauve-900 hover:bg-mauve-700 text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer shadow-sm uppercase tracking-wider border border-white/30"
+                  className="bg-mauve-900 hover:bg-mauve-700 text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer shadow-md uppercase tracking-wider border border-white/30"
                 >
                   Enter Teacher Portal
                 </button>
                 <button
                   onClick={() => setActivePortal('admin')}
-                  className="bg-[#1E0650] border border-white/30 hover:bg-[#2B0D5D] text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer uppercase tracking-wider shadow-sm"
+                  className="bg-[#1E0650] border border-white/30 hover:bg-[#2B0D5D] text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer uppercase tracking-wider shadow-md"
                 >
                   Enter Admin Portal
                 </button>
               </div>
-            </div>
- 
-            {/* 2. Feature Highlights Bento Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-5xl mx-auto pt-2">
-              {[
-                {
-                  title: 'Automated Marking Engine',
-                  desc: 'Weighs continuous class assignments at 50% and term examinations at 50%, dynamically outputting standard letter codes and contextual performance evaluations.',
-                  icon: FileCheck,
-                  badge: 'Standardized'
-                },
-                {
-                  title: 'Divisional Security Access',
-                  desc: 'Distinct user portals for administrative operations and teachers. Teacher portals are locked behind classroom registrations to ensure gradebook integrity.',
-                  icon: ShieldCheck,
-                  badge: 'Secure'
-                },
-                {
-                  title: 'Customizable PDF Transcripts',
-                  desc: 'Fine-tune transcript layouts directly in-browser. Customize principal stamp designations, signature layers, and student conduct boards before printing.',
-                  icon: GraduationCap,
-                  badge: 'A4 Ready'
-                }
-              ].map((feat, idx) => {
-                const Icon = feat.icon;
-                return (
-                  <div key={idx} className="bg-white p-5 rounded-lg border border-mauve-500/20 flex flex-col justify-between space-y-3 shadow-sm hover:border-mauve-500/40 transition-colors">
-                    <div className="space-y-2.5">
-                      <div className="flex justify-between items-center">
-                        <div className="p-2 rounded bg-mauve-100 text-mauve-900 border border-mauve-500/10">
-                          <Icon className="w-4 h-4" />
-                        </div>
-                        <span className="text-[9px] font-mono font-bold bg-mauve-100 text-mauve-900 px-2 py-0.5 rounded uppercase tracking-wider">
-                          {feat.badge}
-                        </span>
-                      </div>
-                      <h3 className="font-display font-bold text-mauve-900 text-sm">{feat.title}</h3>
-                      <p className="text-xs text-gray-500 leading-relaxed">{feat.desc}</p>
-                    </div>
-                  </div>
-                );
-              })}
             </div>
           </div>
         )}
@@ -1257,7 +1225,7 @@ export default function App() {
           <div className="space-y-6">
             {currentUser ? (
               /* RESTRICTED VIEWS FOR TEACHERS */
-              <div className="max-w-md mx-auto bg-white p-6 rounded-lg border border-rose-200 text-center space-y-4 no-print animate-fadeIn shadow-sm">
+              <div className="max-w-md mx-auto bg-white/95 backdrop-blur-md p-6 rounded-2xl border border-rose-200 text-center space-y-4 no-print animate-fadeIn shadow-lg">
                 <div className="w-12 h-12 rounded bg-rose-50 text-rose-600 mx-auto flex items-center justify-center border border-rose-100">
                   <Lock className="w-6 h-6" />
                 </div>
@@ -1274,68 +1242,68 @@ export default function App() {
               </div>
             ) : !isAdminAuthenticated ? (
               /* ADMIN SECURITY ACCESS CODES FOR DEMO */
-              <div className="max-w-md mx-auto bg-white p-6 rounded-lg border border-mauve-500/20 space-y-4 no-print animate-fadeIn shadow-sm">
+              <div className="max-w-lg mx-auto bg-white/95 backdrop-blur-md p-6 sm:p-8 rounded-2xl border border-mauve-500/20 shadow-xl space-y-4 no-print animate-fadeIn my-6">
                 <div className="text-center space-y-1.5">
-                  <div className="w-10 h-10 rounded bg-mauve-100 text-mauve-900 mx-auto flex items-center justify-center border border-mauve-500/10">
-                    <Lock className="w-5 h-5" />
+                  <div className="w-12 h-12 rounded-xl bg-mauve-100 text-mauve-900 mx-auto flex items-center justify-center border border-mauve-500/10 shadow-sm">
+                    <Lock className="w-6 h-6" />
                   </div>
-                  <h3 className="font-display font-bold text-mauve-900 text-base">Administrative Access Security</h3>
-                  <p className="text-xs text-gray-500 leading-relaxed">Sign in with administrative credentials to access student admissions, staff mapping, and report configurations.</p>
+                  <h3 className="font-display font-extrabold text-mauve-950 text-lg uppercase tracking-tight">Administrative Access Security</h3>
+                  <p className="text-xs text-gray-600 leading-relaxed font-medium">Sign in with administrative credentials to access student admissions, staff mapping, and report configurations.</p>
                 </div>
 
-                {adminError && (
-                  <div className="bg-rose-50 text-rose-700 p-2.5 rounded border border-rose-200 text-xs text-center font-bold">
-                    {adminError}
-                  </div>
-                )}
-
-                <form onSubmit={handleAdminGateLogin} className="space-y-3.5">
-                  <div className="space-y-1 text-left">
-                    <label className="text-[10px] uppercase font-bold text-mauve-900 block">Admin Email ID</label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="e.g. admin@eastfield.com"
-                      value={adminEmail}
-                      onChange={(e) => setAdminEmail(e.target.value)}
-                      className="w-full px-3 py-2 rounded border border-mauve-500/20 outline-none text-mauve-900 bg-white focus:ring-1 focus:ring-mauve-900 text-xs"
-                    />
-                  </div>
-
-                  <div className="space-y-1 text-left relative">
-                    <label className="text-[10px] uppercase font-bold text-mauve-900 block">Admin Security Password</label>
-                    <div className="relative">
-                      <input
-                        type={showAdminPassword ? "text" : "password"}
-                        required
-                        placeholder="Enter password"
-                        value={adminPassword}
-                        onChange={(e) => setAdminPassword(e.target.value)}
-                        autoComplete="new-password"
-                        className="w-full pl-3 pr-10 py-2 rounded border border-mauve-500/20 outline-none text-mauve-900 bg-white focus:ring-1 focus:ring-mauve-900 text-xs font-mono font-bold"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowAdminPassword(!showAdminPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-mauve-900 focus:outline-none cursor-pointer"
-                        id="btn-show-admin-password"
-                      >
-                        {showAdminPassword ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
+                  {adminError && (
+                    <div className="bg-rose-50 text-rose-700 p-2.5 rounded-xl border border-rose-200 text-xs text-center font-bold">
+                      {adminError}
                     </div>
-                  </div>
+                  )}
 
-                  <button
-                    type="submit"
-                    className="w-full py-2 bg-mauve-900 hover:bg-mauve-700 text-white font-bold rounded text-xs transition cursor-pointer shadow-sm uppercase tracking-wider"
-                  >
-                    Authorize Administrative Credentials
-                  </button>
-                </form>
+                  <form onSubmit={handleAdminGateLogin} className="space-y-3.5">
+                    <div className="space-y-1 text-left">
+                      <label className="text-[10px] uppercase font-bold text-mauve-900 block">Admin Email ID</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="e.g. admin@eastfield.com"
+                        value={adminEmail}
+                        onChange={(e) => setAdminEmail(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-mauve-500/20 outline-none text-mauve-900 bg-white focus:ring-1 focus:ring-mauve-900 text-xs font-semibold"
+                      />
+                    </div>
+
+                    <div className="space-y-1 text-left relative">
+                      <label className="text-[10px] uppercase font-bold text-mauve-900 block">Admin Security Password</label>
+                      <div className="relative">
+                        <input
+                          type={showAdminPassword ? "text" : "password"}
+                          required
+                          placeholder="Enter password"
+                          value={adminPassword}
+                          onChange={(e) => setAdminPassword(e.target.value)}
+                          autoComplete="new-password"
+                          className="w-full pl-3 pr-10 py-2.5 rounded-xl border border-mauve-500/20 outline-none text-mauve-900 bg-white focus:ring-1 focus:ring-mauve-900 text-xs font-mono font-bold"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowAdminPassword(!showAdminPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-mauve-900 focus:outline-none cursor-pointer"
+                          id="btn-show-admin-password"
+                        >
+                          {showAdminPassword ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-3 bg-mauve-900 hover:bg-mauve-800 text-white font-extrabold rounded-xl text-xs transition cursor-pointer shadow-md uppercase tracking-wider"
+                    >
+                      Authorize Administrative Credentials
+                    </button>
+                  </form>
               </div>
             ) : (
               /* AUTHORIZED ADMIN MODULES */

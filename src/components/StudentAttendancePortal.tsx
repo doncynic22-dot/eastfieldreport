@@ -13,6 +13,7 @@ import {
   ReportConfig,
   AcademicLevel
 } from '../types';
+import academyHubBg from '../assets/images/academy_hub_bg_sharp_1786006863900.jpg';
 import {
   UserCheck,
   Calendar,
@@ -410,110 +411,112 @@ export default function StudentAttendancePortal({
   // ==========================================
   if (!currentUser && !isAdminAuthenticated) {
     return (
-      <div className="max-w-xl mx-auto bg-white rounded-2xl border border-mauve-500/20 shadow-xl overflow-hidden animate-fadeIn no-print">
-        {/* Banner */}
-        <div className="bg-gradient-to-r from-[#1C053E] via-[#2B0D5D] to-[#1C053E] p-6 text-white text-center relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-10">
-            <UserCheck className="w-40 h-40" />
-          </div>
-          <div className="relative z-10 space-y-2">
-            <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 mx-auto flex items-center justify-center shadow-lg">
-              <UserCheck className="w-8 h-8 text-amber-300" />
+      <div className="max-w-2xl mx-auto my-6 animate-fadeIn no-print">
+        <div className="bg-white/95 backdrop-blur-md rounded-2xl border border-mauve-500/20 shadow-xl overflow-hidden">
+          {/* Banner */}
+          <div className="bg-gradient-to-r from-[#1C053E] via-[#2B0D5D] to-[#1C053E] p-6 text-white text-center relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10">
+              <UserCheck className="w-40 h-40" />
             </div>
-            <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-300 text-mauve-950">
-              Eastfield Academy Portal
-            </span>
-            <h2 className="font-display font-black text-xl sm:text-2xl uppercase tracking-tight">
-              Student Attendance Portal
-            </h2>
-            <p className="text-xs text-white max-w-sm mx-auto leading-relaxed font-semibold">
-              Teacher &amp; Staff Access: Please log in with the registered credentials assigned by the School Administrator to mark daily student roll calls.
-            </p>
-          </div>
-        </div>
-
-        {/* Login Form Body */}
-        <div className="p-6 sm:p-8 space-y-6">
-          {/* Official Staff Authentication Banner */}
-          <div className="p-3.5 bg-purple-50 rounded-xl border border-purple-200 space-y-1">
-            <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-purple-950 uppercase tracking-wider">
-              <ShieldCheck className="w-4 h-4 text-purple-700 shrink-0" />
-              <span>Official Staff Roll Call Login</span>
-            </div>
-            <p className="text-[11px] text-purple-900 leading-relaxed font-semibold">
-              Log in using your official staff email and assigned password. As soon as the Admin assigns or updates your classroom in the Staff Directory, your access updates immediately in real time for daily roll call.
-            </p>
-          </div>
-
-          {loginError && (
-            <div className="bg-rose-50 text-rose-900 p-3 rounded-xl border border-rose-200 text-xs font-bold flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>{loginError}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleTeacherLogin} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-[11px] uppercase font-extrabold text-mauve-950 block tracking-wider">
-                Teacher Email / Username
-              </label>
-              <div className="relative">
-                <input
-                  type="email"
-                  value={loginEmail}
-                  onChange={e => setLoginEmail(e.target.value)}
-                  placeholder="e.g. kwame.mensah@eastfield.edu.gh"
-                  className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-mauve-500 text-xs font-semibold text-gray-900 placeholder:text-gray-500"
-                  required
-                />
-                <Mail className="w-4 h-4 text-gray-500 absolute left-3.5 top-3" />
+            <div className="relative z-10 space-y-2">
+              <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/20 mx-auto flex items-center justify-center shadow-lg">
+                <UserCheck className="w-8 h-8 text-amber-300" />
               </div>
+              <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-300 text-mauve-950">
+                Eastfield Academy Portal
+              </span>
+              <h2 className="font-display font-black text-xl sm:text-2xl uppercase tracking-tight">
+                Student Attendance Portal
+              </h2>
+              <p className="text-xs text-white max-w-sm mx-auto leading-relaxed font-semibold">
+                Teacher &amp; Staff Access: Please log in with the registered credentials assigned by the School Administrator to mark daily student roll calls.
+              </p>
             </div>
+          </div>
 
-            <div className="space-y-1.5">
-              <label className="text-[11px] uppercase font-extrabold text-mauve-950 block tracking-wider">
-                Assigned Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showLoginPassword ? 'text' : 'password'}
-                  value={loginPassword}
-                  onChange={e => setLoginPassword(e.target.value)}
-                  placeholder="Enter teacher password (default: teacher123)"
-                  className="w-full px-4 py-2.5 pl-10 pr-10 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-mauve-500 text-xs font-semibold text-gray-900 placeholder:text-gray-500"
-                  required
-                />
-                <KeyRound className="w-4 h-4 text-gray-500 absolute left-3.5 top-3" />
-                <button
-                  type="button"
-                  onClick={() => setShowLoginPassword(!showLoginPassword)}
-                  className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700 focus:outline-none cursor-pointer"
-                >
-                  {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+          {/* Login Form Body */}
+          <div className="p-6 sm:p-8 space-y-6">
+            {/* Official Staff Authentication Banner */}
+            <div className="p-3.5 bg-purple-50 rounded-xl border border-purple-200 space-y-1">
+              <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-purple-950 uppercase tracking-wider">
+                <ShieldCheck className="w-4 h-4 text-purple-700 shrink-0" />
+                <span>Official Staff Roll Call Login</span>
               </div>
+              <p className="text-[11px] text-purple-900 leading-relaxed font-semibold">
+                Log in using your official staff email and assigned password. As soon as the Admin assigns or updates your classroom in the Staff Directory, your access updates immediately in real time for daily roll call.
+              </p>
             </div>
 
-            <button
-              type="submit"
-              disabled={isLoggingIn}
-              className="w-full py-3 bg-[#1C053E] hover:bg-[#2B0D5D] text-white font-extrabold rounded-xl text-xs uppercase tracking-widest transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              <UserCheck className="w-4 h-4 text-amber-300" />
-              <span>{isLoggingIn ? 'Verifying Credentials...' : 'Sign In to Attendance Portal'}</span>
-            </button>
-          </form>
+            {loginError && (
+              <div className="bg-rose-50 text-rose-900 p-3 rounded-xl border border-rose-200 text-xs font-bold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
 
-          {/* Admin Switch note */}
-          <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-2 text-[11px] text-mauve-900 font-bold">
-            <span>Are you a school administrator?</span>
-            <button
-              type="button"
-              onClick={() => setActivePortal('admin')}
-              className="font-extrabold text-mauve-950 hover:text-purple-700 underline cursor-pointer"
-            >
-              Switch to Admin Portal
-            </button>
+            <form onSubmit={handleTeacherLogin} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] uppercase font-extrabold text-mauve-950 block tracking-wider">
+                  Teacher Email / Username
+                </label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    value={loginEmail}
+                    onChange={e => setLoginEmail(e.target.value)}
+                    placeholder="e.g. kwame.mensah@eastfield.edu.gh"
+                    className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-mauve-500 text-xs font-semibold text-gray-900 placeholder:text-gray-500 bg-white"
+                    required
+                  />
+                  <Mail className="w-4 h-4 text-gray-500 absolute left-3.5 top-3" />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] uppercase font-extrabold text-mauve-950 block tracking-wider">
+                  Assigned Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? 'text' : 'password'}
+                    value={loginPassword}
+                    onChange={e => setLoginPassword(e.target.value)}
+                    placeholder="Enter teacher password (default: teacher123)"
+                    className="w-full px-4 py-2.5 pl-10 pr-10 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-mauve-500 text-xs font-semibold text-gray-900 placeholder:text-gray-500 bg-white"
+                    required
+                  />
+                  <KeyRound className="w-4 h-4 text-gray-500 absolute left-3.5 top-3" />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700 focus:outline-none cursor-pointer"
+                  >
+                    {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoggingIn}
+                className="w-full py-3 bg-[#1C053E] hover:bg-[#2B0D5D] text-white font-extrabold rounded-xl text-xs uppercase tracking-widest transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <UserCheck className="w-4 h-4 text-amber-300" />
+                <span>{isLoggingIn ? 'Verifying Credentials...' : 'Sign In to Attendance Portal'}</span>
+              </button>
+            </form>
+
+            {/* Admin Switch note */}
+            <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-2 text-[11px] text-mauve-900 font-bold">
+              <span>Are you a school administrator?</span>
+              <button
+                type="button"
+                onClick={() => setActivePortal('admin')}
+                className="font-extrabold text-mauve-950 hover:text-purple-700 underline cursor-pointer"
+              >
+                Switch to Admin Portal
+              </button>
+            </div>
           </div>
         </div>
       </div>

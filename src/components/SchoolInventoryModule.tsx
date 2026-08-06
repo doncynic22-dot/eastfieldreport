@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { ClassroomInventoryRecord, CustomInventoryItem } from '../types';
-import { fetchSupabaseInventory, saveSupabaseInventory, deleteSupabaseInventoryRecord } from '../lib/supabase';
+import { fetchSupabaseInventory, saveSupabaseInventory, deleteSupabaseInventoryRecord, getDeletedInventoryIds } from '../lib/supabase';
 import {
   Boxes,
   Plus,
@@ -84,6 +84,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
   const [editingRecord, setEditingRecord] = useState<ClassroomInventoryRecord | null>(null);
   const [deleteConfirmRecord, setDeleteConfirmRecord] = useState<ClassroomInventoryRecord | null>(null);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [isDeleteAllConfirmOpen, setIsDeleteAllConfirmOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [tableViewMode, setTableViewMode] = useState<'grouped' | 'itemized'>('grouped');
@@ -375,6 +376,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
 
   // Execute Reset to Defaults
   const executeResetDefaults = async () => {
+    localStorage.removeItem('ea_deleted_inventory_ids');
     setInventory(DEFAULT_INVENTORY_DATA);
     localStorage.setItem('ea_school_inventory', JSON.stringify(DEFAULT_INVENTORY_DATA));
     localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(DEFAULT_INVENTORY_DATA));
@@ -388,6 +390,31 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
       await saveSupabaseInventory(DEFAULT_INVENTORY_DATA);
     } catch (e) {
       console.warn('Error resetting inventory:', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Execute Delete All Inventory Records
+  const executeDeleteAllInventory = async () => {
+    const allIds = inventory.map(r => r.id);
+    const currentDeleted = getDeletedInventoryIds();
+    const combined = Array.from(new Set([...currentDeleted, ...allIds]));
+    localStorage.setItem('ea_deleted_inventory_ids', JSON.stringify(combined));
+
+    setInventory([]);
+    localStorage.setItem('ea_school_inventory', JSON.stringify([]));
+    localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify([]));
+    localStorage.setItem('ea_inventory_initialized', 'true');
+    localStorage.setItem('ea_inventory_seeded', 'true');
+    showNotification('All inventory data has been deleted.');
+    setIsDeleteAllConfirmOpen(false);
+
+    setIsSyncing(true);
+    try {
+      await saveSupabaseInventory([], allIds);
+    } catch (e) {
+      console.warn('Error deleting all inventory records:', e);
     } finally {
       setIsSyncing(false);
     }
@@ -478,6 +505,12 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
       notes: formNotes.trim(),
       updatedAt: new Date().toISOString()
     };
+
+    const currentDeleted = getDeletedInventoryIds();
+    if (currentDeleted.includes(payload.id)) {
+      const updatedDeleted = currentDeleted.filter(id => id !== payload.id);
+      localStorage.setItem('ea_deleted_inventory_ids', JSON.stringify(updatedDeleted));
+    }
 
     let updatedList: ClassroomInventoryRecord[];
     if (editingRecord) {
@@ -608,6 +641,14 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
           >
             <Plus className="w-4 h-4" />
             <span>Add New Inventory</span>
+          </button>
+          <button
+            onClick={() => setIsDeleteAllConfirmOpen(true)}
+            className="px-3.5 py-2.5 bg-red-700 hover:bg-red-800 text-white font-black text-xs uppercase tracking-wider rounded-xl border border-red-500 transition shadow-md flex items-center gap-2 cursor-pointer no-print"
+            title="Delete All Recorded Data in Inventory"
+          >
+            <Trash2 className="w-4 h-4 text-white" />
+            <span className="hidden sm:inline">Delete All Data</span>
           </button>
           <button
             onClick={handleExportCSV}
@@ -786,6 +827,15 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
           >
             <RotateCcw className="w-3.5 h-3.5 text-gray-500" />
             <span className="hidden md:inline">Reset Defaults</span>
+          </button>
+
+          <button
+            onClick={() => setIsDeleteAllConfirmOpen(true)}
+            className="px-2.5 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ml-1"
+            title="Delete all recorded inventory items"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-red-600" />
+            <span className="hidden md:inline">Delete All Data</span>
           </button>
         </div>
       </div>
@@ -1417,6 +1467,41 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
               >
                 <RotateCcw className="w-4 h-4" />
                 <span>Reset Defaults</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE ALL CONFIRMATION MODAL */}
+      {isDeleteAllConfirmOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 no-print">
+          <div className="bg-white rounded-2xl max-w-md w-full border-2 border-red-600 shadow-2xl p-6 space-y-4 animate-scaleUp">
+            <div className="flex items-center gap-3 text-red-600">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              <h3 className="font-extrabold text-base text-mauve-950">Delete All Inventory Data</h3>
+            </div>
+            <p className="text-sm text-gray-700">
+              Are you sure you want to permanently delete <strong>ALL {inventory.length} recorded inventory item(s)</strong>?
+            </p>
+            <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-800 font-semibold">
+              Warning: This operation will wipe all classroom and facility inventory records across local storage and synchronized database. This action cannot be undone.
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsDeleteAllConfirmOpen(false)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteAllInventory}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl text-xs transition cursor-pointer flex items-center gap-1.5 shadow-md"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Yes, Delete All Inventory Data</span>
               </button>
             </div>
           </div>

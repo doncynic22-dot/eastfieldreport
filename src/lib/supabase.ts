@@ -1906,17 +1906,37 @@ export async function saveSupabaseSyncLogs(logs: SyncAuditLog[]): Promise<boolea
   }
 }
 
+// Helper to track deleted inventory IDs in localStorage
+export function getDeletedInventoryIds(): string[] {
+  try {
+    const saved = localStorage.getItem('ea_deleted_inventory_ids');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
 // 11. SYNC INVENTORY RECORDS
 export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord[] | null> {
   const client = getSupabaseClient();
-  const isInitialized = localStorage.getItem('ea_inventory_initialized') === 'true' || localStorage.getItem('ea_inventory_seeded') === 'true';
+  const isInitialized = localStorage.getItem('ea_inventory_initialized') === 'true' ||
+                        localStorage.getItem('ea_inventory_seeded') === 'true' ||
+                        localStorage.getItem('ea_school_inventory') !== null;
+  const deletedIds = getDeletedInventoryIds();
+
+  const filterDeleted = (records: ClassroomInventoryRecord[]) => {
+    if (!deletedIds || deletedIds.length === 0) return records;
+    return records.filter(r => !deletedIds.includes(r.id));
+  };
 
   if (!client) {
     const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
     if (cached !== null) {
       try {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) return filterDeleted(parsed);
       } catch (e) {}
     }
     if (isInitialized) return [];
@@ -1931,7 +1951,7 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
       if (cached !== null) {
         try {
           const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) return parsed;
+          if (Array.isArray(parsed)) return filterDeleted(parsed);
         } catch (e) {}
       }
       if (isInitialized) return [];
@@ -1940,7 +1960,7 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
 
     if (!data || data.length === 0) {
       if (isInitialized) {
-        // Admin or user explicitly cleared/deleted inventory
+        // Explicitly initialized/cleared inventory
         localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify([]));
         localStorage.setItem('ea_school_inventory', JSON.stringify([]));
         return [];
@@ -1979,18 +1999,20 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
       updatedAt: item.updated_at || item.updatedAt || new Date().toISOString()
     }));
 
-    localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(mapped));
-    localStorage.setItem('ea_school_inventory', JSON.stringify(mapped));
+    const cleanMapped = filterDeleted(mapped);
+
+    localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(cleanMapped));
+    localStorage.setItem('ea_school_inventory', JSON.stringify(cleanMapped));
     localStorage.setItem('ea_inventory_initialized', 'true');
     localStorage.setItem('ea_inventory_seeded', 'true');
-    return mapped;
+    return cleanMapped;
   } catch (err: any) {
     console.warn('fetchSupabaseInventory exception:', err);
     const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
     if (cached !== null) {
       try {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) return filterDeleted(parsed);
       } catch (e) {}
     }
     if (isInitialized) return [];
@@ -1999,8 +2021,17 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
 }
 
 export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[], deletedIds: string[] = []): Promise<boolean> {
-  localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(inventory));
-  localStorage.setItem('ea_school_inventory', JSON.stringify(inventory));
+  if (deletedIds && deletedIds.length > 0) {
+    const currentDeleted = getDeletedInventoryIds();
+    const combined = Array.from(new Set([...currentDeleted, ...deletedIds]));
+    localStorage.setItem('ea_deleted_inventory_ids', JSON.stringify(combined));
+  }
+
+  const activeDeleted = getDeletedInventoryIds();
+  const cleanInventory = inventory.filter(item => !activeDeleted.includes(item.id));
+
+  localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(cleanInventory));
+  localStorage.setItem('ea_school_inventory', JSON.stringify(cleanInventory));
   localStorage.setItem('ea_inventory_initialized', 'true');
   localStorage.setItem('ea_inventory_seeded', 'true');
 
@@ -2020,7 +2051,7 @@ export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[
       }
     }
 
-    if (inventory.length === 0) {
+    if (cleanInventory.length === 0) {
       if (!deletedIds || deletedIds.length === 0) {
         try {
           await client.from('ea_inventory').delete().neq('id', '___none___');
@@ -2031,7 +2062,7 @@ export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[
       return true;
     }
 
-    const payloads = inventory.map(item => ({
+    const payloads = cleanInventory.map(item => ({
       id: item.id,
       location_name: item.locationName,
       category: item.category,
@@ -2063,6 +2094,11 @@ export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[
 
 export async function deleteSupabaseInventoryRecord(id: string): Promise<boolean> {
   try {
+    const currentDeleted = getDeletedInventoryIds();
+    if (!currentDeleted.includes(id)) {
+      localStorage.setItem('ea_deleted_inventory_ids', JSON.stringify([...currentDeleted, id]));
+    }
+
     const cached = localStorage.getItem('ea_school_inventory') || localStorage.getItem('mock_supabase_ea_inventory');
     if (cached) {
       const parsed = JSON.parse(cached);
