@@ -73,6 +73,8 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
     } catch (e) {
       console.warn('Failed reading inventory from localStorage', e);
     }
+    const isInitialized = localStorage.getItem('ea_inventory_initialized') === 'true' || localStorage.getItem('ea_inventory_seeded') === 'true';
+    if (isInitialized) return [];
     return DEFAULT_INVENTORY_DATA;
   });
 
@@ -112,21 +114,6 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
         const remote = await fetchSupabaseInventory();
         if (remote && Array.isArray(remote) && isMounted) {
           setInventory(remote);
-          localStorage.setItem('ea_school_inventory', JSON.stringify(remote));
-          localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(remote));
-          localStorage.setItem('ea_inventory_initialized', 'true');
-        } else if (isMounted) {
-          const saved = localStorage.getItem('ea_school_inventory') || localStorage.getItem('mock_supabase_ea_inventory');
-          if (saved !== null) {
-            try {
-              const parsed = JSON.parse(saved);
-              if (Array.isArray(parsed)) setInventory(parsed);
-            } catch (e) {}
-          } else {
-            setInventory(DEFAULT_INVENTORY_DATA);
-            saveSupabaseInventory(DEFAULT_INVENTORY_DATA);
-            localStorage.setItem('ea_inventory_initialized', 'true');
-          }
         }
       } catch (e) {
         console.warn('Failed syncing remote inventory', e);
@@ -147,13 +134,30 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
       } catch (e) {}
     };
 
+    const handleFocus = () => {
+      loadRemoteInventory();
+    };
+
     window.addEventListener('ea_inventory_updated', handleSyncEvent);
     window.addEventListener('storage', handleSyncEvent);
+    window.addEventListener('focus', handleFocus);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadRemoteInventory();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Periodic poll every 10s for real-time global multi-tab/device sync
+    const pollInterval = setInterval(loadRemoteInventory, 10000);
 
     return () => {
       isMounted = false;
       window.removeEventListener('ea_inventory_updated', handleSyncEvent);
       window.removeEventListener('storage', handleSyncEvent);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(pollInterval);
     };
   }, []);
 
@@ -349,6 +353,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
     localStorage.setItem('ea_school_inventory', JSON.stringify(updated));
     localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(updated));
     localStorage.setItem('ea_inventory_initialized', 'true');
+    localStorage.setItem('ea_inventory_seeded', 'true');
     showNotification(`Deleted inventory record for ${record.locationName}`);
     setDeleteConfirmRecord(null);
 
@@ -373,6 +378,8 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
     setInventory(DEFAULT_INVENTORY_DATA);
     localStorage.setItem('ea_school_inventory', JSON.stringify(DEFAULT_INVENTORY_DATA));
     localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(DEFAULT_INVENTORY_DATA));
+    localStorage.setItem('ea_inventory_initialized', 'true');
+    localStorage.setItem('ea_inventory_seeded', 'true');
     showNotification('Inventory reset to default values.');
     setIsResetConfirmOpen(false);
 

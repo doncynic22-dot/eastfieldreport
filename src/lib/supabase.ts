@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord } from '../types';
+import { DEFAULT_INVENTORY_DATA } from '../data/mockData';
 
 // Helper to retrieve credentials from env or localStorage
 export function getSupabaseCredentials() {
@@ -1908,6 +1909,8 @@ export async function saveSupabaseSyncLogs(logs: SyncAuditLog[]): Promise<boolea
 // 11. SYNC INVENTORY RECORDS
 export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord[] | null> {
   const client = getSupabaseClient();
+  const isInitialized = localStorage.getItem('ea_inventory_initialized') === 'true' || localStorage.getItem('ea_inventory_seeded') === 'true';
+
   if (!client) {
     const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
     if (cached !== null) {
@@ -1916,8 +1919,10 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
         if (Array.isArray(parsed)) return parsed;
       } catch (e) {}
     }
-    return null;
+    if (isInitialized) return [];
+    return DEFAULT_INVENTORY_DATA;
   }
+
   try {
     const { data, error } = await client.from('ea_inventory').select('*');
     if (error) {
@@ -1929,21 +1934,26 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
           if (Array.isArray(parsed)) return parsed;
         } catch (e) {}
       }
-      return null;
+      if (isInitialized) return [];
+      return DEFAULT_INVENTORY_DATA;
     }
-    if (!data) {
-      return [];
+
+    if (!data || data.length === 0) {
+      if (isInitialized) {
+        // Admin or user explicitly cleared/deleted inventory
+        localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify([]));
+        localStorage.setItem('ea_school_inventory', JSON.stringify([]));
+        return [];
+      } else {
+        // First boot on a fresh DB: seed once!
+        await saveSupabaseInventory(DEFAULT_INVENTORY_DATA);
+        localStorage.setItem('ea_inventory_initialized', 'true');
+        localStorage.setItem('ea_inventory_seeded', 'true');
+        return DEFAULT_INVENTORY_DATA;
+      }
     }
-    const isInitialized = localStorage.getItem('ea_inventory_initialized');
-    if (data.length === 0 && isInitialized === 'true') {
-      localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify([]));
-      localStorage.setItem('ea_school_inventory', JSON.stringify([]));
-      return [];
-    }
-    if (data.length === 0 && !isInitialized) {
-      return null;
-    }
-    const mapped = data.map(item => ({
+
+    const mapped: ClassroomInventoryRecord[] = data.map(item => ({
       id: item.id || `inv_${Math.random()}`,
       locationName: item.location_name || item.locationName || '',
       category: item.category || 'Classroom',
@@ -1972,6 +1982,7 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
     localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(mapped));
     localStorage.setItem('ea_school_inventory', JSON.stringify(mapped));
     localStorage.setItem('ea_inventory_initialized', 'true');
+    localStorage.setItem('ea_inventory_seeded', 'true');
     return mapped;
   } catch (err: any) {
     console.warn('fetchSupabaseInventory exception:', err);
@@ -1982,7 +1993,8 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
         if (Array.isArray(parsed)) return parsed;
       } catch (e) {}
     }
-    return null;
+    if (isInitialized) return [];
+    return DEFAULT_INVENTORY_DATA;
   }
 }
 
@@ -1990,6 +2002,7 @@ export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[
   localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(inventory));
   localStorage.setItem('ea_school_inventory', JSON.stringify(inventory));
   localStorage.setItem('ea_inventory_initialized', 'true');
+  localStorage.setItem('ea_inventory_seeded', 'true');
 
   try {
     window.dispatchEvent(new Event('ea_inventory_updated'));
@@ -2008,6 +2021,13 @@ export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[
     }
 
     if (inventory.length === 0) {
+      if (!deletedIds || deletedIds.length === 0) {
+        try {
+          await client.from('ea_inventory').delete().neq('id', '___none___');
+        } catch (e) {
+          console.warn('Error wiping ea_inventory:', e);
+        }
+      }
       return true;
     }
 
@@ -2053,6 +2073,7 @@ export async function deleteSupabaseInventoryRecord(id: string): Promise<boolean
       }
     }
     localStorage.setItem('ea_inventory_initialized', 'true');
+    localStorage.setItem('ea_inventory_seeded', 'true');
     window.dispatchEvent(new Event('ea_inventory_updated'));
   } catch (e) {}
 
