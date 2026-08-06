@@ -978,8 +978,8 @@ export default function App() {
               onClick={() => setActivePortal('hub')}
               className={`px-4 py-2 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition cursor-pointer ${
                 activePortal === 'hub'
-                  ? 'bg-mauve-900 text-white border border-white/40 shadow-sm'
-                  : 'text-white hover:bg-white/10 border border-transparent'
+                  ? 'bg-violet-800 text-white border-2 border-violet-300 shadow-md'
+                  : 'bg-[#2A085A] text-violet-100 hover:bg-violet-900 border border-violet-500/40'
               }`}
             >
               Academy Hub
@@ -989,8 +989,8 @@ export default function App() {
                 onClick={() => setActivePortal('teacher')}
                 className={`px-4 py-2 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition cursor-pointer ${
                   activePortal === 'teacher'
-                    ? 'bg-mauve-900 text-white border border-white/40 shadow-sm'
-                    : 'text-white hover:bg-white/10 border border-transparent'
+                    ? 'bg-violet-800 text-white border-2 border-violet-300 shadow-md'
+                    : 'bg-[#2A085A] text-violet-100 hover:bg-violet-900 border border-violet-500/40'
                 }`}
                 id="nav-teacher-portal"
               >
@@ -1001,8 +1001,8 @@ export default function App() {
               onClick={() => setActivePortal('attendance')}
               className={`px-4 py-2 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition cursor-pointer ${
                 activePortal === 'attendance'
-                  ? 'bg-mauve-900 text-white border border-white/40 shadow-sm'
-                  : 'text-white hover:bg-white/10 border border-transparent'
+                  ? 'bg-violet-800 text-white border-2 border-violet-300 shadow-md'
+                  : 'bg-[#2A085A] text-violet-100 hover:bg-violet-900 border border-violet-500/40'
               }`}
               id="nav-attendance-portal"
             >
@@ -1013,8 +1013,8 @@ export default function App() {
                 onClick={() => setActivePortal('admin')}
                 className={`px-4 py-2 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition cursor-pointer ${
                   activePortal === 'admin'
-                    ? 'bg-mauve-900 text-white border border-white/40 shadow-sm'
-                    : 'text-white hover:bg-white/10 border border-transparent'
+                    ? 'bg-violet-800 text-white border-2 border-violet-300 shadow-md'
+                    : 'bg-[#2A085A] text-violet-100 hover:bg-violet-900 border border-violet-500/40'
                 }`}
                 id="nav-admin-portal"
               >
@@ -1028,7 +1028,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="p-2 rounded-lg bg-mauve-50 text-mauve-900 hover:bg-mauve-100 transition border border-mauve-500/15"
+              className="p-2 rounded-lg bg-violet-900 text-white hover:bg-violet-800 transition border border-violet-400/40 shadow-sm"
               aria-label="Toggle Navigation Menu"
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -1036,18 +1036,66 @@ export default function App() {
           </div>
         </div>
 
+        {/* ALWAYS-VISIBLE MOBILE GRID QUICK NAV BAR */}
+        <div className="md:hidden bg-[#150330] border-t border-violet-800/60 p-2 grid grid-cols-2 gap-1.5 shadow-inner">
+          <button
+            onClick={() => setActivePortal('hub')}
+            className={`w-full justify-center px-3 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1 text-center ${
+              activePortal === 'hub'
+                ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
+            }`}
+          >
+            Academy Hub
+          </button>
+          {!isAdminAuthenticated && (
+            <button
+              onClick={() => setActivePortal('teacher')}
+              className={`w-full justify-center px-3 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1 text-center ${
+                activePortal === 'teacher'
+                  ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                  : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
+              }`}
+            >
+              Teacher Portal
+            </button>
+          )}
+          <button
+            onClick={() => setActivePortal('attendance')}
+            className={`w-full justify-center px-3 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1 text-center ${
+              activePortal === 'attendance'
+                ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
+            }`}
+          >
+            Attendance
+          </button>
+          {!currentUser && (
+            <button
+              onClick={() => setActivePortal('admin')}
+              className={`w-full justify-center px-3 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1 text-center ${
+                activePortal === 'admin'
+                  ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                  : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
+              }`}
+            >
+              Admin Portal
+            </button>
+          )}
+        </div>
+
         {/* Mobile Dropdown Navigation Menu */}
         {isMobileMenuOpen && (
-          <div className="md:hidden border-t border-white/20 bg-[#1C053E] px-4 py-3 space-y-2 shadow-md animate-fadeIn">
+          <div className="md:hidden border-t border-violet-700/50 bg-[#1C053E] px-4 py-3 space-y-2 shadow-2xl animate-fadeIn">
             <button
               onClick={() => {
                 setActivePortal('hub');
                 setIsMobileMenuOpen(false);
               }}
-              className={`w-full text-left px-4 py-3 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition ${
+              className={`w-full text-left px-4 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition ${
                 activePortal === 'hub'
-                  ? 'bg-mauve-900 text-white border border-white/40'
-                  : 'text-white bg-white/5 hover:bg-white/10 border border-transparent'
+                  ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                  : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
               }`}
             >
               Academy Hub
@@ -1059,10 +1107,10 @@ export default function App() {
                   setActivePortal('teacher');
                   setIsMobileMenuOpen(false);
                 }}
-                className={`w-full text-left px-4 py-3 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition ${
+                className={`w-full text-left px-4 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition ${
                   activePortal === 'teacher'
-                    ? 'bg-mauve-900 text-white border border-white/40'
-                    : 'text-white bg-white/5 hover:bg-white/10 border border-transparent'
+                    ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                    : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
                 }`}
               >
                 Teacher Portal
@@ -1074,10 +1122,10 @@ export default function App() {
                 setActivePortal('attendance');
                 setIsMobileMenuOpen(false);
               }}
-              className={`w-full text-left px-4 py-3 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition ${
+              className={`w-full text-left px-4 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition ${
                 activePortal === 'attendance'
-                  ? 'bg-mauve-900 text-white border border-white/40'
-                  : 'text-white bg-white/5 hover:bg-white/10 border border-transparent'
+                  ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                  : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
               }`}
             >
               Attendance Portal
@@ -1089,10 +1137,10 @@ export default function App() {
                   setActivePortal('admin');
                   setIsMobileMenuOpen(false);
                 }}
-                className={`w-full text-left px-4 py-3 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition ${
+                className={`w-full text-left px-4 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition ${
                   activePortal === 'admin'
-                    ? 'bg-mauve-900 text-white border border-white/40'
-                    : 'text-white bg-white/5 hover:bg-white/10 border border-transparent'
+                    ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                    : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
                 }`}
               >
                 Admin Portal

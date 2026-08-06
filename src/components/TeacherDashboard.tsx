@@ -1994,19 +1994,21 @@ export default function TeacherDashboard({
                               <td className="p-3 text-center">
                                 <input
                                   type="number"
+                                  inputMode="numeric"
                                   placeholder={`0-${classLimit}`}
                                   value={inputs.classScore}
                                   onChange={(e) => handleGradeInputChange(student.id, 'classScore', e.target.value)}
-                                  className="w-24 px-2 py-1 text-xs border border-mauve-500/20 outline-none focus:ring-1 focus:ring-mauve-900 rounded text-center font-mono font-bold bg-white text-mauve-900"
+                                  className="w-20 sm:w-24 px-2 py-1.5 text-sm sm:text-xs border-2 border-violet-400/60 focus:border-violet-700 outline-none focus:ring-1 focus:ring-violet-700 rounded-lg text-center font-mono font-black bg-white text-mauve-900 shadow-2xs"
                                 />
                               </td>
                               <td className="p-3 text-center">
                                 <input
                                   type="number"
+                                  inputMode="numeric"
                                   placeholder={`0-${examLimit}`}
                                   value={inputs.examScore}
                                   onChange={(e) => handleGradeInputChange(student.id, 'examScore', e.target.value)}
-                                  className="w-24 px-2 py-1 text-xs border border-mauve-500/20 outline-none focus:ring-1 focus:ring-mauve-900 rounded text-center font-mono font-bold bg-white text-mauve-900"
+                                  className="w-20 sm:w-24 px-2 py-1.5 text-sm sm:text-xs border-2 border-violet-400/60 focus:border-violet-700 outline-none focus:ring-1 focus:ring-violet-700 rounded-lg text-center font-mono font-black bg-white text-mauve-900 shadow-2xs"
                                 />
                               </td>
                               <td className="p-3 text-center font-mono font-bold text-sm text-mauve-900">

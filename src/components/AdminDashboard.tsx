@@ -1038,8 +1038,8 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {/* 2. TAB TOGGLES (HORIZONTALLY ARRANGED WITH TWO IN A COLUMN) */}
-      <div className="grid grid-flow-col grid-rows-2 auto-cols-[minmax(140px,1fr)] sm:auto-cols-[minmax(170px,1fr)] gap-2 overflow-x-auto pb-3 border-b border-mauve-500/10 no-print">
+      {/* 2. TAB TOGGLES (RESPONSIVE WRAPPING GRID SO ALL TABS ARE VISIBLE) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 pb-3 border-b border-mauve-500/10 no-print">
         {[
           { id: 'analytics', label: 'Overview Metrics', icon: Users },
           { id: 'fees-dashboard', label: 'Fees Dashboard', icon: BarChart3 },

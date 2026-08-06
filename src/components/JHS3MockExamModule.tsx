@@ -654,13 +654,15 @@ export default function JHS3MockExamModule({
                     <th className="py-2.5 px-2 text-center border-r border-blue-800 bg-blue-900 text-blue-200 font-black text-[10px] w-20">
                       BEST 2 ELECT
                     </th>
-                    <th className="py-2.5 px-3 text-center border-r border-blue-800 bg-blue-950 text-amber-300 font-black text-[11px] w-28">
+                    <th className="py-2.5 px-3 text-center border-r border-blue-800 bg-blue-900 text-white font-black text-[11px] w-28">
                       AGGREGATE
                     </th>
-                    <th className="py-2.5 px-2.5 text-center border-r border-blue-800 bg-blue-950 text-white font-black text-[10px] w-20">
+                    <th className="py-2.5 px-2.5 text-center border-r border-blue-800 bg-blue-900 text-white font-black text-[10px] w-20">
                       RAW TOTAL
                     </th>
-                    <th className="py-2.5 px-2 text-center no-print w-16 bg-blue-950 text-white">ACTION</th>
+                    <th className="py-2.5 px-2 text-center no-print w-16 bg-blue-900 text-white font-black text-[10px]">
+                      ACTION
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 text-xs font-medium text-gray-800">
@@ -723,7 +725,7 @@ export default function JHS3MockExamModule({
                                     className={`inline-block px-2 py-0.5 text-xs font-black rounded-md shadow-2xs ${gradeMeta.badgeClass}`}
                                     title={`Score: ${val}/100 (${gradeMeta.label})`}
                                   >
-                                    G{gradeNum}
+                                    {gradeNum}
                                   </span>
                                 </td>
                               );
@@ -836,25 +838,25 @@ export default function JHS3MockExamModule({
       {/* MODE 2: TEACHER SUBJECT MARK ENTRY PORTAL */}
       {/* ------------------------------------------------------------- */}
       {viewMode === 'teacher-entry' && (
-        <div className="bg-white rounded-2xl border-2 border-blue-900 shadow-xl overflow-hidden p-6 space-y-6 no-print">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-gray-200 pb-4">
+        <div className="bg-white rounded-2xl border-2 border-violet-800/30 shadow-xl overflow-hidden p-4 sm:p-6 space-y-6 no-print">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
             <div>
-              <h2 className="text-lg font-black text-mauve-950 uppercase flex items-center gap-2">
-                <Edit3 className="w-5 h-5 text-blue-700" />
+              <h2 className="text-lg sm:text-xl font-black text-slate-900 uppercase flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-violet-700 shrink-0" />
                 <span>Teacher Subject Entry: JHS 3 Mock Examination</span>
               </h2>
-              <p className="text-xs text-gray-600 mt-0.5">
-                Select a subject below to enter or edit mock exam scores for all JHS 3 pupils at once.
+              <p className="text-xs text-slate-600 font-medium mt-0.5">
+                Select a subject below to enter or edit mock exam scores (0 - 100) for all JHS 3 pupils at once.
               </p>
             </div>
 
             {/* SUBJECT SELECTOR */}
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <span className="text-xs font-black text-blue-900 uppercase shrink-0">Select Subject:</span>
+              <span className="text-xs font-black text-slate-900 uppercase shrink-0">Select Subject:</span>
               <select
                 value={selectedSubjectId}
                 onChange={(e) => setSelectedSubjectId(e.target.value)}
-                className="w-full sm:w-64 px-3 py-2 bg-blue-50 border-2 border-blue-400 rounded-xl font-black text-xs text-mauve-950 focus:ring-2 focus:ring-blue-600 outline-none shadow-xs"
+                className="w-full sm:w-64 px-3 py-2 bg-slate-50 border-2 border-violet-500 rounded-xl font-black text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-violet-600 outline-none shadow-xs"
               >
                 {allowedJHSSubjects.map((sub) => {
                   const isCore = getCoreSubjectType(sub) !== null;
@@ -869,121 +871,200 @@ export default function JHS3MockExamModule({
           </div>
 
           {/* TEACHER ASSIGNED SUBJECT SECURITY BANNER */}
-          {currentUser?.role !== 'ADMIN' && currentUser?.level !== 'ALL' && currentUser?.subjects && currentUser.subjects.length > 0 && (
-            <div className="bg-blue-50 border border-blue-200 p-3.5 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-blue-900 font-medium shadow-2xs">
+          {currentUser?.role !== 'ADMIN' && (currentUser?.level as string) !== 'ALL' && currentUser?.subjects && currentUser.subjects.length > 0 && (
+            <div className="bg-violet-50 border border-violet-200 p-3.5 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-slate-900 font-medium shadow-2xs">
               <div className="flex items-center gap-2">
-                <Lock className="w-4 h-4 text-blue-700 shrink-0" />
+                <Lock className="w-4 h-4 text-violet-700 shrink-0" />
                 <span>
                   <strong>Assigned Subjects Security Rule:</strong> You are authorized to enter mock marks strictly for your assigned subject(s):{' '}
-                  <span className="font-black text-blue-950 underline">{allowedJHSSubjects.map((s) => s.name).join(', ')}</span>.
+                  <span className="font-black text-violet-950 underline">{allowedJHSSubjects.map((s) => s.name).join(', ')}</span>.
                 </span>
               </div>
-              <span className="text-[10px] font-black bg-blue-200 text-blue-950 px-2.5 py-1 rounded-lg uppercase tracking-wide shrink-0">
+              <span className="text-[10px] font-black bg-violet-200 text-violet-950 px-2.5 py-1 rounded-lg uppercase tracking-wide shrink-0">
                 {allowedJHSSubjects.length} {allowedJHSSubjects.length === 1 ? 'Subject' : 'Subjects'} Authorized
               </span>
             </div>
           )}
 
-          {/* TEACHER SCORE ENTRY TABLE */}
-          <div className="border border-gray-300 rounded-xl overflow-hidden bg-white shadow-xs">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-blue-900 text-white text-xs uppercase font-black tracking-wide border-b border-blue-500 shadow-xs">
-                  <th className="py-3 px-3.5 border-r border-blue-800 w-16 text-center">NO</th>
-                  <th className="py-3 px-3.5 border-r border-blue-800 w-32">INDEX NO</th>
-                  <th className="py-3 px-3.5 border-r border-blue-800">STUDENT NAME</th>
-                  <th className="py-3 px-3.5 border-r border-blue-800 text-center w-36 bg-blue-950 text-amber-300">
-                    MARKS OBTAINED (0-100)
-                  </th>
-                  <th className="py-3 px-3.5 border-r border-blue-800 text-center w-36">GRADE</th>
-                  <th className="py-3 px-3.5 text-center">GRADE REMARK</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 text-xs font-medium text-gray-800">
-                {jhs3Students.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="p-6 text-center text-gray-500 italic">
-                      No JHS 3 pupils enrolled. Please register JHS 3 pupils in Student Management first.
-                    </td>
-                  </tr>
-                ) : (
-                  jhs3Students.map((st, idx) => {
-                    const currentVal = teacherScoresMap[st.id] ?? '';
-                    const numVal = currentVal !== '' ? Number(currentVal) : null;
-                    const computedGrade = numVal !== null ? calculateBECEGrade(numVal) : null;
-                    const gradeMeta = computedGrade !== null ? getBECEGradeMeta(computedGrade) : null;
+          {/* TEACHER SCORE ENTRY CONTAINER (RESPONSIVE FOR MOBILE & DESKTOP) */}
+          <div className="space-y-4">
+            {/* QUICK SAVE BUTTON & HINT */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-100 p-3 rounded-xl border border-slate-300">
+              <div className="text-xs text-slate-900 font-bold flex items-center gap-1.5">
+                <span className="text-base">📱</span>
+                <span>Mark Entry: Enter scores (0-100) per pupil horizontally below, then click Save.</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveTeacherSubjectScores}
+                className="w-full sm:w-auto px-5 py-2.5 bg-violet-700 hover:bg-violet-800 text-white font-black text-xs uppercase rounded-xl border border-violet-600 shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Save className="w-4 h-4 text-white" />
+                <span>Save Subject Scores</span>
+              </button>
+            </div>
 
-                    return (
-                      <tr key={st.id} className="hover:bg-blue-50/20 transition">
-                        <td className="py-2.5 px-3 text-center border-r border-gray-200 font-mono font-bold text-gray-500">
+            {/* MOBILE CARD VIEW (VISIBLE ON PHONE SCREENS - HORIZONTAL LAYOUT NO INDEX NO) */}
+            <div className="md:hidden space-y-2.5">
+              {jhs3Students.length === 0 ? (
+                <div className="p-6 text-center text-slate-600 italic bg-slate-50 rounded-xl border border-slate-200 font-medium">
+                  No JHS 3 pupils enrolled. Please register JHS 3 pupils in Student Management first.
+                </div>
+              ) : (
+                jhs3Students.map((st, idx) => {
+                  const currentVal = teacherScoresMap[st.id] ?? '';
+                  const numVal = currentVal !== '' ? Number(currentVal) : null;
+                  const computedGrade = numVal !== null ? calculateBECEGrade(numVal) : null;
+                  const gradeMeta = computedGrade !== null ? getBECEGradeMeta(computedGrade) : null;
+
+                  return (
+                    <div
+                      key={st.id}
+                      className="p-3.5 bg-slate-50 hover:bg-violet-50/50 rounded-xl border-2 border-slate-200 focus-within:border-violet-500 shadow-2xs transition flex items-center justify-between gap-3"
+                    >
+                      {/* LEFT: Pupil Number & Student Name */}
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className="shrink-0 w-7 h-7 bg-violet-800 text-white rounded-lg text-xs font-black font-mono flex items-center justify-center shadow-2xs">
                           {idx + 1}
-                        </td>
-                        <td className="py-2.5 px-3.5 border-r border-gray-200 font-mono font-bold text-gray-700">
-                          {st.rollNumber}
-                        </td>
-                        <td className="py-2.5 px-3.5 border-r border-gray-200 font-black text-mauve-950">
-                          {st.name}
-                        </td>
-
-                        {/* MARKS INPUT */}
-                        <td className="py-2 px-3 border-r border-gray-200 bg-blue-50/40">
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            placeholder="Enter 0-100"
-                            value={currentVal}
-                            onChange={(e) => {
-                              const raw = e.target.value;
-                              setTeacherScoresMap((prev) => ({
-                                ...prev,
-                                [st.id]: raw === '' ? '' : Math.min(100, Math.max(0, parseInt(raw) || 0))
-                              }));
-                            }}
-                            className="w-full px-3 py-1.5 bg-white border-2 border-blue-400 rounded-lg text-sm sm:text-base font-black font-mono text-center text-blue-950 focus:ring-2 focus:ring-blue-600 outline-none shadow-2xs"
-                          />
-                        </td>
-
-                        {/* BECE GRADE BADGE */}
-                        <td className="py-2.5 px-3 border-r border-gray-200 text-center font-mono">
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-black text-sm text-slate-900 truncate">{st.name}</h4>
                           {gradeMeta ? (
-                            <span
-                              className={`inline-flex items-center justify-center px-3 py-1 rounded-lg text-xs font-black font-mono shadow-xs ${gradeMeta.badgeClass}`}
-                            >
-                              Grade {computedGrade}
-                            </span>
+                            <div className="text-[11px] font-bold text-violet-900 flex items-center gap-1.5 mt-0.5">
+                              <span className="bg-violet-200 text-violet-950 px-1.5 py-0.2 rounded font-mono font-black text-[10px]">
+                                Grade {computedGrade}
+                              </span>
+                              <span className="truncate">{gradeMeta.remark}</span>
+                            </div>
                           ) : (
-                            <span className="text-gray-400 text-xs italic">Unentered</span>
+                            <span className="text-[11px] text-slate-400 italic">Unentered score</span>
                           )}
-                        </td>
+                        </div>
+                      </div>
 
-                        {/* REMARK */}
-                        <td className="py-2.5 px-3 text-center">
-                          {gradeMeta ? (
-                            <span className="text-[11px] font-extrabold text-mauve-950">
-                              {gradeMeta.remark}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 text-[11px]">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                      {/* RIGHT: Marks Input Box (Horizontally aligned with Name) */}
+                      <div className="shrink-0 flex items-center gap-2">
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min="0"
+                          max="100"
+                          placeholder="0-100"
+                          value={currentVal}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setTeacherScoresMap((prev) => ({
+                              ...prev,
+                              [st.id]: raw === '' ? '' : Math.min(100, Math.max(0, parseInt(raw) || 0))
+                            }));
+                          }}
+                          className="w-24 sm:w-28 px-3 py-2 bg-white border-2 border-violet-600 rounded-xl text-base font-black font-mono text-center text-slate-900 focus:ring-2 focus:ring-violet-700 outline-none shadow-xs"
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* DESKTOP TABLE VIEW (NO INDEX NO COLUMN - CLEAN HORIZONTAL ALIGNMENT & CONTRAST) */}
+            <div className="hidden md:block border border-slate-300 rounded-xl overflow-x-auto bg-white shadow-xs">
+              <table className="w-full text-left border-collapse min-w-[600px]">
+                <thead>
+                  <tr className="bg-violet-900 text-white text-xs uppercase font-black tracking-wide border-b border-violet-700 shadow-xs">
+                    <th className="py-3 px-3.5 border-r border-violet-800 w-16 text-center">NO</th>
+                    <th className="py-3 px-3.5 border-r border-violet-800">STUDENT NAME</th>
+                    <th className="py-3 px-3.5 border-r border-violet-800 text-center w-48 bg-violet-950 text-amber-300">
+                      MARKS OBTAINED (0-100)
+                    </th>
+                    <th className="py-3 px-3.5 border-r border-violet-800 text-center w-36">BECE GRADE</th>
+                    <th className="py-3 px-3.5 text-center w-44">GRADE REMARK</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-xs font-medium text-slate-800">
+                  {jhs3Students.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-slate-500 italic">
+                        No JHS 3 pupils enrolled. Please register JHS 3 pupils in Student Management first.
+                      </td>
+                    </tr>
+                  ) : (
+                    jhs3Students.map((st, idx) => {
+                      const currentVal = teacherScoresMap[st.id] ?? '';
+                      const numVal = currentVal !== '' ? Number(currentVal) : null;
+                      const computedGrade = numVal !== null ? calculateBECEGrade(numVal) : null;
+                      const gradeMeta = computedGrade !== null ? getBECEGradeMeta(computedGrade) : null;
+
+                      return (
+                        <tr key={st.id} className="hover:bg-violet-50/40 transition">
+                          <td className="py-2.5 px-3 text-center border-r border-slate-200 font-mono font-bold text-slate-500">
+                            {idx + 1}
+                          </td>
+                          <td className="py-2.5 px-3.5 border-r border-slate-200 font-black text-slate-900 text-sm">
+                            {st.name}
+                          </td>
+
+                          {/* MARKS INPUT */}
+                          <td className="py-2 px-3 border-r border-slate-200 bg-violet-50/20">
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="0"
+                              max="100"
+                              placeholder="Enter 0-100"
+                              value={currentVal}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                setTeacherScoresMap((prev) => ({
+                                  ...prev,
+                                  [st.id]: raw === '' ? '' : Math.min(100, Math.max(0, parseInt(raw) || 0))
+                                }));
+                              }}
+                              className="w-full px-3 py-1.5 bg-white border-2 border-violet-500 rounded-lg text-sm sm:text-base font-black font-mono text-center text-slate-900 focus:ring-2 focus:ring-violet-700 outline-none shadow-2xs"
+                            />
+                          </td>
+
+                          {/* BECE GRADE BADGE */}
+                          <td className="py-2.5 px-3 border-r border-slate-200 text-center font-mono">
+                            {gradeMeta ? (
+                              <span
+                                className={`inline-flex items-center justify-center px-3 py-1 rounded-lg text-xs font-black font-mono shadow-xs ${gradeMeta.badgeClass}`}
+                              >
+                                Grade {computedGrade}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-xs italic">Unentered</span>
+                            )}
+                          </td>
+
+                          {/* REMARK */}
+                          <td className="py-2.5 px-3 text-center">
+                            {gradeMeta ? (
+                              <span className="text-xs font-extrabold text-slate-800">
+                                {gradeMeta.remark}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-[11px]">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* SUBMIT BUTTON BAR */}
-          <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-            <div className="text-xs text-gray-500 font-medium">
-              💡 Tip: Entering a score automatically calculates the grade from Grade 1 (90-100) to Grade 9 (0-39).
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
+            <div className="text-xs text-slate-700 font-bold">
+              💡 Tip: Entering a score automatically calculates the BECE grade from Grade 1 (90-100) to Grade 9 (0-39).
             </div>
             <button
               type="button"
               onClick={handleSaveTeacherSubjectScores}
-              className="px-6 py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-black text-xs uppercase rounded-xl border border-blue-500 shadow-md transition flex items-center gap-1.5 cursor-pointer"
+              className="w-full sm:w-auto px-6 py-2.5 bg-violet-800 hover:bg-violet-900 text-white font-black text-xs uppercase rounded-xl border border-violet-600 shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Save className="w-4 h-4 text-white" />
               <span>Submit & Save Subject Scores</span>

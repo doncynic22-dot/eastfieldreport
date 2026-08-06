@@ -265,7 +265,7 @@ export default function FeesReportGenerator({
       <div className="bg-[#1A0438] p-5 rounded-xl border border-white/10 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* PERIOD TABS */}
-          <div className="flex items-center gap-1.5 bg-[#2A0E54] p-1.5 rounded-xl border border-white/10 overflow-x-auto">
+          <div className="flex flex-wrap items-center gap-1.5 bg-[#2A0E54] p-1.5 rounded-xl border border-white/10">
             <button
               type="button"
               onClick={() => setReportPeriod('DAILY')}
