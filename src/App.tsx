@@ -28,6 +28,7 @@ import {
   fetchSupabaseAttendance,
   fetchSupabaseBills,
   fetchSupabaseFeePayments,
+  fetchSupabaseJHSMockExams,
   saveSupabaseConfig,
   saveSupabaseStudents,
   saveSupabaseTeachers,
@@ -800,7 +801,8 @@ export default function App() {
           fetchSupabaseConfig(),
           fetchSupabaseBills(),
           fetchSupabaseGrades(),
-          fetchSupabaseAttendance()
+          fetchSupabaseAttendance(),
+          fetchSupabaseJHSMockExams()
         ]);
         if (remoteConfig) {
           setConfig(prev => {

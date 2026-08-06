@@ -211,6 +211,22 @@ export interface DailyCollectionSummary {
   updatedAt?: string;
 }
 
+export interface JHSMockExamRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  rollNumber: string;
+  className: string;
+  examTitle: string;
+  academicYear: string;
+  scores: {
+    [subjectKey: string]: number;
+  };
+  remarks?: string;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
 export interface SyncAuditLog {
   id: string;
   actionType: string;

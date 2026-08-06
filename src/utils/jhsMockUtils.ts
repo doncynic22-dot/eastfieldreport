@@ -4,6 +4,7 @@
  */
 
 import { Subject, Student } from '../types';
+import { saveSupabaseJHSMockExams } from '../lib/supabase';
 
 export interface JHSMockSubjectScore {
   subjectId: string;
@@ -237,7 +238,7 @@ export const INITIAL_JHS3_MOCK_RECORDS: JHSMockExamRecord[] = [];
 
 export function getStoredJHSMockRecords(): JHSMockExamRecord[] {
   try {
-    const saved = localStorage.getItem('ea_jhs_mock_records');
+    const saved = localStorage.getItem('mock_supabase_ea_jhs_mock_records') || localStorage.getItem('ea_jhs_mock_records');
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -255,8 +256,9 @@ export function saveStoredJHSMockRecords(records: JHSMockExamRecord[]): void {
     localStorage.setItem('ea_jhs_mock_records', JSON.stringify(records));
     localStorage.setItem('mock_supabase_ea_jhs_mock_records', JSON.stringify(records));
     window.dispatchEvent(new Event('ea_jhs_mock_updated'));
+    saveSupabaseJHSMockExams(records);
   } catch (e) {
-    console.warn('Failed saving ea_jhs_mock_records to localStorage:', e);
+    console.warn('Failed saving ea_jhs_mock_records:', e);
   }
 }
 

@@ -14,6 +14,7 @@ import {
   computeBECECalculations,
   getCoreSubjectType
 } from '../utils/jhsMockUtils';
+import { fetchSupabaseJHSMockExams } from '../lib/supabase';
 import {
   Award,
   BookOpen,
@@ -120,12 +121,20 @@ export default function JHS3MockExamModule({
   const [editStudentScores, setEditStudentScores] = useState<{ [subjectKey: string]: number | '' }>({});
   const [editRemarks, setEditRemarks] = useState('');
 
-  // Sync effect across tabs
+  // Sync effect across tabs and fetch from Supabase
   useEffect(() => {
     const handleSync = () => {
       setMockRecords(getStoredJHSMockRecords());
     };
     window.addEventListener('ea_jhs_mock_updated', handleSync);
+
+    // Initial and focus fetch from Supabase
+    fetchSupabaseJHSMockExams().then((remoteData) => {
+      if (remoteData && remoteData.length > 0) {
+        setMockRecords(remoteData);
+      }
+    });
+
     return () => window.removeEventListener('ea_jhs_mock_updated', handleSync);
   }, []);
 
@@ -148,10 +157,15 @@ export default function JHS3MockExamModule({
       const existingRecord = mockRecords.find(
         (r) => r.studentId === st.id && r.examTitle === selectedExamTitle
       );
-      if (existingRecord && existingRecord.scores && existingRecord.scores[subKey] !== undefined) {
-        initialMap[st.id] = existingRecord.scores[subKey];
-      } else if (existingRecord && currentSub && existingRecord.scores[currentSub.code] !== undefined) {
-        initialMap[st.id] = existingRecord.scores[currentSub.code];
+      if (existingRecord && existingRecord.scores) {
+        let val = existingRecord.scores[subKey];
+        if (val === undefined && currentSub) val = existingRecord.scores[currentSub.code];
+        if (val === undefined && currentSub) val = existingRecord.scores[currentSub.name];
+        if (val !== undefined && val !== null && val !== '') {
+          initialMap[st.id] = Number(val);
+        } else {
+          initialMap[st.id] = '';
+        }
       } else {
         initialMap[st.id] = '';
       }
@@ -167,7 +181,9 @@ export default function JHS3MockExamModule({
     const subName = currentSub ? currentSub.name : 'Selected Subject';
 
     let updatedCount = 0;
-    const nextRecords = [...mockRecords];
+    // Get fresh latest records from storage to prevent overwriting parallel entries
+    const latestRecords = getStoredJHSMockRecords();
+    const nextRecords = [...latestRecords];
 
     jhs3Students.forEach((st) => {
       const val = teacherScoresMap[st.id];
@@ -189,8 +205,9 @@ export default function JHS3MockExamModule({
             updatedBy: currentUser?.name || 'Subject Teacher'
           };
         } else {
+          const cleanExamTitle = selectedExamTitle.replace(/\s+/g, '_');
           nextRecords.push({
-            id: `mock_${st.id}_${Date.now()}`,
+            id: `mock_${st.id}_${cleanExamTitle}`,
             studentId: st.id,
             studentName: st.name,
             rollNumber: st.rollNumber,
@@ -226,9 +243,10 @@ export default function JHS3MockExamModule({
       initialEditMap[sub.id] = val !== undefined && val !== null ? val : '';
     });
 
+    const cleanExamTitle = selectedExamTitle.replace(/\s+/g, '_');
     setEditingStudentRecord(
       existing || {
-        id: `mock_${st.id}_${Date.now()}`,
+        id: `mock_${st.id}_${cleanExamTitle}`,
         studentId: st.id,
         studentName: st.name,
         rollNumber: st.rollNumber,
@@ -255,8 +273,11 @@ export default function JHS3MockExamModule({
       }
     });
 
-    const nextRecords = [...mockRecords];
-    const idx = nextRecords.findIndex((r) => r.id === editingStudentRecord.id);
+    const latestRecords = getStoredJHSMockRecords();
+    const nextRecords = [...latestRecords];
+    const idx = nextRecords.findIndex(
+      (r) => (r.id && r.id === editingStudentRecord.id) || (r.studentId === editingStudentRecord.studentId && r.examTitle === editingStudentRecord.examTitle)
+    );
 
     const updatedRecord: JHSMockExamRecord = {
       ...editingStudentRecord,

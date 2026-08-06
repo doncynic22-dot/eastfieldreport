@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord } from '../types';
+import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord } from '../types';
 
 // Helper to retrieve credentials from env or localStorage
 export function getSupabaseCredentials() {
@@ -2226,5 +2226,100 @@ export async function uploadStudentPhotoToSupabase(file: File, studentId: string
       r.onloadend = () => resolve((r.result as string) || '');
       r.readAsDataURL(file);
     });
+  }
+}
+
+// 12. SYNC JHS 3 MOCK EXAM RECORDS
+export async function fetchSupabaseJHSMockExams(): Promise<JHSMockExamRecord[] | null> {
+  const client = getSupabaseClient();
+  if (!client) {
+    const cached = localStorage.getItem('mock_supabase_ea_jhs_mock_records') || localStorage.getItem('ea_jhs_mock_records');
+    if (cached !== null) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return null;
+  }
+  try {
+    const { data, error } = await client.from('ea_jhs_mock_exams').select('*');
+    if (error) {
+      console.warn('Supabase fetch JHS mock exams error:', error);
+      const cached = localStorage.getItem('mock_supabase_ea_jhs_mock_records') || localStorage.getItem('ea_jhs_mock_records');
+      if (cached !== null) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {}
+      }
+      return null;
+    }
+    if (!data) return [];
+
+    const mapped: JHSMockExamRecord[] = data.map((item) => ({
+      id: item.id || `mock_${item.student_id}_${item.exam_title}`,
+      studentId: item.student_id,
+      studentName: item.student_name,
+      rollNumber: item.roll_number || '',
+      className: item.class_name || 'JHS 3',
+      examTitle: item.exam_title || 'Mock Examination 1',
+      academicYear: item.academic_year || '2025/2026',
+      scores: typeof item.scores === 'object' && item.scores !== null ? item.scores : {},
+      remarks: item.remarks || '',
+      updatedBy: item.updated_by || '',
+      updatedAt: item.updated_at || new Date().toISOString()
+    }));
+
+    localStorage.setItem('mock_supabase_ea_jhs_mock_records', JSON.stringify(mapped));
+    localStorage.setItem('ea_jhs_mock_records', JSON.stringify(mapped));
+    return mapped;
+  } catch (err: any) {
+    console.warn('fetchSupabaseJHSMockExams exception:', err);
+    const cached = localStorage.getItem('mock_supabase_ea_jhs_mock_records') || localStorage.getItem('ea_jhs_mock_records');
+    if (cached !== null) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+    }
+    return null;
+  }
+}
+
+export async function saveSupabaseJHSMockExams(records: JHSMockExamRecord[]): Promise<boolean> {
+  localStorage.setItem('mock_supabase_ea_jhs_mock_records', JSON.stringify(records));
+  localStorage.setItem('ea_jhs_mock_records', JSON.stringify(records));
+  try {
+    window.dispatchEvent(new Event('ea_jhs_mock_updated'));
+  } catch (e) {}
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+
+  try {
+    const payloads = records.map((r) => ({
+      id: r.id,
+      student_id: r.studentId,
+      student_name: r.studentName,
+      roll_number: r.rollNumber || '',
+      class_name: r.className || 'JHS 3',
+      exam_title: r.examTitle || 'Mock Examination 1',
+      academic_year: r.academicYear || '2025/2026',
+      scores: r.scores || {},
+      remarks: r.remarks || '',
+      updated_by: r.updatedBy || '',
+      updated_at: r.updatedAt || new Date().toISOString()
+    }));
+
+    const { error } = await safeUpsert('ea_jhs_mock_exams', payloads, client, 'id');
+    if (error) {
+      console.warn('Supabase saveSupabaseJHSMockExams error:', error);
+      return true;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('saveSupabaseJHSMockExams exception:', err);
+    return true;
   }
 }
