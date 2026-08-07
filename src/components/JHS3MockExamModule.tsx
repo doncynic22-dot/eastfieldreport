@@ -35,7 +35,14 @@ import {
   BarChart3,
   ShieldCheck,
   Check,
-  Lock
+  Lock,
+  History,
+  Calendar,
+  GraduationCap,
+  FileText,
+  ChevronRight,
+  UserCheck,
+  Filter
 } from 'lucide-react';
 import { matchesSubject } from '../utils/subjectUtils';
 
@@ -54,6 +61,8 @@ export default function JHS3MockExamModule({
   isAdminAuthenticated,
   config
 }: JHS3MockExamModuleProps) {
+  const isAdmin = isAdminAuthenticated || currentUser?.role === 'ADMIN';
+
   // Master Mock Records State
   const [mockRecords, setMockRecords] = useState<JHSMockExamRecord[]>(() => getStoredJHSMockRecords());
   const [toastMessage, setToastMessage] = useState('');
@@ -62,10 +71,33 @@ export default function JHS3MockExamModule({
   const [selectedExamTitle, setSelectedExamTitle] = useState('Mock Examination 1');
   const [selectedAcademicYear, setSelectedAcademicYear] = useState('2025/2026');
 
-  // Mode: 'broadsheet' (Admin/All view) or 'teacher-entry' (Subject entry)
-  const [viewMode, setViewMode] = useState<'broadsheet' | 'teacher-entry'>(
-    isAdminAuthenticated ? 'broadsheet' : 'teacher-entry'
+  // Mode: 'broadsheet' (Admin only view), 'teacher-entry' (Subject entry), or 'history-archive' (Historical old student retrieval)
+  const [viewMode, setViewMode] = useState<'broadsheet' | 'teacher-entry' | 'history-archive'>(
+    isAdmin ? 'broadsheet' : 'teacher-entry'
   );
+
+  // Historical Archive Filters & Print State (For Admin retrieval of old/past students)
+  const [historyAcademicYear, setHistoryAcademicYear] = useState<string>('ALL_YEARS');
+  const [historyJHSClass, setHistoryJHSClass] = useState<string>('ALL_JHS');
+  const [historySearchQuery, setHistorySearchQuery] = useState<string>('');
+  const [printingHistoricalRecord, setPrintingHistoricalRecord] = useState<{
+    studentName: string;
+    rollNumber: string;
+    className: string;
+    academicYear: string;
+    examTitle: string;
+    scores: { [subjectKey: string]: number };
+    calcs: ReturnType<typeof computeBECECalculations>;
+    remarks?: string;
+    updatedAt?: string;
+  } | null>(null);
+
+  // Enforce access control: non-admins cannot access broadsheet view
+  useEffect(() => {
+    if (!isAdmin && viewMode === 'broadsheet') {
+      setViewMode('teacher-entry');
+    }
+  }, [isAdmin, viewMode]);
 
   // Filter JHS 3 Students specifically
   const jhs3Students = useMemo(() => {
@@ -302,7 +334,12 @@ export default function JHS3MockExamModule({
   // Broadsheet Ranked Calculation List
   const broadsheetData = useMemo(() => {
     const list = jhs3Students.map((st) => {
-      const record = mockRecords.find((r) => r.studentId === st.id && r.examTitle === selectedExamTitle);
+      const record = mockRecords.find(
+        (r) =>
+          r.studentId === st.id &&
+          r.examTitle === selectedExamTitle &&
+          (r.academicYear === selectedAcademicYear || (!r.academicYear && selectedAcademicYear === '2025/2026'))
+      );
       const scores = record ? record.scores : {};
       const calcs = computeBECECalculations(scores, jhsSubjects);
 
@@ -327,7 +364,117 @@ export default function JHS3MockExamModule({
       ...item,
       rank: index + 1
     }));
-  }, [jhs3Students, mockRecords, selectedExamTitle, jhsSubjects]);
+  }, [jhs3Students, mockRecords, selectedExamTitle, selectedAcademicYear, jhsSubjects]);
+
+  // JHS Historical Assessment List for Old/Past Students Archive Retrieval
+  const historicalAssessmentList = useMemo(() => {
+    const resultsMap: Map<string, {
+      id: string;
+      studentId: string;
+      studentName: string;
+      rollNumber: string;
+      className: string;
+      examTitle: string;
+      academicYear: string;
+      scores: { [key: string]: number };
+      calcs: ReturnType<typeof computeBECECalculations>;
+      remarks?: string;
+      updatedAt: string;
+    }> = new Map();
+
+    // 1. Process all stored mockRecords
+    mockRecords.forEach((rec) => {
+      const recYear = rec.academicYear || '2025/2026';
+      // Filter by academic year
+      if (historyAcademicYear !== 'ALL_YEARS' && recYear !== historyAcademicYear) {
+        return;
+      }
+      // Filter by JHS class
+      const recClass = (rec.className || 'JHS 3').toUpperCase();
+      if (historyJHSClass !== 'ALL_JHS') {
+        if (historyJHSClass === 'GRADUATED') {
+          if (!recClass.includes('GRADUAT') && !recClass.includes('ALUMNI') && !recClass.includes('OLD')) return;
+        } else {
+          if (!recClass.includes(historyJHSClass.toUpperCase())) return;
+        }
+      }
+      // Filter by search query
+      if (historySearchQuery.trim()) {
+        const q = historySearchQuery.toLowerCase();
+        const matchName = (rec.studentName || '').toLowerCase().includes(q);
+        const matchRoll = (rec.rollNumber || '').toLowerCase().includes(q);
+        if (!matchName && !matchRoll) return;
+      }
+
+      const calcs = computeBECECalculations(rec.scores || {}, jhsSubjects);
+      const uniqueKey = `${rec.studentId}_${rec.examTitle}_${recYear}`;
+      resultsMap.set(uniqueKey, {
+        id: rec.id,
+        studentId: rec.studentId,
+        studentName: rec.studentName,
+        rollNumber: rec.rollNumber,
+        className: rec.className || 'JHS 3',
+        examTitle: rec.examTitle || 'BECE Mock Examination',
+        academicYear: recYear,
+        scores: rec.scores || {},
+        calcs,
+        remarks: rec.remarks,
+        updatedAt: rec.updatedAt || new Date().toISOString()
+      });
+    });
+
+    // 2. Also check registered JHS students (including JHS 1, 2, 3 and Graduated JHS Alumni)
+    students.forEach((st) => {
+      const cls = (st.className || '').toUpperCase();
+      const isJHS = st.level === 'JHS' || cls.includes('JHS') || cls.includes('JUNIOR') || cls.includes('GRADUAT') || cls.includes('ALUMNI');
+      if (!isJHS) return;
+
+      if (historyJHSClass !== 'ALL_JHS') {
+        if (historyJHSClass === 'GRADUATED') {
+          if (!cls.includes('GRADUAT') && !cls.includes('ALUMNI') && !cls.includes('OLD')) return;
+        } else {
+          if (!cls.includes(historyJHSClass.toUpperCase())) return;
+        }
+      }
+
+      if (historySearchQuery.trim()) {
+        const q = historySearchQuery.toLowerCase();
+        const matchName = st.name.toLowerCase().includes(q);
+        const matchRoll = st.rollNumber.toLowerCase().includes(q);
+        if (!matchName && !matchRoll) return;
+      }
+
+      const targetYear = historyAcademicYear !== 'ALL_YEARS' ? historyAcademicYear : (selectedAcademicYear || '2025/2026');
+      const uniqueKey = `${st.id}_${selectedExamTitle}_${targetYear}`;
+
+      if (!resultsMap.has(uniqueKey)) {
+        resultsMap.set(uniqueKey, {
+          id: `hist_st_${st.id}_${targetYear}`,
+          studentId: st.id,
+          studentName: st.name,
+          rollNumber: st.rollNumber,
+          className: st.className || 'JHS 3',
+          examTitle: selectedExamTitle || 'BECE Mock Examination 1',
+          academicYear: targetYear,
+          scores: {},
+          calcs: computeBECECalculations({}, jhsSubjects),
+          remarks: 'Registered JHS Student Record',
+          updatedAt: new Date().toISOString()
+        });
+      }
+    });
+
+    const list = Array.from(resultsMap.values());
+    // Sort by Academic Year DESC, then Student Name ASC
+    list.sort((a, b) => {
+      if (a.academicYear !== b.academicYear) {
+        return b.academicYear.localeCompare(a.academicYear);
+      }
+      return a.studentName.localeCompare(b.studentName);
+    });
+
+    return list;
+  }, [mockRecords, students, historyAcademicYear, historyJHSClass, historySearchQuery, jhsSubjects, selectedExamTitle, selectedAcademicYear]);
 
   // Filtered broadsheet by search
   const filteredBroadsheet = useMemo(() => {
@@ -353,6 +500,10 @@ export default function JHS3MockExamModule({
 
   // Print Notice Board Broadsheet in Landscape A4
   const handlePrintNoticeBoard = () => {
+    if (!isAdmin) {
+      showTextNotification('Access Restricted: Only Administrators can print the Master Broadsheet.');
+      return;
+    }
     let styleEl = document.getElementById('broadsheet-print-page-style') as HTMLStyleElement;
     if (!styleEl) {
       styleEl = document.createElement('style');
@@ -370,6 +521,10 @@ export default function JHS3MockExamModule({
 
   // Export Broadsheet to CSV
   const handleExportCSV = () => {
+    if (!isAdmin) {
+      showTextNotification('Access Restricted: Only Administrators can export the Master Broadsheet CSV.');
+      return;
+    }
     let csv = `JHS 3 BECE MOCK EXAMINATION MASTER BROADSHEET - ${selectedExamTitle} (${selectedAcademicYear})\n`;
     csv += `School: ${config.schoolName || 'Eastfield Academy'}\n`;
     csv += `Date Exported: ${new Date().toLocaleDateString()}\n\n`;
@@ -442,21 +597,32 @@ export default function JHS3MockExamModule({
 
           <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
             {/* View Mode Switcher */}
-            <div className="bg-blue-950/80 p-1 rounded-xl border border-blue-700/60 flex items-center gap-1 w-full sm:w-auto">
+            <div className="bg-blue-950/80 p-1 rounded-xl border border-blue-700/60 flex flex-wrap items-center gap-1 w-full sm:w-auto">
               <button
-                onClick={() => setViewMode('broadsheet')}
-                className={`flex-1 sm:flex-none px-4 py-2 rounded-lg font-extrabold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                  viewMode === 'broadsheet'
-                    ? 'bg-amber-400 text-mauve-950 shadow-md font-black'
-                    : 'text-blue-200 hover:text-white hover:bg-blue-800/50'
+                onClick={() => {
+                  if (!isAdmin) {
+                    showTextNotification('Access Restricted: Only Administrators can access the Master Broadsheet.');
+                    return;
+                  }
+                  setViewMode('broadsheet');
+                }}
+                disabled={!isAdmin}
+                title={!isAdmin ? 'Master Broadsheet is restricted to Administrators only' : 'View Master Broadsheet'}
+                className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg font-extrabold text-xs transition flex items-center justify-center gap-1.5 ${
+                  !isAdmin
+                    ? 'opacity-60 cursor-not-allowed text-blue-300 bg-blue-950/40 border border-blue-800/40'
+                    : viewMode === 'broadsheet'
+                    ? 'bg-amber-400 text-mauve-950 shadow-md font-black cursor-pointer'
+                    : 'text-blue-200 hover:text-white hover:bg-blue-800/50 cursor-pointer'
                 }`}
               >
                 <FileSpreadsheet className="w-4 h-4" />
                 <span>Admin Broadsheet & Print</span>
+                {!isAdmin && <Lock className="w-3.5 h-3.5 text-amber-300 ml-0.5 shrink-0" />}
               </button>
               <button
                 onClick={() => setViewMode('teacher-entry')}
-                className={`flex-1 sm:flex-none px-4 py-2 rounded-lg font-extrabold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg font-extrabold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer ${
                   viewMode === 'teacher-entry'
                     ? 'bg-amber-400 text-mauve-950 shadow-md font-black'
                     : 'text-blue-200 hover:text-white hover:bg-blue-800/50'
@@ -465,6 +631,19 @@ export default function JHS3MockExamModule({
                 <Edit3 className="w-4 h-4" />
                 <span>Teacher Subject Entry</span>
               </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setViewMode('history-archive')}
+                  className={`flex-1 sm:flex-none px-3.5 py-2 rounded-lg font-extrabold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                    viewMode === 'history-archive'
+                      ? 'bg-amber-400 text-mauve-950 shadow-md font-black'
+                      : 'text-blue-200 hover:text-white hover:bg-blue-800/50'
+                  }`}
+                >
+                  <History className="w-4 h-4 text-amber-900" />
+                  <span>Old Assessment History (JHS)</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -478,42 +657,57 @@ export default function JHS3MockExamModule({
               <select
                 value={selectedExamTitle}
                 onChange={(e) => setSelectedExamTitle(e.target.value)}
-                className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg font-black text-mauve-950 focus:ring-2 focus:ring-blue-600 outline-none shadow-2xs"
+                className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg font-black text-mauve-950 focus:ring-2 focus:ring-blue-600 outline-none shadow-2xs cursor-pointer"
               >
-                <option value="Mock Examination 1">Mock Examination 1</option>
-                <option value="Mock Examination 2">Mock Examination 2</option>
-                <option value="Mock Examination 3">Mock Examination 3</option>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                  <option key={num} value={`Mock Examination ${num}`}>
+                    Mock Examination {num}
+                  </option>
+                ))}
                 <option value="BECE Final Pre-Exam Mock">BECE Final Pre-Exam Mock</option>
               </select>
             </div>
 
             <div className="flex items-center gap-1.5 font-bold text-gray-700">
+              <Calendar className="w-4 h-4 text-blue-700" />
               <span>Academic Year:</span>
-              <input
-                type="text"
+              <select
                 value={selectedAcademicYear}
                 onChange={(e) => setSelectedAcademicYear(e.target.value)}
-                className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg font-bold text-mauve-950 w-28 text-center focus:ring-2 focus:ring-blue-600 outline-none"
-              />
+                className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg font-black text-mauve-950 focus:ring-2 focus:ring-blue-600 outline-none shadow-2xs cursor-pointer"
+              >
+                {['2026/2027', '2025/2026', '2024/2025', '2023/2024', '2022/2023', '2021/2022', '2020/2021', '2019/2020'].map((yr) => (
+                  <option key={yr} value={yr}>
+                    Academic Year {yr}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleExportCSV}
-              className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Export CSV</span>
-            </button>
-            <button
-              onClick={handlePrintNoticeBoard}
-              className="px-4 py-1.5 bg-blue-800 hover:bg-blue-900 text-white font-black text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-md"
-            >
-              <Printer className="w-4 h-4 text-amber-300" />
-              <span>Print Notice Board Master Sheet</span>
-            </button>
-          </div>
+          {isAdmin ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportCSV}
+                className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Export CSV</span>
+              </button>
+              <button
+                onClick={handlePrintNoticeBoard}
+                className="px-4 py-1.5 bg-blue-800 hover:bg-blue-900 text-white font-black text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-md"
+              >
+                <Printer className="w-4 h-4 text-amber-300" />
+                <span>Print Notice Board Master Sheet</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-xs text-amber-900 bg-amber-100/80 px-3 py-1.5 rounded-lg border border-amber-300 font-extrabold shadow-2xs">
+              <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              <span>Master Sheet Access: Restricted to Administrator</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -521,6 +715,25 @@ export default function JHS3MockExamModule({
       {/* MODE 1: ADMIN BROADSHEET & NOTICE BOARD VIEW */}
       {/* ------------------------------------------------------------- */}
       {viewMode === 'broadsheet' && (
+        !isAdmin ? (
+          <div className="bg-white p-8 rounded-2xl border-2 border-red-200 shadow-xl text-center space-y-4 max-w-lg mx-auto my-8 animate-fadeIn">
+            <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto border-2 border-red-200">
+              <Lock className="w-8 h-8 text-red-600" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-xl font-black text-slate-900">Administrator Access Only</h3>
+              <p className="text-xs text-slate-600 font-medium">
+                The JHS 3 BECE Master Broadsheet and Notice Board Sheet are restricted to Administrators only.
+              </p>
+            </div>
+            <button
+              onClick={() => setViewMode('teacher-entry')}
+              className="px-5 py-2.5 bg-blue-900 hover:bg-blue-950 text-white font-extrabold text-xs rounded-xl transition cursor-pointer shadow-md"
+            >
+              Return to Teacher Subject Entry
+            </button>
+          </div>
+        ) : (
         <div className="space-y-6">
           {/* STATS OVERVIEW CARDS (NO-PRINT) */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 no-print">
@@ -654,28 +867,26 @@ export default function JHS3MockExamModule({
               <table className="w-full text-left border-collapse min-w-[1100px]">
                 <thead>
                   <tr className="bg-blue-900 text-white text-[11px] uppercase font-black tracking-wider border-b-2 border-amber-400">
-                    <th className="py-3 px-3 border-r border-blue-800 bg-blue-900 text-white font-black">STUDENT NAME</th>
+                    <th className="py-3 px-3.5 border-r border-blue-800 bg-blue-900 text-white font-black">STUDENT NAME</th>
                     {jhsSubjects.map((sub) => {
                       const isCore = getCoreSubjectType(sub) !== null;
                       return (
                         <th
                           key={sub.id}
-                          className={`py-2 px-2 text-center border-r border-blue-800 text-[10px] ${
-                            isCore ? 'bg-blue-900 text-amber-300 font-black' : 'bg-blue-900/90 text-blue-100 font-bold'
-                          }`}
+                          className="py-2.5 px-2 text-center border-r border-blue-800 text-[10px] bg-blue-900 text-white font-black"
                         >
-                          <div className="truncate max-w-[80px] mx-auto">{sub.code || sub.name}</div>
-                          <div className="text-[8px] opacity-80 font-normal text-blue-200">Grade</div>
+                          <div className="truncate max-w-[80px] mx-auto text-white">{sub.code || sub.name}</div>
+                          <div className="text-[8px] font-bold text-white uppercase tracking-wider mt-0.5">Grade</div>
                         </th>
                       );
                     })}
-                    <th className="py-2.5 px-3 text-center border-r border-blue-800 bg-blue-900 text-white font-black text-[11px] w-28">
+                    <th className="py-3 px-3 text-center border-r border-blue-800 bg-blue-900 text-white font-black text-[11px] w-28">
                       AGGREGATE
                     </th>
-                    <th className="py-2.5 px-2.5 text-center border-r border-blue-800 bg-blue-900 text-white font-black text-[10px] w-20">
+                    <th className="py-3 px-2.5 text-center border-r border-blue-800 bg-blue-900 text-white font-black text-[10px] w-20">
                       RAW TOTAL
                     </th>
-                    <th className="py-2.5 px-2 text-center no-print w-16 bg-blue-900 text-white font-black text-[10px]">
+                    <th className="py-3 px-2 text-center no-print w-16 bg-blue-900 text-white font-black text-[10px]">
                       ACTION
                     </th>
                   </tr>
@@ -837,7 +1048,7 @@ export default function JHS3MockExamModule({
             </div>
           </div>
         </div>
-      )}
+      ))}
 
       {/* ------------------------------------------------------------- */}
       {/* MODE 2: TEACHER SUBJECT MARK ENTRY PORTAL */}
@@ -973,17 +1184,17 @@ export default function JHS3MockExamModule({
             </div>
 
             {/* DESKTOP TABLE VIEW (NO INDEX NO COLUMN - CLEAN HORIZONTAL ALIGNMENT & CONTRAST) */}
-            <div className="hidden md:block border border-slate-300 rounded-xl overflow-x-auto bg-white shadow-xs">
+            <div className="hidden md:block border-2 border-violet-900 rounded-xl overflow-hidden bg-white shadow-md">
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
-                  <tr className="bg-violet-900 text-white text-xs uppercase font-black tracking-wide border-b border-violet-700 shadow-xs">
-                    <th className="py-3 px-3.5 border-r border-violet-800 w-16 text-center">NO</th>
-                    <th className="py-3 px-3.5 border-r border-violet-800">STUDENT NAME</th>
-                    <th className="py-3 px-3.5 border-r border-violet-800 text-center w-48 bg-violet-950 text-amber-300">
+                  <tr className="bg-violet-900 text-white text-xs uppercase font-black tracking-wider border-b-2 border-violet-950 shadow-xs">
+                    <th className="py-3.5 px-3.5 border-r border-violet-800 w-16 text-center text-white">NO</th>
+                    <th className="py-3.5 px-4 border-r border-violet-800 text-white font-black text-left">STUDENT NAME</th>
+                    <th className="py-3.5 px-4 border-r border-violet-800 text-center w-52 bg-violet-900 text-white font-black">
                       MARKS OBTAINED (0-100)
                     </th>
-                    <th className="py-3 px-3.5 border-r border-violet-800 text-center w-36">BECE GRADE</th>
-                    <th className="py-3 px-3.5 text-center w-44">GRADE REMARK</th>
+                    <th className="py-3.5 px-4 border-r border-violet-800 text-center w-36 text-white font-black">GRADE</th>
+                    <th className="py-3.5 px-4 text-center w-44 text-white font-black">GRADE REMARK</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-xs font-medium text-slate-800">
@@ -1001,16 +1212,16 @@ export default function JHS3MockExamModule({
                       const gradeMeta = computedGrade !== null ? getBECEGradeMeta(computedGrade) : null;
 
                       return (
-                        <tr key={st.id} className="hover:bg-violet-50/40 transition">
-                          <td className="py-2.5 px-3 text-center border-r border-slate-200 font-mono font-bold text-slate-500">
+                        <tr key={st.id} className="hover:bg-violet-50/50 transition">
+                          <td className="py-3 px-3.5 text-center border-r border-slate-200 font-mono font-black text-slate-600 align-middle">
                             {idx + 1}
                           </td>
-                          <td className="py-2.5 px-3.5 border-r border-slate-200 font-black text-slate-900 text-sm">
+                          <td className="py-3 px-4 border-r border-slate-200 font-black text-slate-900 text-sm align-middle">
                             {st.name}
                           </td>
 
                           {/* MARKS INPUT */}
-                          <td className="py-2 px-3 border-r border-slate-200 bg-violet-50/20">
+                          <td className="py-2.5 px-4 border-r border-slate-200 bg-violet-50/20 text-center align-middle">
                             <input
                               type="number"
                               inputMode="numeric"
@@ -1025,15 +1236,15 @@ export default function JHS3MockExamModule({
                                   [st.id]: raw === '' ? '' : Math.min(100, Math.max(0, parseInt(raw) || 0))
                                 }));
                               }}
-                              className="w-full px-3 py-1.5 bg-white border-2 border-violet-500 rounded-lg text-sm sm:text-base font-black font-mono text-center text-slate-900 focus:ring-2 focus:ring-violet-700 outline-none shadow-2xs"
+                              className="w-full max-w-[140px] mx-auto px-3 py-1.5 bg-white border-2 border-violet-500 rounded-lg text-sm sm:text-base font-black font-mono text-center text-slate-900 focus:ring-2 focus:ring-violet-700 outline-none shadow-2xs"
                             />
                           </td>
 
                           {/* BECE GRADE BADGE */}
-                          <td className="py-2.5 px-3 border-r border-slate-200 text-center font-mono">
+                          <td className="py-3 px-4 border-r border-slate-200 text-center font-mono align-middle">
                             {gradeMeta ? (
                               <span
-                                className={`inline-flex items-center justify-center px-3 py-1 rounded-lg text-xs font-black font-mono shadow-xs ${gradeMeta.badgeClass}`}
+                                className={`inline-flex items-center justify-center px-3.5 py-1 rounded-lg text-xs font-black font-mono shadow-xs ${gradeMeta.badgeClass}`}
                               >
                                 Grade {computedGrade}
                               </span>
@@ -1043,13 +1254,13 @@ export default function JHS3MockExamModule({
                           </td>
 
                           {/* REMARK */}
-                          <td className="py-2.5 px-3 text-center">
+                          <td className="py-3 px-4 text-center align-middle">
                             {gradeMeta ? (
-                              <span className="text-xs font-extrabold text-slate-800">
+                              <span className="text-xs font-extrabold text-slate-900">
                                 {gradeMeta.remark}
                               </span>
                             ) : (
-                              <span className="text-slate-400 text-[11px]">-</span>
+                              <span className="text-slate-400 text-xs">-</span>
                             )}
                           </td>
                         </tr>
@@ -1074,6 +1285,205 @@ export default function JHS3MockExamModule({
               <Save className="w-4 h-4 text-white" />
               <span>Submit & Save Subject Scores</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODE 3: OLD ASSESSMENT HISTORY ARCHIVE (FOR JHS DIVISION) */}
+      {/* ------------------------------------------------------------- */}
+      {viewMode === 'history-archive' && (
+        <div className="bg-white rounded-2xl border-2 border-amber-500/40 shadow-xl overflow-hidden p-4 sm:p-6 space-y-6 no-print animate-fadeIn">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-950 font-black text-xs rounded-full border border-amber-300 uppercase tracking-wider">
+                <GraduationCap className="w-4 h-4 text-amber-800" />
+                <span>JHS Old Student Assessment History & Archive Portal</span>
+              </div>
+              <h2 className="text-xl font-black text-slate-900 mt-2 flex items-center gap-2">
+                <History className="w-5 h-5 text-amber-700 shrink-0" />
+                <span>Historical Assessment Search & Result Slip Retrieval</span>
+              </h2>
+              <p className="text-xs text-slate-600 font-medium mt-1">
+                Search, inspect, and print official historical BECE mock exam records & past assessments for former, graduated, or returning JHS pupils.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+              <UserCheck className="w-5 h-5 text-amber-800 shrink-0" />
+              <div className="text-xs">
+                <span className="font-extrabold text-amber-950 block">{historicalAssessmentList.length} Matching Historical Records</span>
+                <span className="text-[10px] text-amber-800 font-medium">Ready for official A4 re-printing</span>
+              </div>
+            </div>
+          </div>
+
+          {/* SEARCH & FILTERS BAR */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+            {/* Academic Year Dropdown */}
+            <div className="space-y-1">
+              <label className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5 text-blue-700" />
+                <span>1. Select Academic Year:</span>
+              </label>
+              <select
+                value={historyAcademicYear}
+                onChange={(e) => setHistoryAcademicYear(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-lg border-2 border-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 bg-white font-bold text-slate-900 outline-none shadow-2xs cursor-pointer"
+              >
+                <option value="ALL_YEARS">-- All Historical Academic Years --</option>
+                {['2026/2027', '2025/2026', '2024/2025', '2023/2024', '2022/2023', '2021/2022', '2020/2021', '2019/2020'].map((yr) => (
+                  <option key={yr} value={yr}>Academic Year {yr}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* JHS Class Level Dropdown */}
+            <div className="space-y-1">
+              <label className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1">
+                <Filter className="w-3.5 h-3.5 text-violet-700" />
+                <span>2. Select JHS Division Level:</span>
+              </label>
+              <select
+                value={historyJHSClass}
+                onChange={(e) => setHistoryJHSClass(e.target.value)}
+                className="w-full text-xs p-2.5 rounded-lg border-2 border-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 bg-white font-bold text-slate-900 outline-none shadow-2xs cursor-pointer"
+              >
+                <option value="ALL_JHS">-- All JHS Classes & Graduated Alumni --</option>
+                <option value="JHS 1">JHS 1</option>
+                <option value="JHS 2">JHS 2</option>
+                <option value="JHS 3">JHS 3</option>
+                <option value="GRADUATED">Graduated JHS Alumni (Old Pupils)</option>
+              </select>
+            </div>
+
+            {/* Student Search Bar */}
+            <div className="space-y-1">
+              <label className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1">
+                <Search className="w-3.5 h-3.5 text-emerald-700" />
+                <span>3. Search Pupil Name / Roll No:</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="e.g. Kwame Mensah or ST101..."
+                  value={historySearchQuery}
+                  onChange={(e) => setHistorySearchQuery(e.target.value)}
+                  className="w-full text-xs py-2.5 pl-3 pr-8 rounded-lg border-2 border-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 bg-white font-bold text-slate-900 outline-none shadow-2xs"
+                />
+                {historySearchQuery && (
+                  <button
+                    onClick={() => setHistorySearchQuery('')}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* HISTORICAL RECORDS TABLE */}
+          <div className="border-2 border-amber-500/30 rounded-2xl overflow-hidden bg-white shadow-md">
+            <div className="bg-amber-950 text-white p-3.5 px-4 flex items-center justify-between border-b border-amber-800">
+              <span className="font-extrabold text-xs uppercase tracking-wider flex items-center gap-2">
+                <FileText className="w-4 h-4 text-amber-300" />
+                <span>JHS Division Historical Assessment Records ({historicalAssessmentList.length})</span>
+              </span>
+              <span className="text-[10px] text-amber-200 font-mono">
+                Academic Year: {historyAcademicYear === 'ALL_YEARS' ? 'All Archive Years' : historyAcademicYear}
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[700px]">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-800 text-[11px] uppercase font-black tracking-wider border-b border-slate-300">
+                    <th className="py-3 px-3.5 border-r border-slate-300 text-center w-12">#</th>
+                    <th className="py-3 px-4 border-r border-slate-300">STUDENT NAME & ROLL NO</th>
+                    <th className="py-3 px-3.5 border-r border-slate-300 text-center w-28">ACADEMIC YEAR</th>
+                    <th className="py-3 px-3.5 border-r border-slate-300 text-center w-36">ASSESSMENT SESSION</th>
+                    <th className="py-3 px-3.5 border-r border-slate-300 text-center w-28">RAW SCORE</th>
+                    <th className="py-3 px-3.5 border-r border-slate-300 text-center w-32">BECE AGGREGATE</th>
+                    <th className="py-3 px-4 text-center w-48">ACTION</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-xs font-medium text-slate-800">
+                  {historicalAssessmentList.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-10 text-center text-slate-400 italic">
+                        No historical assessment records match the selected Academic Year and filters. Try changing the Academic Year dropdown or search keyword.
+                      </td>
+                    </tr>
+                  ) : (
+                    historicalAssessmentList.map((rec, idx) => (
+                      <tr key={rec.id} className="hover:bg-amber-50/50 transition">
+                        <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-500 border-r border-slate-200">
+                          {idx + 1}
+                        </td>
+                        <td className="py-3 px-4 border-r border-slate-200">
+                          <div className="font-black text-slate-900 text-sm">{rec.studentName}</div>
+                          <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2 mt-0.5">
+                            <span>Index/Roll: {rec.rollNumber}</span>
+                            <span>•</span>
+                            <span className="font-extrabold text-blue-900">{rec.className}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3.5 text-center border-r border-slate-200 font-black font-mono text-slate-800">
+                          <span className="inline-block px-2.5 py-1 bg-blue-50 text-blue-950 border border-blue-200 rounded-md">
+                            {rec.academicYear}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3.5 text-center border-r border-slate-200 font-bold text-slate-700">
+                          {rec.examTitle}
+                        </td>
+                        <td className="py-3 px-3.5 text-center border-r border-slate-200 font-mono font-black text-slate-900">
+                          {rec.calcs.rawScore} / {rec.calcs.enteredCount * 100 || 600}
+                        </td>
+                        <td className="py-3 px-3.5 text-center border-r border-slate-200">
+                          {rec.calcs.totalAggregate > 0 ? (
+                            <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black font-mono ${
+                              rec.calcs.totalAggregate <= 12
+                                ? 'bg-emerald-100 text-emerald-950 border border-emerald-300'
+                                : rec.calcs.totalAggregate <= 24
+                                ? 'bg-amber-100 text-amber-950 border border-amber-300'
+                                : 'bg-slate-100 text-slate-900 border border-slate-300'
+                            }`}>
+                              Aggregate {rec.calcs.totalAggregate}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 italic text-[11px]">Pending Marks</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPrintingHistoricalRecord({
+                                studentName: rec.studentName,
+                                rollNumber: rec.rollNumber,
+                                className: rec.className,
+                                academicYear: rec.academicYear,
+                                examTitle: rec.examTitle,
+                                scores: rec.scores,
+                                calcs: rec.calcs,
+                                remarks: rec.remarks,
+                                updatedAt: rec.updatedAt
+                              });
+                            }}
+                            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-mauve-950 font-black text-xs rounded-lg border border-amber-600 shadow-xs transition inline-flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-mauve-950" />
+                            <span>Print Result Slip</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -1195,6 +1605,188 @@ export default function JHS3MockExamModule({
               >
                 <Save className="w-4 h-4 text-white" />
                 <span>Save Student Mock Results</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* PRINTABLE HISTORICAL ASSESSMENT SLIP MODAL */}
+      {/* ------------------------------------------------------------- */}
+      {printingHistoricalRecord && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-3xl w-full border-2 border-amber-500 shadow-2xl overflow-hidden animate-scaleUp my-4">
+            {/* Modal Top Bar (Hidden in Print) */}
+            <div className="bg-amber-950 text-white p-4 flex items-center justify-between border-b border-amber-800 no-print">
+              <div className="flex items-center gap-2">
+                <Printer className="w-5 h-5 text-amber-300" />
+                <h3 className="font-black text-sm uppercase tracking-wider text-white">
+                  Historical Assessment Result Slip Preview
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-1.5 bg-amber-400 hover:bg-amber-300 text-mauve-950 font-black text-xs uppercase rounded-lg shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Print A4 Slip</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintingHistoricalRecord(null)}
+                  className="text-amber-200 hover:text-white p-1 rounded-lg transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* PRINTABLE A4 CONTENT BODY */}
+            <div id="historical-print-slip" className="p-6 sm:p-8 space-y-6 bg-white text-slate-900 font-sans">
+              {/* Official School Header */}
+              <div className="text-center border-b-2 border-slate-900 pb-4 space-y-1">
+                <div className="text-xs uppercase font-extrabold tracking-widest text-blue-900">
+                  {config?.schoolName || 'EASTFIELD ACADEMY'} • JHS DIVISION
+                </div>
+                <h1 className="text-xl sm:text-2xl font-black text-slate-950 uppercase tracking-tight">
+                  OFFICIAL HISTORICAL ASSESSMENT REPORT SLIP
+                </h1>
+                <p className="text-xs text-slate-600 font-bold">
+                  Ghana Education Service Accredited Junior High School Examination Record
+                </p>
+                <div className="inline-block px-3 py-0.5 bg-amber-100 text-amber-950 text-[10px] font-black uppercase rounded border border-amber-300 mt-1">
+                  OFFICIAL ALUMNI / HISTORICAL ARCHIVE STATEMENT
+                </div>
+              </div>
+
+              {/* Pupil & Session Metadata Box */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-300 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase block">STUDENT NAME</span>
+                  <span className="font-black text-slate-900 text-sm">{printingHistoricalRecord.studentName}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase block">INDEX / ROLL NO</span>
+                  <span className="font-black font-mono text-slate-900 text-sm">{printingHistoricalRecord.rollNumber}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase block">ACADEMIC YEAR</span>
+                  <span className="font-black text-blue-900">{printingHistoricalRecord.academicYear}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase block">CLASS / SESSION</span>
+                  <span className="font-black text-slate-900">{printingHistoricalRecord.className} • {printingHistoricalRecord.examTitle}</span>
+                </div>
+              </div>
+
+              {/* Subject Performance Breakdown Table */}
+              <div className="border border-slate-300 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-900 text-white font-black uppercase text-[10px] tracking-wider">
+                      <th className="p-2.5 border-r border-slate-700 w-12 text-center">NO</th>
+                      <th className="p-2.5 border-r border-slate-700">SUBJECT</th>
+                      <th className="p-2.5 border-r border-slate-700 text-center w-28">MARKS (100)</th>
+                      <th className="p-2.5 border-r border-slate-700 text-center w-28">BECE GRADE</th>
+                      <th className="p-2.5 text-center w-36">REMARK</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 font-medium">
+                    {jhsSubjects.map((sub, idx) => {
+                      const isCore = getCoreSubjectType(sub) !== null;
+                      let scoreVal = printingHistoricalRecord.scores[sub.id];
+                      if (scoreVal === undefined) scoreVal = printingHistoricalRecord.scores[sub.code];
+                      if (scoreVal === undefined) scoreVal = printingHistoricalRecord.scores[sub.name];
+
+                      const scoreNum = scoreVal !== undefined && scoreVal !== null && scoreVal !== '' ? Number(scoreVal) : null;
+                      const grade = scoreNum !== null ? calculateBECEGrade(scoreNum) : null;
+                      const gradeMeta = grade !== null ? getBECEGradeMeta(grade) : null;
+
+                      return (
+                        <tr key={sub.id} className={isCore ? 'bg-blue-50/30 font-bold' : ''}>
+                          <td className="p-2 text-center border-r border-slate-200 font-mono text-slate-500">{idx + 1}</td>
+                          <td className="p-2 border-r border-slate-200 font-bold text-slate-900">
+                            {sub.name} {isCore && <span className="text-[10px] text-amber-700 font-black ml-1">(CORE)</span>}
+                          </td>
+                          <td className="p-2 border-r border-slate-200 text-center font-mono font-black text-slate-900">
+                            {scoreNum !== null ? scoreNum : '-'}
+                          </td>
+                          <td className="p-2 border-r border-slate-200 text-center font-mono font-black">
+                            {grade !== null ? (
+                              <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-black ${gradeMeta?.badgeClass}`}>
+                                Grade {grade}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-center font-extrabold text-slate-800">
+                            {gradeMeta ? gradeMeta.remark : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Aggregates & Performance Summary Box */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-amber-50/60 p-4 rounded-xl border border-amber-300 text-xs">
+                <div>
+                  <span className="font-extrabold uppercase text-[10px] text-amber-900 block">TOTAL RAW SCORE</span>
+                  <span className="text-base font-black font-mono text-slate-950">
+                    {printingHistoricalRecord.calcs.rawScore} / {printingHistoricalRecord.calcs.enteredCount * 100 || 600} Marks
+                  </span>
+                </div>
+                <div>
+                  <span className="font-extrabold uppercase text-[10px] text-amber-900 block">BEST 6 BECE AGGREGATE SCORE</span>
+                  <span className="text-base font-black font-mono text-amber-950">
+                    Aggregate {printingHistoricalRecord.calcs.totalAggregate} (Best 4 Core + Best 2 Electives)
+                  </span>
+                </div>
+              </div>
+
+              {/* Signatures & Verification Block */}
+              <div className="pt-6 border-t-2 border-slate-300 grid grid-cols-2 gap-8 text-xs">
+                <div className="space-y-1">
+                  <div className="h-10 border-b border-dashed border-slate-400 flex items-end justify-center pb-1 font-serif italic text-slate-700">
+                    {(config as any)?.headmasterSignature || 'Headmaster Sign & Stamp'}
+                  </div>
+                  <p className="text-[10px] font-black uppercase text-center text-slate-600">Headmaster / Principal Signature</p>
+                </div>
+                <div className="space-y-1">
+                  <div className="h-10 border-b border-dashed border-slate-400 flex items-end justify-center pb-1 text-slate-800 font-mono font-bold">
+                    {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </div>
+                  <p className="text-[10px] font-black uppercase text-center text-slate-600">Date Issued & Official Seal</p>
+                </div>
+              </div>
+
+              {/* Security Footer Notice */}
+              <div className="text-center text-[10px] text-slate-400 pt-2 border-t border-slate-200">
+                Official Historical Assessment Statement issued by {config?.schoolName || 'School Management'} for Alumni & Academic Verification.
+              </div>
+            </div>
+
+            {/* Modal Bottom Actions */}
+            <div className="bg-slate-100 p-4 border-t border-slate-200 flex items-center justify-end gap-3 no-print">
+              <button
+                type="button"
+                onClick={() => setPrintingHistoricalRecord(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold uppercase rounded-xl transition cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-mauve-950 font-black text-xs uppercase rounded-xl border border-amber-600 shadow-md transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Printer className="w-4 h-4 text-mauve-950" />
+                <span>Print Official A4 Slip</span>
               </button>
             </div>
           </div>

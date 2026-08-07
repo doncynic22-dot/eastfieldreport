@@ -11,6 +11,7 @@ import FeesCollectionModule from './FeesCollectionModule';
 import FeesDashboard from './FeesDashboard';
 import SchoolInventoryModule from './SchoolInventoryModule';
 import JHS3MockExamModule from './JHS3MockExamModule';
+import BulkSMSModule from './BulkSMSModule';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, uploadStudentPhotoToSupabase } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion } from '../services/promotionService';
@@ -44,7 +45,7 @@ interface AdminDashboardProps {
 }
 
 
-type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'transcripts' | 'jhs3-mock' | 'students' | 'teachers' | 'class-assignments' | 'inventory' | 'config';
+type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'bulk-sms' | 'transcripts' | 'jhs3-mock' | 'students' | 'teachers' | 'class-assignments' | 'inventory' | 'config';
 
 export default function AdminDashboard({
   students,
@@ -1044,6 +1045,7 @@ export default function AdminDashboard({
           { id: 'analytics', label: 'Overview Metrics', icon: Users },
           { id: 'fees-dashboard', label: 'Fees Dashboard', icon: BarChart3 },
           { id: 'fees', label: 'Fees Collection', icon: CreditCard },
+          { id: 'bulk-sms', label: 'Bulk Parent SMS', icon: MessageSquare },
           { id: 'transcripts', label: 'Transcripts', icon: FileSpreadsheet },
           { id: 'jhs3-mock', label: 'JHS 3 Mock Portal', icon: Award },
           { id: 'students', label: 'Admissions', icon: GraduationCap },
@@ -1058,14 +1060,14 @@ export default function AdminDashboard({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as AdminTab)}
-              className={`flex items-center justify-start gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-150 cursor-pointer border w-full ${
+              className={`flex items-center justify-start gap-2 px-3.5 py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all duration-150 cursor-pointer border w-full ${
                 isActive
-                  ? 'bg-mauve-950 text-white shadow-md border-amber-400 ring-2 ring-amber-400/60 font-black'
-                  : 'bg-mauve-900 text-white/90 hover:bg-mauve-800 hover:text-white border-mauve-700/80'
+                  ? 'bg-amber-400 text-slate-950 shadow-md border-2 border-amber-500 ring-2 ring-amber-300 font-black'
+                  : 'bg-mauve-900 text-white/90 hover:bg-amber-300 hover:text-slate-950 border-mauve-700/80 font-bold'
               }`}
               id={`admin-tab-${tab.id}`}
             >
-              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-amber-400' : 'text-amber-300/80'}`} />
+              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-slate-950' : 'text-amber-300/80'}`} />
               <span className="truncate">{tab.label}</span>
             </button>
           );
@@ -1158,6 +1160,17 @@ export default function AdminDashboard({
           config={config}
           bills={bills}
           onViewDashboard={() => setActiveTab('fees-dashboard')}
+        />
+      )}
+
+      {/* BULK SMS BROADCAST CENTER VIEW */}
+      {activeTab === 'bulk-sms' && (
+        <BulkSMSModule
+          students={students}
+          bills={bills}
+          feePayments={[]}
+          config={config}
+          classes={classes}
         />
       )}
 
@@ -1406,9 +1419,9 @@ export default function AdminDashboard({
                   });
                   setShowStudentModal(true);
                 }}
-                className="bg-mauve-900 hover:bg-mauve-700 text-white font-bold px-4 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold px-4 py-2 rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-md text-xs uppercase tracking-wider border border-blue-500"
               >
-                <Plus className="w-3.5 h-3.5" /> Add New Pupil
+                <Plus className="w-4 h-4 text-white" /> Add New Pupil
               </button>
             </div>
           </div>
@@ -1655,13 +1668,14 @@ export default function AdminDashboard({
           {showStudentModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fadeIn">
               <div className="bg-white rounded-2xl border border-mauve-250 w-full max-w-md p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center border-b border-mauve-100 pb-3">
-                  <h4 className="font-display font-bold text-mauve-900 text-lg">
+                <div className="bg-blue-600 text-white p-4 rounded-xl flex justify-between items-center shadow-sm -mt-1 -mx-1 mb-2">
+                  <h4 className="font-display font-extrabold text-white text-base tracking-wide uppercase">
                     {editingStudent ? 'Modify Student Details' : 'Admit New Pupil'}
                   </h4>
                   <button
+                    type="button"
                     onClick={() => setShowStudentModal(false)}
-                    className="text-gray-400 hover:text-gray-600 font-bold cursor-pointer"
+                    className="text-blue-100 hover:text-white font-bold cursor-pointer text-xl w-7 h-7 flex items-center justify-center rounded-lg hover:bg-blue-700/50 transition"
                   >
                     &times;
                   </button>
@@ -1750,15 +1764,15 @@ export default function AdminDashboard({
                   </div>
 
                   {/* Name */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-mauve-700 block">Student Fullname</label>
+                  <div className="space-y-1.5 p-3 rounded-xl bg-amber-100/80 border-2 border-amber-300 shadow-2xs">
+                    <label className="text-xs font-black text-slate-950 block uppercase tracking-wider">Student Fullname</label>
                     <input
                       type="text"
                       required
                       placeholder="e.g. Kwadwo Mensah"
                       value={studentForm.name}
                       onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })}
-                      className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
+                      className="w-full p-2.5 rounded-xl border-2 border-amber-400 focus:ring-2 focus:ring-amber-500 outline-none text-slate-950 font-bold bg-amber-50 placeholder:text-amber-700/60"
                     />
                   </div>
 
@@ -1871,7 +1885,7 @@ export default function AdminDashboard({
                     </button>
                     <button
                       type="submit"
-                      className="flex-1 py-2.5 bg-mauve-600 hover:bg-mauve-700 text-white rounded-xl transition cursor-pointer font-medium text-center shadow"
+                      className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl transition cursor-pointer text-center shadow-md shadow-blue-600/20"
                     >
                       {editingStudent ? 'Save Profile' : 'Confirm Admission'}
                     </button>
