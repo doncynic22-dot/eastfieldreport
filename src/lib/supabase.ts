@@ -1923,7 +1923,9 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
   const client = getSupabaseClient();
   const isInitialized = localStorage.getItem('ea_inventory_initialized') === 'true' ||
                         localStorage.getItem('ea_inventory_seeded') === 'true' ||
-                        localStorage.getItem('ea_school_inventory') !== null;
+                        localStorage.getItem('ea_inventory_cleared') === 'true' ||
+                        localStorage.getItem('ea_school_inventory') !== null ||
+                        localStorage.getItem('mock_supabase_ea_inventory') !== null;
   const deletedIds = getDeletedInventoryIds();
 
   const filterDeleted = (records: ClassroomInventoryRecord[]) => {
@@ -1932,8 +1934,8 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
   };
 
   if (!client) {
-    const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
-    if (cached !== null) {
+    const cached = localStorage.getItem('mock_supabase_ea_inventory') ?? localStorage.getItem('ea_school_inventory');
+    if (cached !== null && cached !== undefined) {
       try {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) return filterDeleted(parsed);
@@ -1947,8 +1949,8 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
     const { data, error } = await client.from('ea_inventory').select('*');
     if (error) {
       console.warn('Supabase fetch inventory error:', error);
-      const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
-      if (cached !== null) {
+      const cached = localStorage.getItem('mock_supabase_ea_inventory') ?? localStorage.getItem('ea_school_inventory');
+      if (cached !== null && cached !== undefined) {
         try {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed)) return filterDeleted(parsed);
@@ -1960,7 +1962,7 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
 
     if (!data || data.length === 0) {
       if (isInitialized) {
-        // Explicitly initialized/cleared inventory
+        // Explicitly initialized or cleared inventory - return empty array
         localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify([]));
         localStorage.setItem('ea_school_inventory', JSON.stringify([]));
         return [];
@@ -1999,6 +2001,17 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
       updatedAt: item.updated_at || item.updatedAt || new Date().toISOString()
     }));
 
+    // If Supabase returned records that are marked deleted in local registry, clean them up from Supabase DB
+    if (deletedIds && deletedIds.length > 0) {
+      const recordsToDelete = mapped.filter(r => deletedIds.includes(r.id));
+      if (recordsToDelete.length > 0) {
+        const idsToPurge = recordsToDelete.map(r => r.id);
+        client.from('ea_inventory').delete().in('id', idsToPurge).then(({ error: pErr }) => {
+          if (pErr) console.warn('Background purge of deleted inventory IDs notice:', pErr);
+        });
+      }
+    }
+
     const cleanMapped = filterDeleted(mapped);
 
     localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(cleanMapped));
@@ -2008,8 +2021,8 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
     return cleanMapped;
   } catch (err: any) {
     console.warn('fetchSupabaseInventory exception:', err);
-    const cached = localStorage.getItem('mock_supabase_ea_inventory') || localStorage.getItem('ea_school_inventory');
-    if (cached !== null) {
+    const cached = localStorage.getItem('mock_supabase_ea_inventory') ?? localStorage.getItem('ea_school_inventory');
+    if (cached !== null && cached !== undefined) {
       try {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) return filterDeleted(parsed);
@@ -2034,6 +2047,11 @@ export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[
   localStorage.setItem('ea_school_inventory', JSON.stringify(cleanInventory));
   localStorage.setItem('ea_inventory_initialized', 'true');
   localStorage.setItem('ea_inventory_seeded', 'true');
+  if (cleanInventory.length === 0) {
+    localStorage.setItem('ea_inventory_cleared', 'true');
+  } else {
+    localStorage.removeItem('ea_inventory_cleared');
+  }
 
   try {
     window.dispatchEvent(new Event('ea_inventory_updated'));
@@ -2043,21 +2061,26 @@ export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[
   if (!client) return true;
 
   try {
-    if (deletedIds && deletedIds.length > 0) {
+    const allDeletedToPurge = Array.from(new Set([...(deletedIds || []), ...activeDeleted]));
+    if (allDeletedToPurge.length > 0) {
       try {
-        await client.from('ea_inventory').delete().in('id', deletedIds);
+        const { error: delErr } = await client.from('ea_inventory').delete().in('id', allDeletedToPurge);
+        if (delErr) {
+          console.warn('Error deleting records from ea_inventory:', delErr);
+        }
       } catch (e) {
-        console.warn('Error deleting records from ea_inventory:', e);
+        console.warn('Exception deleting records from ea_inventory:', e);
       }
     }
 
     if (cleanInventory.length === 0) {
-      if (!deletedIds || deletedIds.length === 0) {
-        try {
-          await client.from('ea_inventory').delete().neq('id', '___none___');
-        } catch (e) {
-          console.warn('Error wiping ea_inventory:', e);
+      try {
+        const { error: wipeErr } = await client.from('ea_inventory').delete().neq('id', '___none___');
+        if (wipeErr) {
+          console.warn('Error wiping ea_inventory:', wipeErr);
         }
+      } catch (e) {
+        console.warn('Error wiping ea_inventory:', e);
       }
       return true;
     }
@@ -2093,20 +2116,23 @@ export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[
 }
 
 export async function deleteSupabaseInventoryRecord(id: string): Promise<boolean> {
+  if (!id) return true;
   try {
     const currentDeleted = getDeletedInventoryIds();
     if (!currentDeleted.includes(id)) {
       localStorage.setItem('ea_deleted_inventory_ids', JSON.stringify([...currentDeleted, id]));
     }
 
-    const cached = localStorage.getItem('ea_school_inventory') || localStorage.getItem('mock_supabase_ea_inventory');
+    const cached = localStorage.getItem('ea_school_inventory') ?? localStorage.getItem('mock_supabase_ea_inventory');
     if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed)) {
-        const updated = parsed.filter((item: any) => item.id !== id);
-        localStorage.setItem('ea_school_inventory', JSON.stringify(updated));
-        localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(updated));
-      }
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter((item: any) => item.id !== id);
+          localStorage.setItem('ea_school_inventory', JSON.stringify(updated));
+          localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(updated));
+        }
+      } catch (e) {}
     }
     localStorage.setItem('ea_inventory_initialized', 'true');
     localStorage.setItem('ea_inventory_seeded', 'true');

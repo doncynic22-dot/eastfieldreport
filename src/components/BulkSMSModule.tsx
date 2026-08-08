@@ -145,6 +145,8 @@ function formatPhoneForArkesel(phone: string): string {
   let cleaned = phone.replace(/[^0-9]/g, '');
   if (cleaned.startsWith('0') && cleaned.length === 10) {
     cleaned = '233' + cleaned.substring(1);
+  } else if (!cleaned.startsWith('233') && cleaned.length === 9) {
+    cleaned = '233' + cleaned;
   }
   return cleaned;
 }
@@ -240,7 +242,7 @@ export default function BulkSMSModule({
 
     setIsTestingApiKey(true);
     try {
-      // Try local server proxy first to prevent browser CORS block
+      // 1. Try local server proxy first
       let res = await fetch('/api/sms/balance', {
         method: 'GET',
         headers: {
@@ -249,7 +251,7 @@ export default function BulkSMSModule({
       }).catch(() => null);
 
       if (!res || !res.ok) {
-        // Direct endpoint fallback
+        // 2. Try direct Arkesel v2 balance
         res = await fetch('https://sms.arkesel.com/api/v2/clients/balance', {
           method: 'GET',
           headers: {
@@ -258,14 +260,20 @@ export default function BulkSMSModule({
         }).catch(() => null);
       }
 
+      if (!res || !res.ok) {
+        // 3. Try direct Arkesel v1 balance
+        const v1Url = `https://sms.arkesel.com/sms/api?action=check-balance&api_key=${encodeURIComponent(arkeselApiKey.trim())}`;
+        res = await fetch(v1Url, { method: 'GET' }).catch(() => null);
+      }
+
       if (res && res.ok) {
         const data = await res.json().catch(() => null);
-        if (data?.status === 'success' || data?.code === '100' || data?.data) {
-          const bal = data?.data?.balance ?? data?.data?.sms_balance ?? 'Active';
+        if (data?.status === 'success' || data?.code === '100' || data?.data || data?.balance !== undefined) {
+          const bal = data?.data?.balance ?? data?.data?.sms_balance ?? data?.balance ?? 'Active';
           setArkeselBalance(`${bal} GHS / SMS Credits`);
-          showToast(`Arkesel Connected! Balance: ${bal}`);
+          showToast(`Arkesel Gateway Connected! Balance: ${bal}`);
         } else {
-          setArkeselBalance('Connected (v2 Gateway Ready)');
+          setArkeselBalance('Connected (Gateway Ready)');
           showToast(data?.message || 'Arkesel API Key verified successfully!');
         }
       } else {
@@ -521,7 +529,7 @@ export default function BulkSMSModule({
             recipients: [recipientPhone]
           };
 
-          // Try server-side proxy route first to bypass browser CORS
+          // 1. Try server-side proxy route first to bypass browser CORS
           let response = await fetch('/api/sms/send', {
             method: 'POST',
             headers: {
@@ -531,9 +539,9 @@ export default function BulkSMSModule({
             body: JSON.stringify(arkeselPayload)
           }).catch(() => null);
 
-          if (!response) {
-            // Direct call fallback
-            response = await fetch('https://sms.arkesel.com/api/v2/sms/send', {
+          // 2. If proxy fails or returns 404/non-OK, try direct client call to Arkesel v2 API
+          if (!response || !response.ok) {
+            const directV2 = await fetch('https://sms.arkesel.com/api/v2/sms/send', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -541,11 +549,34 @@ export default function BulkSMSModule({
               },
               body: JSON.stringify(arkeselPayload)
             }).catch(() => null);
+
+            if (directV2 && directV2.ok) {
+              response = directV2;
+            } else if (!response && directV2) {
+              response = directV2;
+            }
+          }
+
+          // 3. If v2 still non-OK or 404, try direct client call to Arkesel v1 API GET endpoint
+          if (!response || !response.ok) {
+            const v1Url = `https://sms.arkesel.com/sms/api?action=send-sms&api_key=${encodeURIComponent(arkeselApiKey.trim())}&to=${encodeURIComponent(recipientPhone)}&from=${encodeURIComponent(senderId || 'EASTFIELD')}&sms=${encodeURIComponent(interpolatedMsg)}`;
+            const directV1 = await fetch(v1Url, { method: 'GET' }).catch(() => null);
+            if (directV1 && directV1.ok) {
+              response = directV1;
+            }
           }
 
           const resData = response ? await response.json().catch(() => null) : null;
 
-          if (response && response.ok && (resData?.status === 'success' || resData?.code === '100' || resData?.status === 200)) {
+          const isSuccess = response && response.ok && (
+            resData?.status === 'success' ||
+            resData?.code === '100' ||
+            resData?.code === 100 ||
+            resData?.status === 200 ||
+            resData?.message?.toLowerCase().includes('success')
+          );
+
+          if (isSuccess) {
             initialResults[item.student.id] = { status: 'ARKESEL_SENT', msg: `Arkesel SMS Sent to ${recipientPhone}` };
             sentCount++;
             logRecipientsList.push({
@@ -557,7 +588,16 @@ export default function BulkSMSModule({
               responseMsg: resData?.message || 'Sent via Arkesel Gateway'
             });
           } else {
-            const errorMsg = resData?.message || resData?.error || (response ? `Gateway HTTP ${response.status}` : 'Network or CORS connection failed');
+            const rawError = resData?.message || resData?.error || resData?.msg || resData?.data;
+            let errorMsg = 'Arkesel Gateway Error';
+            if (rawError && typeof rawError === 'string') {
+              errorMsg = rawError;
+            } else if (response) {
+              errorMsg = `Gateway HTTP ${response.status} (Please verify your Arkesel API key and Sender ID)`;
+            } else {
+              errorMsg = 'Network connection to SMS gateway failed';
+            }
+
             initialResults[item.student.id] = { status: 'ARKESEL_FAILED', msg: errorMsg };
             failedCount++;
             logRecipientsList.push({
