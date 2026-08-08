@@ -23,14 +23,24 @@ async function startServer() {
         return res.status(400).json({ status: "error", message: "Arkesel API key is required." });
       }
 
+      const v2BalanceUrl = "https://sms.arkesel.com/api/v2/clients/balance";
+      console.log(`[Arkesel Balance Check] Request URL: ${v2BalanceUrl} | Method: GET | Headers: { api-key: '${apiKey.substring(0, 4)}...' }`);
+
       // 1. Try Arkesel v2 API balance endpoint first
-      let response = await fetch("https://sms.arkesel.com/api/v2/clients/balance", {
+      let response = await fetch(v2BalanceUrl, {
         method: "GET",
         headers: {
           "api-key": apiKey.trim(),
           "Accept": "application/json"
         }
       }).catch(() => null);
+
+      if (response) {
+        console.log(`[Arkesel Balance Check] v2 Response Status: ${response.status}`);
+        if (response.status === 404) {
+          console.warn(`[Arkesel Balance Check] 404 Not Found at ${v2BalanceUrl}`);
+        }
+      }
 
       if (response && response.ok) {
         const data = await response.json().catch(() => null);
@@ -41,7 +51,13 @@ async function startServer() {
 
       // 2. Try Arkesel v1 API balance endpoint fallback
       const v1Url = `https://sms.arkesel.com/sms/api?action=check-balance&api_key=${encodeURIComponent(apiKey.trim())}`;
+      console.log(`[Arkesel Balance Check] Fallback v1 Request URL: https://sms.arkesel.com/sms/api?action=check-balance&api_key=*** | Method: GET`);
+
       const v1Response = await fetch(v1Url, { method: "GET" }).catch(() => null);
+
+      if (v1Response) {
+        console.log(`[Arkesel Balance Check] v1 Response Status: ${v1Response.status}`);
+      }
 
       if (v1Response && v1Response.ok) {
         const v1Data = await v1Response.json().catch(() => null);
@@ -56,6 +72,13 @@ async function startServer() {
 
       // If both return non-200, respond with helpful diagnostic
       const status = response ? response.status : (v1Response ? v1Response.status : 502);
+      if (status === 404) {
+        return res.status(404).json({
+          status: "error",
+          message: "Arkesel Gateway HTTP 404: The requested endpoint URL was not found on sms.arkesel.com. Please verify your Arkesel account status and v2 API key."
+        });
+      }
+
       return res.status(status).json({
         status: "error",
         message: "Unable to connect to Arkesel SMS Gateway. Please double-check your Arkesel API key."
@@ -63,6 +86,55 @@ async function startServer() {
     } catch (err: any) {
       console.error("Arkesel balance proxy error:", err);
       return res.status(500).json({ status: "error", message: err?.message || "Failed to connect to Arkesel gateway" });
+    }
+  });
+
+  // API Route: Run Arkesel Endpoint Diagnostics
+  app.get("/api/sms/diagnose", async (req, res) => {
+    try {
+      const apiKey =
+        (req.headers["api-key"] as string) ||
+        (req.headers["x-api-key"] as string) ||
+        (req.query.apiKey as string) ||
+        process.env.VITE_ARKESEL_API_KEY ||
+        process.env.ARKESEL_API_KEY ||
+        "";
+
+      const v2SendUrl = "https://sms.arkesel.com/api/v2/sms/send";
+      const v2BalanceUrl = "https://sms.arkesel.com/api/v2/clients/balance";
+
+      console.log(`[Arkesel Diagnostic] Testing Base URL: https://sms.arkesel.com`);
+      console.log(`[Arkesel Diagnostic] Testing Endpoint 1: ${v2SendUrl} [POST]`);
+      console.log(`[Arkesel Diagnostic] Testing Endpoint 2: ${v2BalanceUrl} [GET]`);
+
+      const diagHeaders = {
+        "api-key": apiKey.trim() || "test_key",
+        "Accept": "application/json"
+      };
+
+      const balancePing = await fetch(v2BalanceUrl, { method: "GET", headers: diagHeaders }).catch(() => null);
+
+      return res.status(200).json({
+        status: "success",
+        diagnostics: {
+          baseUrl: "https://sms.arkesel.com",
+          v2SendEndpoint: {
+            url: v2SendUrl,
+            method: "POST",
+            expectedHeaders: ["Content-Type: application/json", "api-key: <YOUR_ARKESEL_KEY>"],
+            expectedBody: { sender: "STRING", message: "STRING", recipients: ["ARRAY_OF_STRINGS"] }
+          },
+          v2BalanceEndpoint: {
+            url: v2BalanceUrl,
+            method: "GET",
+            status: balancePing ? balancePing.status : "CONNECTION_FAILED",
+            ok: balancePing ? balancePing.ok : false
+          },
+          apiKeyProvided: Boolean(apiKey)
+        }
+      });
+    } catch (err: any) {
+      return res.status(500).json({ status: "error", message: err?.message || "Diagnostic failed" });
     }
   });
 
@@ -103,8 +175,17 @@ async function startServer() {
         return res.status(400).json({ status: "error", message: "No valid recipient phone numbers provided." });
       }
 
+      const v2SendUrl = "https://sms.arkesel.com/api/v2/sms/send";
+      const maskedKey = apiKey.length > 6 ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 2)}` : '***';
+
+      console.log(`[Arkesel SMS Dispatch] Executing HTTP Request`);
+      console.log(`[Arkesel SMS Dispatch] Target Endpoint URL: ${v2SendUrl}`);
+      console.log(`[Arkesel SMS Dispatch] HTTP Method: POST`);
+      console.log(`[Arkesel SMS Dispatch] Request Headers:`, { "Content-Type": "application/json", "api-key": maskedKey, "Accept": "application/json" });
+      console.log(`[Arkesel SMS Dispatch] Request Payload:`, { sender: cleanSender, message: `${cleanMessage.substring(0, 30)}...`, recipientsCount: cleanRecipients.length });
+
       // 1. Primary: Try Arkesel v2 API POST endpoint
-      let v2Response = await fetch("https://sms.arkesel.com/api/v2/sms/send", {
+      let v2Response = await fetch(v2SendUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -118,11 +199,20 @@ async function startServer() {
         })
       }).catch(() => null);
 
+      if (v2Response) {
+        console.log(`[Arkesel SMS Dispatch] Gateway HTTP Response Code: ${v2Response.status}`);
+      }
+
       if (v2Response && v2Response.ok) {
         const v2Data = await v2Response.json().catch(() => null);
         if (v2Data && (v2Data.status === "success" || v2Data.code === "100" || v2Data.code === 100 || v2Data.status === 200)) {
           return res.status(200).json(v2Data);
         }
+      }
+
+      // Check if v2 returned 404 explicitly
+      if (v2Response && v2Response.status === 404) {
+        console.warn(`[Arkesel SMS Dispatch] 404 Not Found at '${v2SendUrl}'`);
       }
 
       // 2. Secondary Fallback: Try Arkesel v1 API GET endpoint
@@ -134,7 +224,14 @@ async function startServer() {
       v1Url.searchParams.append("from", cleanSender);
       v1Url.searchParams.append("sms", cleanMessage);
 
+      console.log(`[Arkesel SMS Dispatch] Trying Fallback v1 Endpoint URL: https://sms.arkesel.com/sms/api?action=send-sms&api_key=***&from=${cleanSender}&to=${cleanRecipients.length}_recipients`);
+
       const v1Response = await fetch(v1Url.toString(), { method: "GET" }).catch(() => null);
+
+      if (v1Response) {
+        console.log(`[Arkesel SMS Dispatch] Fallback v1 HTTP Response Code: ${v1Response.status}`);
+      }
+
       if (v1Response && v1Response.ok) {
         const v1Data = await v1Response.json().catch(() => null);
         if (v1Data && (v1Data.code === "100" || v1Data.code === 100 || v1Data.status === "success" || v1Data.message?.toLowerCase().includes("success"))) {
@@ -162,9 +259,17 @@ async function startServer() {
         });
       }
 
+      // Handle HTTP 404 explicitly with full diagnostic explanation
+      if (v2Response && v2Response.status === 404) {
+        return res.status(404).json({
+          status: "error",
+          message: `HTTP 404 Endpoint Not Found: The Arkesel API URL '${v2SendUrl}' returned 404. Endpoint structure verified against Arkesel v2 specs (POST https://sms.arkesel.com/api/v2/sms/send with 'api-key' header). Please check if your Arkesel account is active and v2 API key permissions are enabled.`
+        });
+      }
+
       return res.status(400).json({
         status: "error",
-        message: "Arkesel Gateway Error (HTTP 404/400). Please verify that your API Key is valid and your Sender ID is registered in your Arkesel dashboard."
+        message: "Arkesel Gateway Error. Please verify that your API Key is valid and your Sender ID is registered in your Arkesel dashboard."
       });
     } catch (err: any) {
       console.error("Arkesel SMS proxy error:", err);

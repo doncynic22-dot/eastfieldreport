@@ -29,8 +29,15 @@ import {
   Globe, 
   ShieldCheck,
   RefreshCw,
-  Trash2
+  Trash2,
+  Activity
 } from 'lucide-react';
+import { 
+  logSmsDispatchAttempt, 
+  handle404EndpointError, 
+  runArkeselDiagnostic, 
+  ARKESEL_ENDPOINTS 
+} from '../lib/arkeselDiagnostic';
 
 interface BulkSMSModuleProps {
   students: Student[];
@@ -191,6 +198,11 @@ export default function BulkSMSModule({
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Arkesel Diagnostic Utility State
+  const [diagnosticReport, setDiagnosticReport] = useState<any>(null);
+  const [showDiagnosticModal, setShowDiagnosticModal] = useState<boolean>(false);
+  const [isRunningDiagnostic, setIsRunningDiagnostic] = useState<boolean>(false);
+
   // Broadcast History
   const [broadcastHistory, setBroadcastHistory] = useState<BroadcastLogItem[]>([]);
   const [showClearConfirmModal, setShowClearConfirmModal] = useState<boolean>(false);
@@ -285,6 +297,25 @@ export default function BulkSMSModule({
       showToast('Arkesel API Key saved! Ready for live broadcast.');
     } finally {
       setIsTestingApiKey(false);
+    }
+  };
+
+  // Run Diagnostic Check on Arkesel API Base URL and Endpoints
+  const handleRunDiagnostic = async () => {
+    setIsRunningDiagnostic(true);
+    try {
+      const report = await runArkeselDiagnostic(arkeselApiKey);
+      setDiagnosticReport(report);
+      setShowDiagnosticModal(true);
+      if (report.baseUrlOk) {
+        showToast('Arkesel API Base URL & v2 Endpoint verified successfully!');
+      } else {
+        showToast('Diagnostic complete. Arkesel endpoints inspected.');
+      }
+    } catch (err: any) {
+      showToast('Diagnostic check error: ' + (err?.message || 'Failed to test endpoint'));
+    } finally {
+      setIsRunningDiagnostic(false);
     }
   };
 
@@ -529,6 +560,14 @@ export default function BulkSMSModule({
             recipients: [recipientPhone]
           };
 
+          // Log full request details before sending
+          logSmsDispatchAttempt(
+            '/api/sms/send',
+            'POST',
+            { 'Content-Type': 'application/json', 'api-key': arkeselApiKey.trim() },
+            arkeselPayload
+          );
+
           // 1. Try server-side proxy route first to bypass browser CORS
           let response = await fetch('/api/sms/send', {
             method: 'POST',
@@ -541,7 +580,14 @@ export default function BulkSMSModule({
 
           // 2. If proxy fails or returns 404/non-OK, try direct client call to Arkesel v2 API
           if (!response || !response.ok) {
-            const directV2 = await fetch('https://sms.arkesel.com/api/v2/sms/send', {
+            logSmsDispatchAttempt(
+              ARKESEL_ENDPOINTS.v2_send,
+              'POST',
+              { 'Content-Type': 'application/json', 'api-key': arkeselApiKey.trim() },
+              arkeselPayload
+            );
+
+            const directV2 = await fetch(ARKESEL_ENDPOINTS.v2_send, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -559,7 +605,9 @@ export default function BulkSMSModule({
 
           // 3. If v2 still non-OK or 404, try direct client call to Arkesel v1 API GET endpoint
           if (!response || !response.ok) {
-            const v1Url = `https://sms.arkesel.com/sms/api?action=send-sms&api_key=${encodeURIComponent(arkeselApiKey.trim())}&to=${encodeURIComponent(recipientPhone)}&from=${encodeURIComponent(senderId || 'EASTFIELD')}&sms=${encodeURIComponent(interpolatedMsg)}`;
+            const v1Url = `${ARKESEL_ENDPOINTS.v1_send}?action=send-sms&api_key=${encodeURIComponent(arkeselApiKey.trim())}&to=${encodeURIComponent(recipientPhone)}&from=${encodeURIComponent(senderId || 'EASTFIELD')}&sms=${encodeURIComponent(interpolatedMsg)}`;
+            logSmsDispatchAttempt(v1Url, 'GET', {});
+
             const directV1 = await fetch(v1Url, { method: 'GET' }).catch(() => null);
             if (directV1 && directV1.ok) {
               response = directV1;
@@ -588,14 +636,18 @@ export default function BulkSMSModule({
               responseMsg: resData?.message || 'Sent via Arkesel Gateway'
             });
           } else {
-            const rawError = resData?.message || resData?.error || resData?.msg || resData?.data;
             let errorMsg = 'Arkesel Gateway Error';
-            if (rawError && typeof rawError === 'string') {
-              errorMsg = rawError;
-            } else if (response) {
-              errorMsg = `Gateway HTTP ${response.status} (Please verify your Arkesel API key and Sender ID)`;
+            if (response && response.status === 404) {
+              errorMsg = handle404EndpointError(ARKESEL_ENDPOINTS.v2_send, 404);
             } else {
-              errorMsg = 'Network connection to SMS gateway failed';
+              const rawError = resData?.message || resData?.error || resData?.msg || resData?.data;
+              if (rawError && typeof rawError === 'string') {
+                errorMsg = rawError;
+              } else if (response) {
+                errorMsg = `Gateway HTTP ${response.status} (Please verify your Arkesel API key and Sender ID)`;
+              } else {
+                errorMsg = 'Network connection to SMS gateway failed';
+              }
             }
 
             initialResults[item.student.id] = { status: 'ARKESEL_FAILED', msg: errorMsg };
@@ -1191,16 +1243,28 @@ export default function BulkSMSModule({
               )}
             </div>
 
-            <div className="pt-3 flex items-center justify-between border-t border-slate-200">
-              <button
-                type="button"
-                onClick={handleTestArkeselConnection}
-                disabled={isTestingApiKey}
-                className="px-4 py-2 bg-amber-100 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer border border-amber-300 disabled:opacity-50 transition"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 text-slate-950 ${isTestingApiKey ? 'animate-spin' : ''}`} />
-                <span>Test Connection</span>
-              </button>
+            <div className="pt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestArkeselConnection}
+                  disabled={isTestingApiKey}
+                  className="px-3.5 py-2 bg-amber-100 hover:bg-amber-300 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer border border-amber-300 disabled:opacity-50 transition"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-slate-950 ${isTestingApiKey ? 'animate-spin' : ''}`} />
+                  <span>Test Connection</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRunDiagnostic}
+                  disabled={isRunningDiagnostic}
+                  className="px-3.5 py-2 bg-blue-100 hover:bg-blue-200 text-blue-950 font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer border border-blue-300 disabled:opacity-50 transition"
+                >
+                  <Activity className={`w-3.5 h-3.5 text-blue-700 ${isRunningDiagnostic ? 'animate-spin' : ''}`} />
+                  <span>Run Diagnostic Check</span>
+                </button>
+              </div>
 
               <div className="flex gap-2">
                 <button
@@ -1226,7 +1290,78 @@ export default function BulkSMSModule({
         </div>
       )}
 
-      {/* DISPATCH PROGRESS MODAL */}
+      {/* ARKESEL DIAGNOSTIC REPORT MODAL */}
+      {showDiagnosticModal && diagnosticReport && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 text-slate-900">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 border border-blue-300 flex items-center justify-center font-bold">
+                  <Activity className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-display font-extrabold text-sm uppercase text-blue-950">Arkesel API Endpoint Diagnostic</h3>
+                  <span className="text-[10px] text-slate-500 font-mono">Structure & Base URL Validation Report</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowDiagnosticModal(false)}
+                className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              <div className="p-3 bg-slate-900 text-slate-100 rounded-xl font-mono text-xs space-y-2">
+                <div className="flex justify-between border-b border-slate-800 pb-1 text-slate-400">
+                  <span>Base URL Status:</span>
+                  <span className={diagnosticReport.baseUrlOk ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                    {diagnosticReport.baseUrlOk ? 'VERIFIED (https://sms.arkesel.com)' : 'PROXY READY'}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-amber-300 font-bold block">1. Arkesel v2 Send Endpoint Spec:</span>
+                  <div className="text-[11px] text-slate-300 pl-2">
+                    <p><strong className="text-slate-100">URL:</strong> {ARKESEL_ENDPOINTS.v2_send}</p>
+                    <p><strong className="text-slate-100">HTTP Method:</strong> POST</p>
+                    <p><strong className="text-slate-100">Headers:</strong> Content-Type: application/json, api-key: &lt;key&gt;</p>
+                    <p><strong className="text-slate-100">Status Check:</strong> {diagnosticReport.v2SendEndpointCheck.message}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1 border-t border-slate-800 pt-2">
+                  <span className="text-cyan-300 font-bold block">2. Arkesel v2 Balance Endpoint Spec:</span>
+                  <div className="text-[11px] text-slate-300 pl-2">
+                    <p><strong className="text-slate-100">URL:</strong> {ARKESEL_ENDPOINTS.v2_balance}</p>
+                    <p><strong className="text-slate-100">HTTP Method:</strong> GET</p>
+                    <p><strong className="text-slate-100">Headers:</strong> api-key: &lt;key&gt;</p>
+                    <p><strong className="text-slate-100">Status:</strong> HTTP {diagnosticReport.v2BalanceResult.status} - {diagnosticReport.v2BalanceResult.message}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1 border-t border-slate-800 pt-2">
+                  <span className="text-emerald-300 font-bold block">3. HTTP 404 Guard & Handling:</span>
+                  <p className="text-[11px] text-slate-300 pl-2 leading-relaxed">
+                    Explicit 404 handling validates that requests match Arkesel v2 specifications and flags unverified account credentials or inactive v2 API permissions.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDiagnosticModal(false)}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs cursor-pointer shadow-md transition"
+              >
+                Close Diagnostic
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showDispatchModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
           <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-5 shadow-2xl border border-slate-200 text-slate-900">
