@@ -349,7 +349,8 @@ export default function JHSTerminalAssessmentHistoryModule({
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
-      {/* TOAST BANNER */}
+      <div className={showMasterSheetModal ? 'no-print' : ''}>
+        {/* TOAST BANNER */}
       {toastMessage && (
         <div className="fixed top-5 right-5 z-50 bg-slate-900 text-amber-300 px-5 py-3 rounded-xl shadow-2xl border-2 border-amber-400 font-extrabold text-xs flex items-center gap-2 animate-bounce">
           <CheckCircle2 className="w-5 h-5 text-emerald-400" />
@@ -1012,6 +1013,7 @@ export default function JHSTerminalAssessmentHistoryModule({
           </div>
         </div>
       )}
+      </div>
 
       {/* PRINTABLE TERMINAL ASSESSMENT MASTER SHEET MODAL */}
       {showMasterSheetModal && (
@@ -1021,6 +1023,12 @@ export default function JHSTerminalAssessmentHistoryModule({
               @page {
                 size: A4 landscape !important;
                 margin: 5mm !important;
+              }
+              body > *:not(#root) {
+                display: none !important;
+              }
+              header, nav, aside, .no-print {
+                display: none !important;
               }
             }
           `}</style>
@@ -1129,8 +1137,6 @@ export default function JHSTerminalAssessmentHistoryModule({
                     <tr className="bg-blue-900 text-white font-black uppercase text-[10px] tracking-wider">
                       <th rowSpan={2} className="p-2 border-r border-blue-800 text-center w-8">#</th>
                       <th rowSpan={2} className="p-2 border-r border-blue-800 min-w-[140px]">PUPIL NAME</th>
-                      <th rowSpan={2} className="p-2 border-r border-blue-800 text-center w-20">ROLL NO</th>
-                      <th rowSpan={2} className="p-2 border-r border-blue-800 text-center w-16">CLASS</th>
                       {jhsSubjects.map((sub) => (
                         <th key={sub.id} colSpan={3} className="p-1.5 border-r border-blue-800 text-center">
                           <div className="font-extrabold text-white text-[11px]">{sub.code || sub.name.substring(0, 8)}</div>
@@ -1150,7 +1156,7 @@ export default function JHSTerminalAssessmentHistoryModule({
                   <tbody className="divide-y divide-slate-300 font-medium text-slate-900">
                     {filteredRecords.length === 0 ? (
                       <tr>
-                        <td colSpan={4 + jhsSubjects.length * 3} className="p-8 text-center text-slate-500 italic">
+                        <td colSpan={2 + jhsSubjects.length * 3} className="p-8 text-center text-slate-500 italic">
                           No assessment records match the selected Year, Term, and Class filters.
                         </td>
                       </tr>
@@ -1160,8 +1166,6 @@ export default function JHSTerminalAssessmentHistoryModule({
                           <tr key={rec.id} className="hover:bg-amber-50/40">
                             <td className="p-1.5 text-center border-r border-slate-300 font-mono text-slate-600">{idx + 1}</td>
                             <td className="p-1.5 border-r border-slate-300 font-bold text-slate-950">{rec.studentName}</td>
-                            <td className="p-1.5 border-r border-slate-300 text-center font-mono text-slate-700">{rec.rollNumber}</td>
-                            <td className="p-1.5 border-r border-slate-300 text-center font-bold text-slate-800">{rec.className}</td>
                             {jhsSubjects.map((sub) => {
                               const scObj = rec.scores?.[sub.id] || rec.scores?.[sub.code] || rec.scores?.[sub.name] || {};
                               const classSc = scObj.classScore !== undefined && scObj.classScore !== null ? scObj.classScore : null;
