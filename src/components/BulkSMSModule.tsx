@@ -10,6 +10,9 @@ import {
   Send, 
   CheckCircle2, 
   AlertCircle, 
+  AlertTriangle,
+  XCircle,
+  Info,
   Sparkles, 
   Copy, 
   Download, 
@@ -195,8 +198,20 @@ export default function BulkSMSModule({
   const [showDispatchModal, setShowDispatchModal] = useState<boolean>(false);
   const [dispatchCompleted, setDispatchCompleted] = useState<boolean>(false);
 
-  // Toast feedback
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // Toast feedback state
+  type ToastType = 'success' | 'error' | 'warning' | 'info';
+  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+
+  // Computed summary of dispatch results
+  const dispatchSummary = useMemo(() => {
+    let sent = 0;
+    let failed = 0;
+    (Object.values(dispatchResults) as Array<{ status: string; msg?: string }>).forEach(r => {
+      if (r.status === 'ARKESEL_SENT' || r.status === 'SENT') sent++;
+      if (r.status === 'ARKESEL_FAILED' || r.status === 'FAILED_NO_PHONE') failed++;
+    });
+    return { sent, failed, total: Object.keys(dispatchResults).length };
+  }, [dispatchResults]);
 
   // Arkesel Diagnostic Utility State
   const [diagnosticReport, setDiagnosticReport] = useState<any>(null);
@@ -242,13 +257,13 @@ export default function BulkSMSModule({
   const handleSaveApiKey = (key: string) => {
     setArkeselApiKey(key);
     localStorage.setItem('ea_arkesel_api_key', key.trim());
-    showToast('Arkesel SMS API Key saved successfully!');
+    showToast('Arkesel SMS API Key saved successfully!', 'success');
   };
 
   // Test Arkesel API key balance
   const handleTestArkeselConnection = async () => {
     if (!arkeselApiKey.trim()) {
-      showToast('Please enter an Arkesel API key first.');
+      showToast('Please enter an Arkesel API key first.', 'error');
       return;
     }
 
@@ -283,18 +298,18 @@ export default function BulkSMSModule({
         if (data?.status === 'success' || data?.code === '100' || data?.data || data?.balance !== undefined) {
           const bal = data?.data?.balance ?? data?.data?.sms_balance ?? data?.balance ?? 'Active';
           setArkeselBalance(`${bal} GHS / SMS Credits`);
-          showToast(`Arkesel Gateway Connected! Balance: ${bal}`);
+          showToast(`Arkesel Gateway Connected! Balance: ${bal}`, 'success');
         } else {
           setArkeselBalance('Connected (Gateway Ready)');
-          showToast(data?.message || 'Arkesel API Key verified successfully!');
+          showToast(data?.message || 'Arkesel API Key verified successfully!', 'success');
         }
       } else {
         setArkeselBalance('Key Stored & Ready for Dispatch');
-        showToast('Arkesel API Key saved! Ready for live broadcast.');
+        showToast('Arkesel API Key saved! Ready for live broadcast.', 'success');
       }
     } catch (err) {
       setArkeselBalance('Key Stored & Ready for Dispatch');
-      showToast('Arkesel API Key saved! Ready for live broadcast.');
+      showToast('Arkesel API Key saved! Ready for live broadcast.', 'success');
     } finally {
       setIsTestingApiKey(false);
     }
@@ -308,12 +323,12 @@ export default function BulkSMSModule({
       setDiagnosticReport(report);
       setShowDiagnosticModal(true);
       if (report.baseUrlOk) {
-        showToast('Arkesel API Base URL & v2 Endpoint verified successfully!');
+        showToast('Arkesel API Base URL & v2 Endpoint verified successfully!', 'success');
       } else {
-        showToast('Diagnostic complete. Arkesel endpoints inspected.');
+        showToast('Diagnostic complete. Arkesel endpoints inspected.', 'info');
       }
     } catch (err: any) {
-      showToast('Diagnostic check error: ' + (err?.message || 'Failed to test endpoint'));
+      showToast('Diagnostic check error: ' + (err?.message || 'Failed to test endpoint'), 'error');
     } finally {
       setIsRunningDiagnostic(false);
     }
@@ -449,10 +464,10 @@ export default function BulkSMSModule({
     }
   };
 
-  // Toast helper
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+  // Toast helper with type support
+  const showToast = (msg: string, type: ToastType = 'info') => {
+    setToast({ message: msg, type });
+    setTimeout(() => setToast(null), 5000);
   };
 
   // Copy Phone list
@@ -463,18 +478,18 @@ export default function BulkSMSModule({
       .join(', ');
 
     if (!phones) {
-      showToast('No valid phone numbers found in selected recipients!');
+      showToast('No valid phone numbers found in selected recipients!', 'error');
       return;
     }
 
     navigator.clipboard.writeText(phones);
-    showToast(`Copied ${selectedStudentItems.filter(i => i.hasPhone).length} phone numbers to clipboard!`);
+    showToast(`Copied ${selectedStudentItems.filter(i => i.hasPhone).length} phone numbers to clipboard!`, 'success');
   };
 
   // Export CSV
   const handleExportCSV = () => {
     if (selectedStudentItems.length === 0) {
-      showToast('Please select at least one recipient to export CSV!');
+      showToast('Please select at least one recipient to export CSV!', 'error');
       return;
     }
 
@@ -496,22 +511,22 @@ export default function BulkSMSModule({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast('SMS Broadcast CSV downloaded successfully!');
+    showToast('SMS Broadcast CSV downloaded successfully!', 'success');
   };
 
   // Dispatch Bulk SMS (Integrated with Arkesel.com v2 API)
   const handleStartDispatch = async () => {
     if (selectedStudentItems.length === 0) {
-      showToast('Please select at least one target recipient!');
+      showToast('Please select at least one target recipient!', 'error');
       return;
     }
     if (!messageText.trim()) {
-      showToast('Please compose an SMS message content before sending!');
+      showToast('Please compose an SMS message content before sending!', 'error');
       return;
     }
 
     if (!arkeselApiKey.trim()) {
-      showToast('Arkesel API Key required for real SMS dispatch. Please configure your key.');
+      showToast('Arkesel API Key required for real SMS dispatch. Please configure your key.', 'error');
       setShowApiSettingsModal(true);
       return;
     }
@@ -705,16 +720,55 @@ export default function BulkSMSModule({
       console.error('Failed to save history:', e);
     }
 
-    showToast(`Arkesel Bulk SMS Complete! Sent: ${sentCount}, Skipped: ${failedCount}`);
+    showToast(
+      sentCount > 0 && failedCount === 0
+        ? `Bulk SMS Sent Successfully! Delivered to all ${sentCount} recipient(s).`
+        : sentCount === 0 && failedCount > 0
+        ? `Bulk SMS Dispatch Failed! All ${failedCount} message(s) failed to send.`
+        : `Bulk SMS Completed with Warnings: ${sentCount} sent, ${failedCount} failed.`,
+      sentCount > 0 && failedCount === 0
+        ? 'success'
+        : sentCount === 0 && failedCount > 0
+        ? 'error'
+        : 'warning'
+    );
   };
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12 text-blue-950">
       {/* Toast Notification Floating Alert */}
-      {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 bg-white text-blue-950 px-5 py-3 rounded-xl shadow-2xl border-2 border-blue-600 flex items-center gap-3 animate-bounce">
-          <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-          <span className="text-xs font-black text-blue-950">{toastMessage}</span>
+      {toast && (
+        <div
+          className={`fixed top-20 right-6 z-50 px-5 py-3.5 rounded-2xl shadow-2xl border-2 flex items-center gap-3.5 animate-bounce max-w-md ${
+            toast.type === 'success'
+              ? 'bg-emerald-950 text-white border-emerald-400 shadow-emerald-900/40'
+              : toast.type === 'error'
+              ? 'bg-rose-950 text-white border-rose-400 shadow-rose-900/40'
+              : toast.type === 'warning'
+              ? 'bg-amber-950 text-white border-amber-400 shadow-amber-900/40'
+              : 'bg-blue-950 text-white border-blue-400 shadow-blue-900/40'
+          }`}
+        >
+          {toast.type === 'success' && <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />}
+          {toast.type === 'error' && <XCircle className="w-6 h-6 text-rose-400 shrink-0" />}
+          {toast.type === 'warning' && <AlertTriangle className="w-6 h-6 text-amber-400 shrink-0" />}
+          {toast.type === 'info' && <Info className="w-6 h-6 text-blue-400 shrink-0" />}
+          
+          <div className="space-y-0.5 pr-2">
+            <div className="text-[10px] font-black uppercase tracking-wider opacity-85">
+              {toast.type === 'success' && 'Bulk SMS Success'}
+              {toast.type === 'error' && 'Bulk SMS Dispatch Error'}
+              {toast.type === 'warning' && 'Bulk SMS Warning'}
+              {toast.type === 'info' && 'Notice'}
+            </div>
+            <span className="text-xs font-extrabold leading-snug block">{toast.message}</span>
+          </div>
+          <button
+            onClick={() => setToast(null)}
+            className="ml-auto text-white/70 hover:text-white p-1 rounded-lg transition cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -1389,16 +1443,71 @@ export default function BulkSMSModule({
             {/* Progress Bar */}
             <div className="space-y-2">
               <div className="flex justify-between text-xs font-bold font-mono text-slate-900">
-                <span>{dispatchCompleted ? 'Arkesel Broadcast Completed!' : `Sending SMS: ${currentDispatchStudent}...`}</span>
+                <span>{dispatchCompleted ? 'Arkesel Broadcast Execution Finished' : `Sending SMS: ${currentDispatchStudent}...`}</span>
                 <span className="text-blue-600 font-black">{dispatchProgress}%</span>
               </div>
               <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
                 <div
-                  className="h-full bg-blue-600 rounded-full transition-all duration-300"
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    dispatchCompleted
+                      ? dispatchSummary.failed === 0
+                        ? 'bg-emerald-600'
+                        : dispatchSummary.sent === 0
+                        ? 'bg-rose-600'
+                        : 'bg-amber-500'
+                      : 'bg-blue-600'
+                  }`}
                   style={{ width: `${dispatchProgress}%` }}
                 />
               </div>
             </div>
+
+            {/* Completion Summary Result Alert */}
+            {dispatchCompleted && (
+              <div className="animate-fadeIn">
+                {dispatchSummary.sent > 0 && dispatchSummary.failed === 0 && (
+                  <div className="p-4 rounded-2xl bg-emerald-50 border-2 border-emerald-400 text-emerald-950 flex items-start gap-3.5 shadow-sm">
+                    <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <h4 className="font-black text-sm text-emerald-950 uppercase tracking-wider">
+                        Bulk SMS Sent Successfully!
+                      </h4>
+                      <p className="text-xs font-bold text-emerald-800 leading-relaxed">
+                        All {dispatchSummary.sent} SMS broadcast message(s) were successfully delivered via Arkesel Gateway to parent contact numbers.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {dispatchSummary.sent === 0 && dispatchSummary.failed > 0 && (
+                  <div className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-400 text-rose-950 flex items-start gap-3.5 shadow-sm">
+                    <XCircle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <h4 className="font-black text-sm text-rose-950 uppercase tracking-wider">
+                        Bulk SMS Dispatch Failed!
+                      </h4>
+                      <p className="text-xs font-bold text-rose-800 leading-relaxed">
+                        0 of {dispatchSummary.total} messages sent. {dispatchSummary.failed} recipient message(s) failed. Please check your Arkesel API key, sender ID, account balance, or contact numbers.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {dispatchSummary.sent > 0 && dispatchSummary.failed > 0 && (
+                  <div className="p-4 rounded-2xl bg-amber-50 border-2 border-amber-400 text-amber-950 flex items-start gap-3.5 shadow-sm">
+                    <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <h4 className="font-black text-sm text-amber-950 uppercase tracking-wider">
+                        Bulk SMS Completed with Warnings
+                      </h4>
+                      <p className="text-xs font-bold text-amber-800 leading-relaxed">
+                        {dispatchSummary.sent} message(s) sent successfully, but {dispatchSummary.failed} message(s) failed to deliver. Review recipient list below.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Dispatch Live List */}
             <div className="border border-slate-200 rounded-xl p-3 max-h-60 overflow-y-auto space-y-1.5 text-xs bg-slate-50 text-slate-900">

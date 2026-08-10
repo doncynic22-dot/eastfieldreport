@@ -1022,7 +1022,13 @@ export default function JHSTerminalAssessmentHistoryModule({
             @media print {
               @page {
                 size: A4 landscape !important;
-                margin: 5mm !important;
+                margin: 3mm !important;
+              }
+              html, body {
+                width: 100% !important;
+                height: auto !important;
+                overflow: visible !important;
+                background: #ffffff !important;
               }
               body > *:not(#root) {
                 display: none !important;
@@ -1030,9 +1036,28 @@ export default function JHSTerminalAssessmentHistoryModule({
               header, nav, aside, .no-print {
                 display: none !important;
               }
+              #jhs-terminal-master-sheet {
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow: visible !important;
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+              #jhs-terminal-master-sheet table {
+                width: 100% !important;
+                max-width: 100% !important;
+                table-layout: auto !important;
+                font-size: 6.5px !important;
+              }
+              #jhs-terminal-master-sheet th,
+              #jhs-terminal-master-sheet td {
+                padding: 1px 1px !important;
+                font-size: 6.5px !important;
+                white-space: nowrap !important;
+              }
             }
           `}</style>
-          <div className="bg-white rounded-2xl max-w-6xl w-full border-2 border-amber-500 shadow-2xl overflow-hidden animate-scaleUp my-4 text-slate-900 print:max-w-none print:w-full print:border-none print:shadow-none print:my-0 print:rounded-none">
+          <div className="bg-white rounded-2xl max-w-6xl w-full border-2 border-amber-500 shadow-2xl overflow-hidden animate-scaleUp my-4 text-slate-900 print:max-w-none print:w-full print:border-none print:shadow-none print:my-0 print:rounded-none print:overflow-visible">
             {/* Modal Top Bar (no-print) */}
             <div className="bg-slate-950 text-white p-4 flex items-center justify-between border-b border-slate-800 no-print">
               <div className="flex items-center gap-2">
@@ -1109,46 +1134,61 @@ export default function JHSTerminalAssessmentHistoryModule({
             </div>
 
             {/* PRINTABLE BROAD SHEET CONTAINER */}
-            <div id="jhs-terminal-master-sheet" className="printable-noticeboard p-6 space-y-4 bg-white font-sans text-slate-900 max-h-[75vh] overflow-auto print:max-h-none print:overflow-visible print:p-0">
+            <div id="jhs-terminal-master-sheet" className="printable-noticeboard p-6 space-y-4 bg-white font-sans text-slate-900 max-h-[75vh] overflow-auto print:max-h-none print:overflow-visible print:p-0 print:w-full">
               {/* Header */}
-              <div className="text-center border-b-2 border-slate-900 pb-3 space-y-1">
-                <div className="text-xs uppercase font-extrabold tracking-widest text-blue-900">
+              <div className="text-center border-b-2 border-slate-900 pb-2 space-y-0.5">
+                <div className="text-xs uppercase font-extrabold tracking-widest text-blue-900 print:text-[8px]">
                   {config?.schoolName || 'EASTFIELD ACADEMY'} • JHS ACADEMIC DIVISION
                 </div>
-                <h1 className="text-xl font-black text-slate-950 uppercase tracking-tight">
+                <h1 className="text-xl font-black text-slate-950 uppercase tracking-tight print:text-[11px]">
                   JHS TERMINAL ASSESSMENT MASTER SHEET BROAD SHEET
                 </h1>
-                <div className="text-xs font-black text-slate-800 flex items-center justify-center gap-3 flex-wrap">
+                <div className="text-xs font-black text-slate-800 flex items-center justify-center gap-3 flex-wrap print:text-[8px]">
                   <span>ACADEMIC YEAR: <strong className="text-blue-900">{selectedAcademicYear}</strong></span>
                   <span>•</span>
                   <span>TERM: <strong className="text-violet-900">{selectedTerm}</strong></span>
                   <span>•</span>
                   <span>CLASS SCOPE: <strong className="text-emerald-900">{selectedClassLevel === 'ALL_JHS' ? 'All JHS Classes' : selectedClassLevel}</strong></span>
                 </div>
-                <div className="text-[10px] text-slate-500 font-mono">
-                  Official School Assessment Archive Broadsheet • Date Generated: {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                <div className="text-[10px] text-slate-500 font-mono print:text-[6.5px]">
+                  Official School Assessment Archive Broadsheet • Date Generated: {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} • [Scores: CLS = Class Assessment (50%), EXM = Exam (50%), TOT = Total (100%)]
                 </div>
               </div>
 
               {/* Master Sheet Broadsheet Table */}
-              <div className="overflow-x-auto border border-slate-900 rounded-lg print:border-none print:overflow-visible">
-                <table className="w-full text-left text-xs border-collapse print:text-[8px]">
+              <div className="overflow-x-auto border border-slate-900 rounded-lg print:border-none print:overflow-visible print:w-full print:max-w-none">
+                <table className="w-full text-left text-xs border-collapse print:text-[6.5px] print:w-full print:max-w-full">
                   <thead>
-                    <tr className="bg-blue-900 text-white font-black uppercase text-[10px] tracking-wider">
-                      <th rowSpan={2} className="p-1 border-r border-blue-800 text-center w-6 print:text-[8px]">#</th>
-                      <th rowSpan={2} className="p-1 border-r border-blue-800 min-w-[120px] max-w-[180px] print:text-[8px] print:min-w-[100px]">PUPIL NAME</th>
-                      {jhsSubjects.map((sub) => (
-                        <th key={sub.id} colSpan={3} className="p-1 border-r border-blue-800 text-center">
-                          <div className="font-extrabold text-white text-[10px] print:text-[8px] leading-none">{sub.code || sub.name.substring(0, 8)}</div>
-                        </th>
-                      ))}
+                    <tr className="bg-blue-900 text-white font-black uppercase text-[10px] tracking-wider print:text-[6.5px]">
+                      <th rowSpan={2} className="p-1 border-r border-blue-800 text-center w-5 print:text-[6.5px] print:p-0.5">#</th>
+                      <th rowSpan={2} className="p-1 border-r border-blue-800 min-w-[100px] max-w-[150px] print:text-[6.5px] print:p-0.5 print:min-w-[80px] whitespace-nowrap">PUPIL NAME</th>
+                      {jhsSubjects.map((sub) => {
+                        const subCode = sub.code?.trim() || (
+                          sub.name.toUpperCase().includes('ENGLISH') ? 'ENG' :
+                          sub.name.toUpperCase().includes('MATH') ? 'MAT' :
+                          sub.name.toUpperCase().includes('SCIENCE') ? 'SCI' :
+                          sub.name.toUpperCase().includes('SOCIAL') ? 'SOC' :
+                          sub.name.toUpperCase().includes('RELIGIOUS') || sub.name.toUpperCase().includes('RME') ? 'RME' :
+                          sub.name.toUpperCase().includes('COMPUTING') || sub.name.toUpperCase().includes('ICT') ? 'COMP' :
+                          sub.name.toUpperCase().includes('FRENCH') ? 'FRE' :
+                          sub.name.toUpperCase().includes('CAREER') || sub.name.toUpperCase().includes('TECH') ? 'CAR' :
+                          sub.name.toUpperCase().includes('CREATIVE') || sub.name.toUpperCase().includes('ARTS') || sub.name.toUpperCase().includes('CAD') ? 'CAD' :
+                          sub.name.toUpperCase().includes('TWI') || sub.name.toUpperCase().includes('AKUAPEM') || sub.name.toUpperCase().includes('GHANAIAN') ? 'TWI' :
+                          sub.name.substring(0, 5).toUpperCase()
+                        );
+                        return (
+                          <th key={sub.id} colSpan={3} className="p-1 border-r border-blue-800 text-center print:p-0.5">
+                            <div className="font-extrabold text-white text-[9px] print:text-[6.5px] leading-none uppercase tracking-tighter">{subCode}</div>
+                          </th>
+                        );
+                      })}
                     </tr>
-                    <tr className="bg-blue-950 text-blue-100 font-bold uppercase text-[8px] leading-none">
+                    <tr className="bg-blue-950 text-blue-100 font-bold uppercase text-[8px] leading-none print:text-[6px]">
                       {jhsSubjects.map((sub) => (
                         <React.Fragment key={`hdr-cols-${sub.id}`}>
-                          <th className="p-0.5 border-r border-blue-800 text-center bg-blue-950 text-blue-100 print:text-[7.5px]">CLS(50)</th>
-                          <th className="p-0.5 border-r border-blue-800 text-center bg-blue-950 text-blue-100 print:text-[7.5px]">EXM(50)</th>
-                          <th className="p-0.5 border-r border-blue-800 text-center bg-blue-900 text-amber-300 font-extrabold print:text-[7.5px]">TOT(100)</th>
+                          <th className="p-0.5 border-r border-blue-800 text-center bg-blue-950 text-blue-100 print:text-[6px] print:p-0.25">CLS</th>
+                          <th className="p-0.5 border-r border-blue-800 text-center bg-blue-950 text-blue-100 print:text-[6px] print:p-0.25">EXM</th>
+                          <th className="p-0.5 border-r border-blue-800 text-center bg-blue-900 text-amber-300 font-extrabold print:text-[6px] print:p-0.25">TOT</th>
                         </React.Fragment>
                       ))}
                     </tr>
@@ -1156,16 +1196,19 @@ export default function JHSTerminalAssessmentHistoryModule({
                   <tbody className="divide-y divide-slate-300 font-medium text-slate-900">
                     {filteredRecords.length === 0 ? (
                       <tr>
-                        <td colSpan={2 + jhsSubjects.length * 3} className="p-8 text-center text-slate-500 italic">
+                        <td colSpan={2 + jhsSubjects.length * 3} className="p-8 text-center text-slate-500 italic print:p-4 print:text-[7px]">
                           No assessment records match the selected Year, Term, and Class filters.
                         </td>
                       </tr>
                     ) : (
                       filteredRecords.map((rec, idx) => {
+                        const formattedStudentName = rec.studentName ? rec.studentName.replace(/\s+/g, ' ') : '';
                         return (
                           <tr key={rec.id} className="hover:bg-amber-50/40">
-                            <td className="p-1 text-center border-r border-slate-300 font-mono text-slate-600 print:text-[8px]">{idx + 1}</td>
-                            <td className="p-1 border-r border-slate-300 font-bold text-slate-950 print:text-[8px] whitespace-nowrap">{rec.studentName}</td>
+                            <td className="p-1 text-center border-r border-slate-300 font-mono text-slate-600 print:text-[6.5px] print:p-0.5">{idx + 1}</td>
+                            <td className="p-1 border-r border-slate-300 font-bold text-slate-950 print:text-[6.5px] print:p-0.5 whitespace-nowrap overflow-hidden">
+                              <span className="inline-block whitespace-nowrap">{formattedStudentName}</span>
+                            </td>
                             {jhsSubjects.map((sub) => {
                               const scObj = rec.scores?.[sub.id] || rec.scores?.[sub.code] || rec.scores?.[sub.name] || {};
                               const classSc = scObj.classScore !== undefined && scObj.classScore !== null ? scObj.classScore : null;
@@ -1174,14 +1217,14 @@ export default function JHSTerminalAssessmentHistoryModule({
 
                               return (
                                 <React.Fragment key={`cell-${sub.id}`}>
-                                  <td className="p-0.5 border-r border-slate-300 text-center font-mono text-slate-700 print:text-[8px]">
-                                    {classSc !== null ? classSc : <span className="text-slate-400 italic text-[8px]">-</span>}
+                                  <td className="p-0.5 border-r border-slate-300 text-center font-mono text-slate-700 print:text-[6.5px] print:p-0.25">
+                                    {classSc !== null ? classSc : <span className="text-slate-400 italic text-[6px]">-</span>}
                                   </td>
-                                  <td className="p-0.5 border-r border-slate-300 text-center font-mono text-slate-700 print:text-[8px]">
-                                    {examSc !== null ? examSc : <span className="text-slate-400 italic text-[8px]">-</span>}
+                                  <td className="p-0.5 border-r border-slate-300 text-center font-mono text-slate-700 print:text-[6.5px] print:p-0.25">
+                                    {examSc !== null ? examSc : <span className="text-slate-400 italic text-[6px]">-</span>}
                                   </td>
-                                  <td className="p-0.5 border-r border-slate-300 text-center font-mono font-black text-slate-950 bg-slate-50/50 print:text-[8px]">
-                                    {totalSc !== null ? totalSc : <span className="text-slate-400 italic text-[8px]">-</span>}
+                                  <td className="p-0.5 border-r border-slate-300 text-center font-mono font-black text-slate-950 bg-slate-50/50 print:text-[6.5px] print:p-0.25">
+                                    {totalSc !== null ? totalSc : <span className="text-slate-400 italic text-[6px]">-</span>}
                                   </td>
                                 </React.Fragment>
                               );
