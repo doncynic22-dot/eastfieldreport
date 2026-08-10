@@ -1109,7 +1109,7 @@ export default function JHSTerminalAssessmentHistoryModule({
             </div>
 
             {/* PRINTABLE BROAD SHEET CONTAINER */}
-            <div id="jhs-terminal-master-sheet" className="printable-noticeboard p-6 space-y-4 bg-white font-sans text-slate-900 max-h-[75vh] overflow-auto">
+            <div id="jhs-terminal-master-sheet" className="printable-noticeboard p-6 space-y-4 bg-white font-sans text-slate-900 max-h-[75vh] overflow-auto print:max-h-none print:overflow-visible print:p-0">
               {/* Header */}
               <div className="text-center border-b-2 border-slate-900 pb-3 space-y-1">
                 <div className="text-xs uppercase font-extrabold tracking-widest text-blue-900">
@@ -1131,24 +1131,24 @@ export default function JHSTerminalAssessmentHistoryModule({
               </div>
 
               {/* Master Sheet Broadsheet Table */}
-              <div className="overflow-x-auto border border-slate-900 rounded-lg">
-                <table className="w-full text-left text-xs border-collapse">
+              <div className="overflow-x-auto border border-slate-900 rounded-lg print:border-none print:overflow-visible">
+                <table className="w-full text-left text-xs border-collapse print:text-[8px]">
                   <thead>
                     <tr className="bg-blue-900 text-white font-black uppercase text-[10px] tracking-wider">
-                      <th rowSpan={2} className="p-2 border-r border-blue-800 text-center w-8">#</th>
-                      <th rowSpan={2} className="p-2 border-r border-blue-800 min-w-[140px]">PUPIL NAME</th>
+                      <th rowSpan={2} className="p-1 border-r border-blue-800 text-center w-6 print:text-[8px]">#</th>
+                      <th rowSpan={2} className="p-1 border-r border-blue-800 min-w-[120px] max-w-[180px] print:text-[8px] print:min-w-[100px]">PUPIL NAME</th>
                       {jhsSubjects.map((sub) => (
-                        <th key={sub.id} colSpan={3} className="p-1.5 border-r border-blue-800 text-center">
-                          <div className="font-extrabold text-white text-[11px]">{sub.code || sub.name.substring(0, 8)}</div>
+                        <th key={sub.id} colSpan={3} className="p-1 border-r border-blue-800 text-center">
+                          <div className="font-extrabold text-white text-[10px] print:text-[8px] leading-none">{sub.code || sub.name.substring(0, 8)}</div>
                         </th>
                       ))}
                     </tr>
-                    <tr className="bg-blue-950 text-blue-100 font-bold uppercase text-[9px]">
+                    <tr className="bg-blue-950 text-blue-100 font-bold uppercase text-[8px] leading-none">
                       {jhsSubjects.map((sub) => (
                         <React.Fragment key={`hdr-cols-${sub.id}`}>
-                          <th className="p-1 border-r border-blue-800 text-center w-12 bg-blue-950 text-blue-100">CLASS (50)</th>
-                          <th className="p-1 border-r border-blue-800 text-center w-12 bg-blue-950 text-blue-100">EXAM (50)</th>
-                          <th className="p-1 border-r border-blue-800 text-center w-12 bg-blue-900 text-amber-300 font-extrabold">TOT (100)</th>
+                          <th className="p-0.5 border-r border-blue-800 text-center bg-blue-950 text-blue-100 print:text-[7.5px]">CLS(50)</th>
+                          <th className="p-0.5 border-r border-blue-800 text-center bg-blue-950 text-blue-100 print:text-[7.5px]">EXM(50)</th>
+                          <th className="p-0.5 border-r border-blue-800 text-center bg-blue-900 text-amber-300 font-extrabold print:text-[7.5px]">TOT(100)</th>
                         </React.Fragment>
                       ))}
                     </tr>
@@ -1164,8 +1164,8 @@ export default function JHSTerminalAssessmentHistoryModule({
                       filteredRecords.map((rec, idx) => {
                         return (
                           <tr key={rec.id} className="hover:bg-amber-50/40">
-                            <td className="p-1.5 text-center border-r border-slate-300 font-mono text-slate-600">{idx + 1}</td>
-                            <td className="p-1.5 border-r border-slate-300 font-bold text-slate-950">{rec.studentName}</td>
+                            <td className="p-1 text-center border-r border-slate-300 font-mono text-slate-600 print:text-[8px]">{idx + 1}</td>
+                            <td className="p-1 border-r border-slate-300 font-bold text-slate-950 print:text-[8px] whitespace-nowrap">{rec.studentName}</td>
                             {jhsSubjects.map((sub) => {
                               const scObj = rec.scores?.[sub.id] || rec.scores?.[sub.code] || rec.scores?.[sub.name] || {};
                               const classSc = scObj.classScore !== undefined && scObj.classScore !== null ? scObj.classScore : null;
@@ -1174,14 +1174,14 @@ export default function JHSTerminalAssessmentHistoryModule({
 
                               return (
                                 <React.Fragment key={`cell-${sub.id}`}>
-                                  <td className="p-1 border-r border-slate-300 text-center font-mono text-slate-700">
-                                    {classSc !== null ? classSc : <span className="text-slate-400 italic text-[10px]">-</span>}
+                                  <td className="p-0.5 border-r border-slate-300 text-center font-mono text-slate-700 print:text-[8px]">
+                                    {classSc !== null ? classSc : <span className="text-slate-400 italic text-[8px]">-</span>}
                                   </td>
-                                  <td className="p-1 border-r border-slate-300 text-center font-mono text-slate-700">
-                                    {examSc !== null ? examSc : <span className="text-slate-400 italic text-[10px]">-</span>}
+                                  <td className="p-0.5 border-r border-slate-300 text-center font-mono text-slate-700 print:text-[8px]">
+                                    {examSc !== null ? examSc : <span className="text-slate-400 italic text-[8px]">-</span>}
                                   </td>
-                                  <td className="p-1 border-r border-slate-300 text-center font-mono font-black text-slate-950 bg-slate-50/50">
-                                    {totalSc !== null ? totalSc : <span className="text-slate-400 italic text-[10px]">-</span>}
+                                  <td className="p-0.5 border-r border-slate-300 text-center font-mono font-black text-slate-950 bg-slate-50/50 print:text-[8px]">
+                                    {totalSc !== null ? totalSc : <span className="text-slate-400 italic text-[8px]">-</span>}
                                   </td>
                                 </React.Fragment>
                               );
