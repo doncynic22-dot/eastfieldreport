@@ -5,12 +5,13 @@
 
 import React, { useState } from 'react';
 import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill, User } from '../types';
-import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award } from 'lucide-react';
+import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import FeesCollectionModule from './FeesCollectionModule';
 import FeesDashboard from './FeesDashboard';
 import SchoolInventoryModule from './SchoolInventoryModule';
 import JHS3MockExamModule from './JHS3MockExamModule';
+import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryModule';
 import BulkSMSModule from './BulkSMSModule';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, uploadStudentPhotoToSupabase } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
@@ -45,7 +46,7 @@ interface AdminDashboardProps {
 }
 
 
-type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'bulk-sms' | 'transcripts' | 'jhs3-mock' | 'students' | 'teachers' | 'class-assignments' | 'inventory' | 'config';
+type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'bulk-sms' | 'transcripts' | 'jhs3-mock' | 'terminal-history' | 'students' | 'teachers' | 'class-assignments' | 'inventory' | 'config';
 
 export default function AdminDashboard({
   students,
@@ -1048,6 +1049,7 @@ export default function AdminDashboard({
           { id: 'bulk-sms', label: 'Bulk Parent SMS', icon: MessageSquare },
           { id: 'transcripts', label: 'Transcripts', icon: FileSpreadsheet },
           { id: 'jhs3-mock', label: 'JHS 3 Mock Portal', icon: Award },
+          { id: 'terminal-history', label: 'JHS Terminal History', icon: History },
           { id: 'students', label: 'Admissions', icon: GraduationCap },
           { id: 'teachers', label: 'Teachers', icon: BookOpen },
           { id: 'class-assignments', label: 'Assign Class Teacher', icon: School },
@@ -1379,6 +1381,19 @@ export default function AdminDashboard({
             currentUser={{ name: 'School Administrator', id: 'admin-01', email: 'admin@eastfield.com', role: 'ADMIN' }}
             isAdminAuthenticated={true}
             config={config}
+          />
+        </div>
+      )}
+
+      {/* JHS TERMINAL ASSESSMENT HISTORY DASHBOARD VIEW */}
+      {activeTab === 'terminal-history' && (
+        <div className="animate-fadeIn">
+          <JHSTerminalAssessmentHistoryModule
+            students={students}
+            subjects={subjects}
+            grades={grades}
+            config={config}
+            currentUser={{ name: 'School Administrator', id: 'admin-01', email: 'admin@eastfield.com', role: 'ADMIN' }}
           />
         </div>
       )}

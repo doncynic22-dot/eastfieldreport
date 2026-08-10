@@ -825,11 +825,11 @@
 
   /* =========================================================================
      JHS MOCK MASTER SHEET (BROADSHEET) A4 LANDSCAPE PRINT CONFIGURATION
-     All columns visible, font size 12px for maximum legibility.
+     All columns visible, font size and table cells optimized for A4 landscape.
      ========================================================================= */
   @page broadsheet {
     size: A4 landscape !important;
-    margin: 6mm !important;
+    margin: 5mm !important;
   }
 
   .printable-noticeboard {
@@ -842,7 +842,7 @@
     border: none !important;
     box-shadow: none !important;
     background: #ffffff !important;
-    font-size: 12px !important;
+    font-size: 10px !important;
     color: #000000 !important;
   }
 
@@ -854,24 +854,24 @@
     width: 100% !important;
     max-width: 100% !important;
     border-collapse: collapse !important;
-    font-size: 12px !important;
+    font-size: 9.5px !important;
     table-layout: auto !important;
   }
 
   .printable-noticeboard th,
   .printable-noticeboard td {
-    font-size: 12px !important;
-    line-height: 1.25 !important;
-    padding: 4px 6px !important;
+    font-size: 9px !important;
+    line-height: 1.15 !important;
+    padding: 2px 3px !important;
     border: 1px solid #1e3a8a !important; /* Crisp blue-900 border */
     word-break: normal !important;
     white-space: nowrap !important;
   }
 
   .printable-noticeboard th {
-    background-color: #1c053e !important; /* Dark violet-navy header */
+    background-color: #1e3a8a !important; /* Blue-900 header container */
     color: #ffffff !important;
-    font-size: 12px !important;
+    font-size: 9.5px !important;
     font-weight: 800 !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -879,7 +879,7 @@
 
   .printable-noticeboard td {
     color: #0f172a !important;
-    font-size: 12px !important;
+    font-size: 9.5px !important;
     font-weight: 600 !important;
   }
 
@@ -890,27 +890,32 @@
   .printable-noticeboard .text-\[9px\],
   .printable-noticeboard .text-\[10px\],
   .printable-noticeboard .text-\[11px\] {
-    font-size: 12px !important;
-    line-height: 1.25 !important;
+    font-size: 9.5px !important;
+    line-height: 1.15 !important;
   }
 
   .printable-noticeboard span,
   .printable-noticeboard div,
   .printable-noticeboard p {
-    font-size: 12px !important;
+    font-size: 9.5px !important;
+  }
+
+  .printable-noticeboard h1 {
+    font-size: 15px !important;
+    font-weight: 900 !important;
   }
 
   .printable-noticeboard h2 {
-    font-size: 18px !important;
+    font-size: 14px !important;
     font-weight: 900 !important;
   }
 
   .printable-noticeboard .p-6 {
-    padding: 12px 16px !important;
+    padding: 6px 10px !important;
   }
 
   .printable-noticeboard .p-4,
   .printable-noticeboard .p-2.5 {
-    padding: 8px 12px !important;
+    padding: 4px 8px !important;
   }
 }
