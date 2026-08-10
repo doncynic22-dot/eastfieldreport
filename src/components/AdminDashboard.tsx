@@ -1049,7 +1049,7 @@ export default function AdminDashboard({
           { id: 'bulk-sms', label: 'Bulk Parent SMS', icon: MessageSquare },
           { id: 'transcripts', label: 'Transcripts', icon: FileSpreadsheet },
           { id: 'jhs3-mock', label: 'JHS 3 Mock Portal', icon: Award },
-          { id: 'terminal-history', label: 'JHS Terminal History', icon: History },
+          { id: 'terminal-history', label: 'JHS Assessment History', icon: History },
           { id: 'students', label: 'Admissions', icon: GraduationCap },
           { id: 'teachers', label: 'Teachers', icon: BookOpen },
           { id: 'class-assignments', label: 'Assign Class Teacher', icon: School },

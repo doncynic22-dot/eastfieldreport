@@ -368,7 +368,7 @@ export default function JHSTerminalAssessmentHistoryModule({
               <span>Dedicated Admin Archive Portal</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-display font-black tracking-tight text-amber-300">
-              JHS Terminal Assessment History Dashboard
+              JHS Assessment History Dashboard
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 font-medium leading-relaxed">
               Archival tracking, historical retrieval, and A4 result slip issuance for Junior High School Terminal Examination Assessments. Focused starting from <strong className="text-amber-200">Term 3 of 2025/2026 Academic Year</strong> onwards and previous sessions.
@@ -532,7 +532,7 @@ export default function JHSTerminalAssessmentHistoryModule({
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-amber-400" />
             <h2 className="font-extrabold text-sm uppercase tracking-wider text-white">
-              JHS Terminal Assessment History Records
+              JHS Assessment History Records
             </h2>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
