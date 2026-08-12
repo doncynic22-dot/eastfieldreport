@@ -741,7 +741,7 @@ export default function JHSTerminalAssessmentHistoryModule({
               {/* Subject Score Entry */}
               <div className="space-y-2 pt-2 border-t border-slate-200">
                 <label className="text-xs font-black uppercase text-slate-800 block">
-                  Subject Marks Entry (Class 30% + Exam 70% = Total 100%):
+                  Subject Marks Entry (Class 50% + Exam 50% = Total 100%):
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
                   {jhsSubjects.map((sub) => {
@@ -757,11 +757,11 @@ export default function JHSTerminalAssessmentHistoryModule({
                           <input
                             type="number"
                             min="0"
-                            max="30"
-                            placeholder="Class /30"
+                            max="50"
+                            placeholder="Class /50"
                             value={classSc}
                             onChange={(e) => {
-                              const val = e.target.value === '' ? undefined : Math.min(30, Math.max(0, Number(e.target.value)));
+                              const val = e.target.value === '' ? undefined : Math.min(50, Math.max(0, Number(e.target.value)));
                               setFormScores((prev) => ({
                                 ...prev,
                                 [sub.id]: {
@@ -776,11 +776,11 @@ export default function JHSTerminalAssessmentHistoryModule({
                           <input
                             type="number"
                             min="0"
-                            max="70"
-                            placeholder="Exam /70"
+                            max="50"
+                            placeholder="Exam /50"
                             value={examSc}
                             onChange={(e) => {
-                              const val = e.target.value === '' ? undefined : Math.min(70, Math.max(0, Number(e.target.value)));
+                              const val = e.target.value === '' ? undefined : Math.min(50, Math.max(0, Number(e.target.value)));
                               setFormScores((prev) => ({
                                 ...prev,
                                 [sub.id]: {
@@ -914,8 +914,8 @@ export default function JHSTerminalAssessmentHistoryModule({
                     <tr className="bg-slate-950 text-white font-black uppercase text-[10px] tracking-wider">
                       <th className="p-2.5 border-r border-slate-800 w-10 text-center">#</th>
                       <th className="p-2.5 border-r border-slate-800">SUBJECT</th>
-                      <th className="p-2.5 border-r border-slate-800 text-center w-20">CLASS (30)</th>
-                      <th className="p-2.5 border-r border-slate-800 text-center w-20">EXAM (70)</th>
+                      <th className="p-2.5 border-r border-slate-800 text-center w-20">CLASS (50)</th>
+                      <th className="p-2.5 border-r border-slate-800 text-center w-20">EXAM (50)</th>
                       <th className="p-2.5 border-r border-slate-800 text-center w-24">TOTAL (100)</th>
                       <th className="p-2.5 border-r border-slate-800 text-center w-20">GRADE</th>
                       <th className="p-2.5 text-center w-32">REMARK</th>

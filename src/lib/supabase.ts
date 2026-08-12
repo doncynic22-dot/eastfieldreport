@@ -125,6 +125,12 @@ ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS password VARCHAR;
 ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS level VARCHAR DEFAULT 'PRIMARY';
 ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS subjects JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS classes JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS date_of_birth VARCHAR DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS phone_number VARCHAR DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS qualification VARCHAR DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS profile_picture TEXT DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS hometown VARCHAR DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS ghana_card_number VARCHAR DEFAULT '';
 ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
 
 -- 4. Fix ea_grades table columns
@@ -1210,6 +1216,12 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
       level: item.level || undefined,
       subjects: item.subjects || undefined,
       classes: item.classes || undefined,
+      dateOfBirth: item.date_of_birth || item.dob || undefined,
+      phoneNumber: item.phone_number || item.phone || undefined,
+      qualification: item.qualification || undefined,
+      profilePicture: item.profile_picture || item.photo_url || undefined,
+      hometown: item.hometown || undefined,
+      ghanaCardNumber: item.ghana_card_number || item.ghanaCardNumber || undefined,
     }));
   } catch (err: any) {
     if (isMissingTableOrConnectionError(err)) {
@@ -1233,6 +1245,12 @@ export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
       level: t.level || null,
       subjects: t.subjects || null,
       classes: t.classes || null,
+      date_of_birth: t.dateOfBirth || null,
+      phone_number: t.phoneNumber || null,
+      qualification: t.qualification || null,
+      profile_picture: t.profilePicture || null,
+      hometown: t.hometown || null,
+      ghana_card_number: t.ghanaCardNumber || null,
       updated_at: new Date().toISOString()
     }));
     const { error } = await safeUpsert('ea_teachers', payloads, client);
@@ -1921,11 +1939,6 @@ export function getDeletedInventoryIds(): string[] {
 // 11. SYNC INVENTORY RECORDS
 export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord[] | null> {
   const client = getSupabaseClient();
-  const isInitialized = localStorage.getItem('ea_inventory_initialized') === 'true' ||
-                        localStorage.getItem('ea_inventory_seeded') === 'true' ||
-                        localStorage.getItem('ea_inventory_cleared') === 'true' ||
-                        localStorage.getItem('ea_school_inventory') !== null ||
-                        localStorage.getItem('mock_supabase_ea_inventory') !== null;
   const deletedIds = getDeletedInventoryIds();
 
   const filterDeleted = (records: ClassroomInventoryRecord[]) => {
@@ -1941,8 +1954,7 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
         if (Array.isArray(parsed)) return filterDeleted(parsed);
       } catch (e) {}
     }
-    if (isInitialized) return [];
-    return DEFAULT_INVENTORY_DATA;
+    return [];
   }
 
   try {
@@ -1956,23 +1968,15 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
           if (Array.isArray(parsed)) return filterDeleted(parsed);
         } catch (e) {}
       }
-      if (isInitialized) return [];
-      return DEFAULT_INVENTORY_DATA;
+      return [];
     }
 
     if (!data || data.length === 0) {
-      if (isInitialized) {
-        // Explicitly initialized or cleared inventory - return empty array
-        localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify([]));
-        localStorage.setItem('ea_school_inventory', JSON.stringify([]));
-        return [];
-      } else {
-        // First boot on a fresh DB: seed once!
-        await saveSupabaseInventory(DEFAULT_INVENTORY_DATA);
-        localStorage.setItem('ea_inventory_initialized', 'true');
-        localStorage.setItem('ea_inventory_seeded', 'true');
-        return DEFAULT_INVENTORY_DATA;
-      }
+      localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify([]));
+      localStorage.setItem('ea_school_inventory', JSON.stringify([]));
+      localStorage.setItem('ea_inventory_initialized', 'true');
+      localStorage.setItem('ea_inventory_cleared', 'true');
+      return [];
     }
 
     const mapped: ClassroomInventoryRecord[] = data.map(item => ({
@@ -1989,6 +1993,7 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
       teacherTables: Number(item.teacher_tables ?? item.teacherTables) || 0,
       computers: Number(item.computers) || 0,
       projectors: Number(item.projectors) || 0,
+      wallCharts: Number(item.wall_charts ?? item.wallCharts) || 0,
       customItems: (() => {
         if (Array.isArray(item.customItems)) return item.customItems;
         if (Array.isArray(item.custom_items)) return item.custom_items;
@@ -2017,7 +2022,6 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
     localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(cleanMapped));
     localStorage.setItem('ea_school_inventory', JSON.stringify(cleanMapped));
     localStorage.setItem('ea_inventory_initialized', 'true');
-    localStorage.setItem('ea_inventory_seeded', 'true');
     return cleanMapped;
   } catch (err: any) {
     console.warn('fetchSupabaseInventory exception:', err);
@@ -2028,8 +2032,7 @@ export async function fetchSupabaseInventory(): Promise<ClassroomInventoryRecord
         if (Array.isArray(parsed)) return filterDeleted(parsed);
       } catch (e) {}
     }
-    if (isInitialized) return [];
-    return DEFAULT_INVENTORY_DATA;
+    return [];
   }
 }
 
@@ -2099,6 +2102,7 @@ export async function saveSupabaseInventory(inventory: ClassroomInventoryRecord[
       teacher_tables: item.teacherTables,
       computers: item.computers || 0,
       projectors: item.projectors || 0,
+      wall_charts: item.wallCharts || 0,
       custom_items: JSON.stringify(item.customItems || []),
       notes: item.notes || '',
       updated_at: item.updatedAt || new Date().toISOString()
@@ -2304,6 +2308,58 @@ export async function uploadStudentPhotoToSupabase(file: File, studentId: string
     return dataUrl;
   } catch (err) {
     console.warn('Student photo storage upload error, falling back to data URL:', err);
+    return new Promise((resolve) => {
+      const r = new FileReader();
+      r.onloadend = () => resolve((r.result as string) || '');
+      r.readAsDataURL(file);
+    });
+  }
+}
+
+/**
+ * Uploads a teacher profile picture directly to Supabase storage ('ea' or 'teacher-photos').
+ * Returns the CDN URL or compressed data URL fallback.
+ */
+export async function uploadTeacherPhotoToSupabase(file: File, teacherId: string): Promise<string> {
+  try {
+    const { blob, dataUrl } = await compressPassportPhoto(file);
+    const client = getSupabaseClient();
+    if (!client) {
+      return dataUrl;
+    }
+
+    const cleanId = teacherId ? teacherId.replace(/[^a-zA-Z0-9_-]/g, '_') : `teacher_${Date.now()}`;
+    const fileExt = file.name.split('.').pop() || 'jpg';
+    const fileName = `teacher-photos/${cleanId}_${Date.now()}.${fileExt}`;
+
+    try {
+      const { error: eaErr } = await client.storage
+        .from('ea')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: file.type || 'image/jpeg',
+        });
+
+      if (!eaErr) {
+        const { data: urlData } = client.storage.from('ea').getPublicUrl(fileName);
+        if (urlData?.publicUrl) return urlData.publicUrl;
+      }
+    } catch (e) {}
+
+    await client.storage.createBucket('teacher-photos', { public: true }).catch(() => {});
+    const altFileName = `profiles/${cleanId}_${Date.now()}.jpg`;
+    const { error: uploadErr } = await client.storage
+      .from('teacher-photos')
+      .upload(altFileName, blob, { cacheControl: '3600', upsert: true, contentType: 'image/jpeg' });
+
+    if (!uploadErr) {
+      const { data: urlData } = client.storage.from('teacher-photos').getPublicUrl(altFileName);
+      if (urlData?.publicUrl) return urlData.publicUrl;
+    }
+
+    return dataUrl;
+  } catch (err) {
     return new Promise((resolve) => {
       const r = new FileReader();
       r.onloadend = () => resolve((r.result as string) || '');

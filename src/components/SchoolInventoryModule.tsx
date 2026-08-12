@@ -32,31 +32,14 @@ import {
   AlertTriangle,
   Monitor,
   Tv,
-  Tag
+  Tag,
+  LayoutGrid,
+  ChefHat
 } from 'lucide-react';
 
 export type { ClassroomInventoryRecord, CustomInventoryItem };
 
-const DEFAULT_INVENTORY_DATA: ClassroomInventoryRecord[] = [
-  { id: 'inv-complab', locationName: 'Computer Lab / ICT Centre', category: 'Facility', studentChairs: 40, studentTables: 20, textbooks: 50, washrooms: 0, sinks: 1, buses: 0, teacherChairs: 2, teacherTables: 2, computers: 35, projectors: 2, customItems: [{ name: 'High-speed Fibre Router', quantity: 1 }, { name: 'UPS Power Backups', quantity: 12 }, { name: 'Interactive Whiteboard', quantity: 1 }], notes: '35 Desktop PCs, 2 Ceiling Projectors, High-speed Fibre Router & UPS Backups', updatedAt: new Date().toISOString() },
-  { id: 'inv-n1', locationName: 'Nursery 1', category: 'Classroom', studentChairs: 25, studentTables: 12, textbooks: 50, washrooms: 1, sinks: 2, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 0, projectors: 0, customItems: [{ name: 'Toy Storage Bins', quantity: 4 }, { name: 'Foam Play Mats', quantity: 10 }], notes: 'Includes play mats and toy boxes', updatedAt: new Date().toISOString() },
-  { id: 'inv-n2', locationName: 'Nursery 2', category: 'Classroom', studentChairs: 25, studentTables: 12, textbooks: 55, washrooms: 1, sinks: 2, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 0, projectors: 0, customItems: [{ name: 'Toy Storage Bins', quantity: 4 }], notes: 'Good condition', updatedAt: new Date().toISOString() },
-  { id: 'inv-k1', locationName: 'Kindergarten 1', category: 'Classroom', studentChairs: 30, studentTables: 15, textbooks: 70, washrooms: 1, sinks: 2, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 0, projectors: 0, customItems: [{ name: 'Wall Clock', quantity: 1 }], notes: 'Newly repainted desks', updatedAt: new Date().toISOString() },
-  { id: 'inv-k2', locationName: 'Kindergarten 2', category: 'Classroom', studentChairs: 30, studentTables: 15, textbooks: 75, washrooms: 1, sinks: 2, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 0, projectors: 0, customItems: [{ name: 'Magnetic Board', quantity: 1 }], notes: 'Standard setup', updatedAt: new Date().toISOString() },
-  { id: 'inv-p1', locationName: 'Primary 1', category: 'Classroom', studentChairs: 35, studentTables: 18, textbooks: 110, washrooms: 0, sinks: 1, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 0, projectors: 0, customItems: [{ name: 'Whiteboard', quantity: 1 }], notes: 'NaCCA curriculum textbooks assigned', updatedAt: new Date().toISOString() },
-  { id: 'inv-p2', locationName: 'Primary 2', category: 'Classroom', studentChairs: 35, studentTables: 18, textbooks: 115, washrooms: 0, sinks: 1, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 0, projectors: 0, customItems: [{ name: 'Whiteboard', quantity: 1 }], notes: 'Single desks', updatedAt: new Date().toISOString() },
-  { id: 'inv-p3', locationName: 'Primary 3', category: 'Classroom', studentChairs: 38, studentTables: 19, textbooks: 120, washrooms: 0, sinks: 1, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 0, projectors: 0, customItems: [{ name: 'Science Demo Kits', quantity: 2 }, { name: 'Whiteboard', quantity: 1 }], notes: 'Science lab kits included', updatedAt: new Date().toISOString() },
-  { id: 'inv-p4', locationName: 'Primary 4', category: 'Classroom', studentChairs: 40, studentTables: 20, textbooks: 130, washrooms: 0, sinks: 1, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 0, projectors: 0, customItems: [{ name: 'Whiteboard', quantity: 1 }], notes: 'Standard classroom', updatedAt: new Date().toISOString() },
-  { id: 'inv-p5', locationName: 'Primary 5', category: 'Classroom', studentChairs: 40, studentTables: 20, textbooks: 135, washrooms: 0, sinks: 1, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 1, projectors: 1, customItems: [{ name: 'Smart Projection Screen', quantity: 1 }], notes: 'Includes 1 classroom PC and ceiling projector', updatedAt: new Date().toISOString() },
-  { id: 'inv-p6', locationName: 'Primary 6', category: 'Classroom', studentChairs: 42, studentTables: 21, textbooks: 140, washrooms: 0, sinks: 1, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 1, projectors: 1, customItems: [{ name: 'Ceiling Fan', quantity: 4 }], notes: 'National exam preparation text library & smart projector', updatedAt: new Date().toISOString() },
-  { id: 'inv-j1', locationName: 'JHS 1', category: 'Classroom', studentChairs: 45, studentTables: 45, textbooks: 180, washrooms: 0, sinks: 1, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 1, projectors: 1, customItems: [{ name: 'Wall Mounted Speakers', quantity: 2 }], notes: 'Individual study desks & presentation screen', updatedAt: new Date().toISOString() },
-  { id: 'inv-j2', locationName: 'JHS 2', category: 'Classroom', studentChairs: 45, studentTables: 45, textbooks: 185, washrooms: 0, sinks: 1, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 1, projectors: 1, customItems: [{ name: 'Wall Mounted Speakers', quantity: 2 }], notes: 'Individual study desks & presentation screen', updatedAt: new Date().toISOString() },
-  { id: 'inv-j3', locationName: 'JHS 3', category: 'Classroom', studentChairs: 45, studentTables: 45, textbooks: 200, washrooms: 0, sinks: 1, buses: 0, teacherChairs: 1, teacherTables: 1, computers: 1, projectors: 1, customItems: [{ name: 'BECE Revision Chart Stands', quantity: 3 }], notes: 'BECE preparation reference books & smart projector', updatedAt: new Date().toISOString() },
-  { id: 'inv-staff', locationName: 'Staff Common Room', category: 'Administrative', studentChairs: 0, studentTables: 0, textbooks: 40, washrooms: 2, sinks: 3, buses: 0, teacherChairs: 18, teacherTables: 8, computers: 4, projectors: 1, customItems: [{ name: 'Water Dispenser', quantity: 1 }, { name: 'Microwave Oven', quantity: 1 }, { name: 'Heavy Duty Copier / Printer', quantity: 1 }], notes: 'Teacher lounge, conference table, 4 workstation PCs', updatedAt: new Date().toISOString() },
-  { id: 'inv-admin', locationName: 'Admin & Principal Office', category: 'Administrative', studentChairs: 8, studentTables: 3, textbooks: 30, washrooms: 1, sinks: 2, buses: 0, teacherChairs: 4, teacherTables: 4, computers: 5, projectors: 1, customItems: [{ name: 'Fireproof Vault Safe', quantity: 1 }, { name: 'Notice Board', quantity: 2 }], notes: 'Executive visitor chairs, office PCs & administrative printer setup', updatedAt: new Date().toISOString() },
-  { id: 'inv-wash', locationName: 'Central Washroom Block', category: 'Facility', studentChairs: 0, studentTables: 0, textbooks: 0, washrooms: 12, sinks: 14, buses: 0, teacherChairs: 0, teacherTables: 0, computers: 0, projectors: 0, customItems: [{ name: 'Automated Hand Dryers', quantity: 4 }], notes: '6 Boys, 6 Girls, handwashing stations', updatedAt: new Date().toISOString() },
-  { id: 'inv-transport', locationName: 'Transport Yard', category: 'Transport', studentChairs: 0, studentTables: 0, textbooks: 0, washrooms: 1, sinks: 2, buses: 4, teacherChairs: 0, teacherTables: 0, computers: 0, projectors: 0, customItems: [{ name: 'Emergency First Aid Kits', quantity: 4 }, { name: 'Fire Extinguishers', quantity: 4 }], notes: '4 Eastfield Academy School Buses with safety gear', updatedAt: new Date().toISOString() }
-];
+const DEFAULT_INVENTORY_DATA: ClassroomInventoryRecord[] = [];
 
 interface SchoolInventoryModuleProps {
   allSchoolClasses?: string[];
@@ -73,9 +56,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
     } catch (e) {
       console.warn('Failed reading inventory from localStorage', e);
     }
-    const isInitialized = localStorage.getItem('ea_inventory_initialized') === 'true' || localStorage.getItem('ea_inventory_seeded') === 'true';
-    if (isInitialized) return [];
-    return DEFAULT_INVENTORY_DATA;
+    return [];
   });
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -91,7 +72,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
 
   // Form State
   const [formLocationName, setFormLocationName] = useState('');
-  const [formCategory, setFormCategory] = useState<'Classroom' | 'Administrative' | 'Facility' | 'Transport' | 'Other'>('Classroom');
+  const [formCategory, setFormCategory] = useState<'Classroom' | 'Administrative' | 'Facility' | 'Transport' | 'Kitchen' | 'Other'>('Classroom');
   const [formStudentChairs, setFormStudentChairs] = useState<number>(0);
   const [formStudentTables, setFormStudentTables] = useState<number>(0);
   const [formComputers, setFormComputers] = useState<number>(0);
@@ -182,6 +163,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
         acc.buses += item.buses || 0;
         acc.teacherChairs += item.teacherChairs || 0;
         acc.teacherTables += item.teacherTables || 0;
+        acc.wallCharts += item.wallCharts || 0;
         if (item.customItems && Array.isArray(item.customItems)) {
           item.customItems.forEach(ci => {
             acc.customTotalQty += (ci.quantity || 0);
@@ -200,9 +182,14 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
         buses: 0,
         teacherChairs: 0,
         teacherTables: 0,
+        wallCharts: 0,
         customTotalQty: 0
       }
     );
+  }, [inventory]);
+
+  const totalClassrooms = useMemo(() => {
+    return inventory.filter(item => item.category === 'Classroom').length;
   }, [inventory]);
 
   const grandTotalItems = useMemo(() => {
@@ -217,6 +204,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
       totals.buses +
       totals.teacherChairs +
       totals.teacherTables +
+      totals.wallCharts +
       totals.customTotalQty
     );
   }, [totals]);
@@ -318,6 +306,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
     if (rec.studentTables > 0) consolidatedItems.push({ id: `c_st_${rec.id}`, name: 'Student Tables', quantity: rec.studentTables });
     if (rec.computers > 0) consolidatedItems.push({ id: `c_cp_${rec.id}`, name: 'Computers', quantity: rec.computers });
     if (rec.projectors > 0) consolidatedItems.push({ id: `c_pj_${rec.id}`, name: 'Projectors', quantity: rec.projectors });
+    if (rec.wallCharts && rec.wallCharts > 0) consolidatedItems.push({ id: `c_wc_${rec.id}`, name: 'Wall Charts', quantity: rec.wallCharts });
     if (rec.textbooks > 0) consolidatedItems.push({ id: `c_tb_${rec.id}`, name: 'Textbooks', quantity: rec.textbooks });
     if (rec.washrooms > 0) consolidatedItems.push({ id: `c_wr_${rec.id}`, name: 'Washrooms', quantity: rec.washrooms });
     if (rec.sinks > 0) consolidatedItems.push({ id: `c_sk_${rec.id}`, name: 'Sinks', quantity: rec.sinks });
@@ -374,20 +363,24 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
     setIsResetConfirmOpen(true);
   };
 
-  // Execute Reset to Defaults
+  // Execute Reset/Clear Inventory
   const executeResetDefaults = async () => {
-    localStorage.removeItem('ea_deleted_inventory_ids');
-    setInventory(DEFAULT_INVENTORY_DATA);
-    localStorage.setItem('ea_school_inventory', JSON.stringify(DEFAULT_INVENTORY_DATA));
-    localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify(DEFAULT_INVENTORY_DATA));
+    const allIds = inventory.map(r => r.id);
+    const currentDeleted = getDeletedInventoryIds();
+    const combined = Array.from(new Set([...currentDeleted, ...allIds]));
+    localStorage.setItem('ea_deleted_inventory_ids', JSON.stringify(combined));
+
+    setInventory([]);
+    localStorage.setItem('ea_school_inventory', JSON.stringify([]));
+    localStorage.setItem('mock_supabase_ea_inventory', JSON.stringify([]));
     localStorage.setItem('ea_inventory_initialized', 'true');
-    localStorage.setItem('ea_inventory_seeded', 'true');
-    showNotification('Inventory reset to default values.');
+    localStorage.setItem('ea_inventory_cleared', 'true');
+    showNotification('Inventory register cleared.');
     setIsResetConfirmOpen(false);
 
     setIsSyncing(true);
     try {
-      await saveSupabaseInventory(DEFAULT_INVENTORY_DATA);
+      await saveSupabaseInventory([], allIds);
     } catch (e) {
       console.warn('Error resetting inventory:', e);
     } finally {
@@ -444,6 +437,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
     let studentTables = 0;
     let computers = 0;
     let projectors = 0;
+    let wallCharts = 0;
     let textbooks = 0;
     let washrooms = 0;
     let sinks = 0;
@@ -466,6 +460,8 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
         computers += qty;
       } else if (lower === 'projectors' || lower === 'projector') {
         projectors += qty;
+      } else if (lower === 'wall charts' || lower === 'wall chart' || lower === 'charts' || lower === 'learning posters') {
+        wallCharts += qty;
       } else if (lower === 'textbooks' || lower === 'textbook') {
         textbooks += qty;
       } else if (lower === 'washrooms' || lower === 'washroom') {
@@ -495,6 +491,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
       studentTables,
       computers,
       projectors,
+      wallCharts,
       textbooks,
       washrooms,
       sinks,
@@ -544,6 +541,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
       'Student Tables',
       'Computers',
       'Projectors',
+      'Wall Charts',
       'Custom / Additional Items',
       'Textbooks',
       'Washrooms',
@@ -570,6 +568,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
         (item.studentTables || 0) +
         (item.computers || 0) +
         (item.projectors || 0) +
+        (item.wallCharts || 0) +
         customQtySum +
         (item.textbooks || 0) +
         (item.washrooms || 0) +
@@ -585,6 +584,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
         item.studentTables || 0,
         item.computers || 0,
         item.projectors || 0,
+        item.wallCharts || 0,
         `"${customFormatted.replace(/"/g, '""')}"`,
         item.textbooks || 0,
         item.washrooms || 0,
@@ -670,6 +670,17 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
 
       {/* SUM TOTAL METRICS GRID */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        <div className="p-3 rounded-xl bg-indigo-900 border-2 border-indigo-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Classrooms</span>
+            <School className="w-4 h-4 shrink-0 text-amber-300" />
+          </div>
+          <div className="font-mono font-black text-amber-300 text-xl sm:text-2xl my-0.5">
+            {totalClassrooms}
+          </div>
+          <span className="text-[10px] text-white font-extrabold truncate">Total Classrooms</span>
+        </div>
+
         <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
           <div className="flex items-center justify-between text-white mb-1 gap-1">
             <span className="text-xs font-black uppercase tracking-wider truncate text-white">Chairs</span>
@@ -690,6 +701,17 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
             {totals.studentTables}
           </div>
           <span className="text-[10px] text-white font-extrabold truncate">Student Desks</span>
+        </div>
+
+        <div className="p-3 rounded-xl bg-amber-700 border-2 border-amber-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
+          <div className="flex items-center justify-between text-white mb-1 gap-1">
+            <span className="text-xs font-black uppercase tracking-wider truncate text-white">Wall Charts</span>
+            <LayoutGrid className="w-4 h-4 shrink-0 text-amber-200" />
+          </div>
+          <div className="font-mono font-black text-amber-200 text-xl sm:text-2xl my-0.5">
+            {totals.wallCharts}
+          </div>
+          <span className="text-[10px] text-white font-extrabold truncate">Learning Posters</span>
         </div>
 
         <div className="p-3 rounded-xl bg-blue-700 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between min-h-[90px]">
@@ -780,7 +802,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
           <span className="text-[10px] text-white font-extrabold truncate">Staff Desks</span>
         </div>
 
-        <div className="p-3 rounded-xl bg-blue-800 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between col-span-2 min-h-[90px]">
+        <div className="p-3 rounded-xl bg-blue-800 border-2 border-blue-400 text-white shadow-md flex flex-col justify-between col-span-2 sm:col-span-3 md:col-span-4 lg:col-span-6 min-h-[90px]">
           <div className="flex items-center justify-between text-white mb-1 gap-1">
             <span className="text-xs font-black uppercase tracking-wider truncate text-white">Total Registered Assets</span>
             <PackageCheck className="w-4 h-4 text-white shrink-0" />
@@ -788,7 +810,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
           <div className="font-mono font-black text-white text-xl sm:text-2xl my-0.5">
             {grandTotalItems}
           </div>
-          <span className="text-[10px] text-white font-extrabold truncate">All School Equipment &amp; Furniture</span>
+          <span className="text-[10px] text-white font-extrabold truncate">All School Equipment, Furniture, Kitchen &amp; Wall Charts</span>
         </div>
       </div>
 
@@ -798,7 +820,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search classroom or asset..."
+            placeholder="Search classroom, kitchen or asset..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-mauve-900/30"
@@ -813,21 +835,13 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
             className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-mauve-900/30"
           >
             <option value="ALL">All Categories ({inventory.length})</option>
-            <option value="Classroom">Classrooms</option>
+            <option value="Classroom">Classrooms ({totalClassrooms})</option>
+            <option value="Kitchen">Kitchen &amp; Dining Facilities</option>
             <option value="Administrative">Administrative</option>
             <option value="Facility">Facilities &amp; Washrooms</option>
             <option value="Transport">Transport Fleet</option>
             <option value="Other">Other Locations</option>
           </select>
-
-          <button
-            onClick={handleResetDefaults}
-            className="px-2.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ml-1"
-            title="Reset to initial default inventory"
-          >
-            <RotateCcw className="w-3.5 h-3.5 text-gray-500" />
-            <span className="hidden md:inline">Reset Defaults</span>
-          </button>
 
           <button
             onClick={() => setIsDeleteAllConfirmOpen(true)}
@@ -908,6 +922,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
                       (item.studentTables || 0) +
                       (item.computers || 0) +
                       (item.projectors || 0) +
+                      (item.wallCharts || 0) +
                       (item.textbooks || 0) +
                       (item.washrooms || 0) +
                       (item.sinks || 0) +
@@ -935,6 +950,8 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
                                   ? 'bg-emerald-100 text-emerald-900 border border-emerald-200'
                                   : item.category === 'Transport'
                                   ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                                  : item.category === 'Kitchen'
+                                  ? 'bg-rose-100 text-rose-950 border border-rose-300'
                                   : 'bg-gray-100 text-gray-800'
                               }`}>
                                 {item.category}
@@ -974,6 +991,13 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
                                 <span className="px-2 py-0.5 bg-blue-600 text-white rounded-md font-mono font-black text-xs sm:text-sm shadow-xs border border-blue-500">{item.projectors}</span>
                               </span>
                             )}
+                            {item.wallCharts && item.wallCharts > 0 ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 text-amber-950 font-extrabold text-xs sm:text-sm border border-amber-300 shadow-2xs">
+                                <LayoutGrid className="w-4 h-4 text-amber-600" />
+                                <span className="text-gray-900">Wall Charts:</span>
+                                <span className="px-2 py-0.5 bg-blue-600 text-white rounded-md font-mono font-black text-xs sm:text-sm shadow-xs border border-blue-500">{item.wallCharts}</span>
+                              </span>
+                            ) : null}
                             {item.textbooks > 0 && (
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-gray-100 text-gray-950 font-extrabold text-xs sm:text-sm border border-gray-300 shadow-2xs">
                                 <BookOpen className="w-4 h-4 text-gray-600" />
@@ -1092,6 +1116,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
                     if (record.studentTables > 0) itemList.push({ name: 'Student Tables / Desks', qty: record.studentTables, icon: Table, colorClass: 'text-blue-600' });
                     if (record.computers > 0) itemList.push({ name: 'Desktop PCs & Laptops', qty: record.computers, icon: Monitor, colorClass: 'text-indigo-600' });
                     if (record.projectors > 0) itemList.push({ name: 'Projectors & Smart Screens', qty: record.projectors, icon: Tv, colorClass: 'text-purple-600' });
+                    if (record.wallCharts && record.wallCharts > 0) itemList.push({ name: 'Wall Charts & Learning Posters', qty: record.wallCharts, icon: LayoutGrid, colorClass: 'text-amber-600' });
                     if (record.textbooks > 0) itemList.push({ name: 'Textbooks & Books', qty: record.textbooks, icon: BookOpen, colorClass: 'text-gray-700' });
                     if (record.washrooms > 0) itemList.push({ name: 'Washrooms / Toilets', qty: record.washrooms, icon: Bath, colorClass: 'text-emerald-600' });
                     if (record.sinks > 0) itemList.push({ name: 'Sinks & Wash Taps', qty: record.sinks, icon: Droplets, colorClass: 'text-sky-600' });
@@ -1212,6 +1237,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
                     {allSchoolClasses.map(cls => (
                       <option key={cls} value={cls} />
                     ))}
+                    <option value="School Kitchen & Dining Hall" />
                     <option value="Computer Lab / ICT Centre" />
                     <option value="Staff Common Room" />
                     <option value="Admin & Principal Office" />
@@ -1219,7 +1245,6 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
                     <option value="Transport Yard" />
                     <option value="Library" />
                     <option value="Science Lab" />
-                    <option value="Dining Hall / Canteen" />
                   </datalist>
                 </div>
 
@@ -1233,6 +1258,7 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold text-mauve-950 focus:ring-2 focus:ring-mauve-900 outline-none"
                   >
                     <option value="Classroom">Classroom</option>
+                    <option value="Kitchen">Kitchen &amp; Canteen</option>
                     <option value="Administrative">Administrative</option>
                     <option value="Facility">Facility / Washroom</option>
                     <option value="Transport">Transport Yard</option>
@@ -1270,14 +1296,18 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
                   {[
                     'Student Chairs',
                     'Student Tables',
+                    'Wall Charts',
                     'Computers',
                     'Projectors',
                     'Textbooks',
                     'Teacher Chairs',
                     'Teacher Tables',
+                    'Gas Cooker',
+                    'Cooking Pots',
+                    'Dining Plates',
+                    'Deep Freezer',
                     'Whiteboard',
                     'Ceiling Fan',
-                    'Air Conditioner',
                     'Printer',
                     'Sinks'
                   ].map(sug => (

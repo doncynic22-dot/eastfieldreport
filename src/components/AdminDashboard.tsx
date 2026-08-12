@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill, User } from '../types';
-import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History } from 'lucide-react';
+import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History, Contact, PhoneCall, Briefcase, BadgeCheck, UserCheck, MapPin, IdCard } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import FeesCollectionModule from './FeesCollectionModule';
 import FeesDashboard from './FeesDashboard';
@@ -13,7 +13,7 @@ import SchoolInventoryModule from './SchoolInventoryModule';
 import JHS3MockExamModule from './JHS3MockExamModule';
 import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryModule';
 import BulkSMSModule from './BulkSMSModule';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, uploadStudentPhotoToSupabase } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
@@ -46,7 +46,7 @@ interface AdminDashboardProps {
 }
 
 
-type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'bulk-sms' | 'transcripts' | 'jhs3-mock' | 'terminal-history' | 'students' | 'teachers' | 'class-assignments' | 'inventory' | 'config';
+type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'bulk-sms' | 'transcripts' | 'jhs3-mock' | 'terminal-history' | 'students' | 'teachers' | 'teacher-profiles' | 'class-assignments' | 'inventory' | 'config';
 
 export default function AdminDashboard({
   students,
@@ -131,17 +131,30 @@ export default function AdminDashboard({
     photoUrl: ''
   });
 
-  // Teacher Registration Form State
+  // Teacher Registration & Profile Form State
   const [showTeacherModal, setShowTeacherModal] = useState(false);
+  const [isUploadingTeacherPhoto, setIsUploadingTeacherPhoto] = useState(false);
   const [teacherForm, setTeacherForm] = useState({
     name: '',
     email: '',
+    password: '',
     level: 'PRIMARY' as AcademicLevel,
     classes: [] as string[],
-    subjects: [] as string[]
+    subjects: [] as string[],
+    dateOfBirth: '',
+    phoneNumber: '',
+    qualification: '',
+    profilePicture: '',
+    hometown: '',
+    ghanaCardNumber: ''
   });
   const [teacherError, setTeacherError] = useState('');
   const [editingTeacher, setEditingTeacher] = useState<User | null>(null);
+
+  // Teacher Profiles View states
+  const [teacherProfileSearchTerm, setTeacherProfileSearchTerm] = useState('');
+  const [teacherProfileLevelFilter, setTeacherProfileLevelFilter] = useState('ALL');
+  const [viewingTeacherProfileModal, setViewingTeacherProfileModal] = useState<User | null>(null);
 
   // Transcript Selector state
   const [selectedClass, setSelectedClass] = useState('Primary 4');
@@ -641,7 +654,7 @@ export default function AdminDashboard({
     e.preventDefault();
     setTeacherError('');
 
-    if (!teacherForm.name || !teacherForm.email) {
+    if (!teacherForm.name.trim() || !teacherForm.email.trim()) {
       setTeacherError('Please enter Name and Email address.');
       return;
     }
@@ -652,50 +665,60 @@ export default function AdminDashboard({
       return;
     }
 
-    if (teacherForm.classes.length > 1) {
-      setTeacherError('Academy Staff Policy: Teachers across all divisions (including JHS) cannot be assigned to more than one class.');
-      return;
-    }
-    for (const cls of teacherForm.classes) {
-      const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(cls));
-      if (assignedTeacher) {
-        setTeacherError(`Class Assignment Conflict: "${cls}" is already assigned to ${assignedTeacher.name}. Each classroom is assigned exclusively to one teacher for the attendance register across all levels.`);
-        return;
-      }
-    }
-
-    const finalSubjects = (teacherForm.level === 'NURSERY' || teacherForm.level === 'KINDERGARTEN' || teacherForm.level === 'PRIMARY')
+    let finalSubjects = (teacherForm.level === 'NURSERY' || teacherForm.level === 'KINDERGARTEN' || teacherForm.level === 'PRIMARY')
       ? subjects.filter(s => s.level === teacherForm.level).map(s => s.id)
       : teacherForm.subjects;
+
+    if (finalSubjects.length === 0) {
+      const levelMatches = subjects.filter(s => s.level === teacherForm.level).map(s => s.id);
+      if (levelMatches.length > 0) {
+        finalSubjects = levelMatches;
+      }
+    }
 
     if (finalSubjects.length === 0) {
       setTeacherError('Please select at least one subject to assign to the teacher.');
       return;
     }
 
-    if (teacherForm.classes.length === 0) {
-      setTeacherError('Please select at least one class to assign to the teacher.');
-      return;
-    }
+    const selectedClasses = teacherForm.classes || [];
 
     if (editingTeacher) {
-      // Edit Teacher
+      // Edit Teacher & clean up reassigned classes from other teachers
       const emailToCheck = teacherForm.email.trim().toLowerCase();
       if (teachers.some(t => t.id !== editingTeacher.id && t.email.trim().toLowerCase() === emailToCheck)) {
         setTeacherError('A teacher with this email address is already registered.');
         return;
       }
-      setTeachers(prev => prev.map(t => t.id === editingTeacher.id ? {
-        ...t,
-        name: teacherForm.name,
-        email: teacherForm.email.trim(),
-        level: teacherForm.level,
-        classes: teacherForm.classes,
-        subjects: finalSubjects
-      } : t));
+      setTeachers(prev => prev.map(t => {
+        if (t.id === editingTeacher.id) {
+          return {
+            ...t,
+            name: teacherForm.name.trim(),
+            email: teacherForm.email.trim(),
+            password: teacherForm.password ? teacherForm.password : (t.password || 'teacher123'),
+            level: teacherForm.level,
+            classes: selectedClasses,
+            subjects: finalSubjects,
+            dateOfBirth: teacherForm.dateOfBirth,
+            phoneNumber: teacherForm.phoneNumber,
+            qualification: teacherForm.qualification,
+            profilePicture: teacherForm.profilePicture,
+            hometown: teacherForm.hometown,
+            ghanaCardNumber: teacherForm.ghanaCardNumber
+          };
+        }
+        if (selectedClasses.some(cls => t.classes?.includes(cls))) {
+          return {
+            ...t,
+            classes: (t.classes || []).filter(c => !selectedClasses.includes(c))
+          };
+        }
+        return t;
+      }));
       setEditingTeacher(null);
     } else {
-      // Add new Teacher
+      // Add new Teacher & clean up reassigned classes from other teachers
       const emailToCheck = teacherForm.email.trim().toLowerCase();
       if (teachers.some(t => t.email.trim().toLowerCase() === emailToCheck)) {
         setTeacherError('A teacher with this email address is already registered.');
@@ -703,35 +726,71 @@ export default function AdminDashboard({
       }
       const newTeacher: User = {
         id: `user-t-${Date.now()}`,
-        name: teacherForm.name,
+        name: teacherForm.name.trim(),
         email: teacherForm.email.trim(),
         role: 'TEACHER',
         level: teacherForm.level,
-        classes: teacherForm.classes,
+        classes: selectedClasses,
         subjects: finalSubjects,
-        password: 'teacher123'
+        password: teacherForm.password || 'teacher123',
+        dateOfBirth: teacherForm.dateOfBirth,
+        phoneNumber: teacherForm.phoneNumber,
+        qualification: teacherForm.qualification,
+        profilePicture: teacherForm.profilePicture,
+        hometown: teacherForm.hometown,
+        ghanaCardNumber: teacherForm.ghanaCardNumber
       };
-      setTeachers(prev => [...prev, newTeacher]);
+      setTeachers(prev => {
+        const updated = prev.map(t => {
+          if (selectedClasses.some(cls => t.classes?.includes(cls))) {
+            return {
+              ...t,
+              classes: (t.classes || []).filter(c => !selectedClasses.includes(c))
+            };
+          }
+          return t;
+        });
+        return [...updated, newTeacher];
+      });
     }
 
     // Reset
     setTeacherForm({
       name: '',
       email: '',
+      password: '',
       level: 'PRIMARY',
       classes: [],
-      subjects: subjects.filter(s => s.level === 'PRIMARY').map(s => s.id)
+      subjects: subjects.filter(s => s.level === 'PRIMARY').map(s => s.id),
+      dateOfBirth: '',
+      phoneNumber: '',
+      qualification: '',
+      profilePicture: '',
+      hometown: '',
+      ghanaCardNumber: ''
     });
     setShowTeacherModal(false);
   };
 
-  const toggleClassForTeacherForm = (className: string) => {
-    const assignedTeacher = teachers.find(t => t.id !== editingTeacher?.id && t.classes?.includes(className));
-    if (assignedTeacher && !teacherForm.classes.includes(className)) {
-      setTeacherError(`Cannot select "${className}": Already assigned to ${assignedTeacher.name}. Each classroom is assigned exclusively to one teacher for attendance register across all levels.`);
-    } else {
-      setTeacherError('');
+  const filteredTeacherProfiles = teachers.filter((t) => {
+    if (t.role !== 'TEACHER') return false;
+    if (teacherProfileLevelFilter !== 'ALL' && t.level !== teacherProfileLevelFilter) return false;
+    if (teacherProfileSearchTerm.trim()) {
+      const term = teacherProfileSearchTerm.toLowerCase().trim();
+      const nameMatch = t.name.toLowerCase().includes(term);
+      const emailMatch = t.email.toLowerCase().includes(term);
+      const qualMatch = t.qualification?.toLowerCase().includes(term);
+      const phoneMatch = t.phoneNumber?.toLowerCase().includes(term);
+      const homeMatch = t.hometown?.toLowerCase().includes(term);
+      const ghanaCardMatch = t.ghanaCardNumber?.toLowerCase().includes(term);
+      const classMatch = t.classes?.some(c => c.toLowerCase().includes(term));
+      return nameMatch || emailMatch || qualMatch || phoneMatch || homeMatch || ghanaCardMatch || classMatch;
     }
+    return true;
+  });
+
+  const toggleClassForTeacherForm = (className: string) => {
+    setTeacherError('');
     setTeacherForm(prev => {
       const alreadySelected = prev.classes.includes(className);
       return {
@@ -1051,7 +1110,8 @@ export default function AdminDashboard({
           { id: 'jhs3-mock', label: 'JHS 3 Mock Portal', icon: Award },
           { id: 'terminal-history', label: 'JHS Assessment History', icon: History },
           { id: 'students', label: 'Admissions', icon: GraduationCap },
-          { id: 'teachers', label: 'Teachers', icon: BookOpen },
+          { id: 'teachers', label: 'Staff Directory', icon: BookOpen },
+          { id: 'teacher-profiles', label: 'Teachers Profile', icon: Contact },
           { id: 'class-assignments', label: 'Assign Class Teacher', icon: School },
           { id: 'inventory', label: 'School Inventory', icon: Boxes },
           { id: 'config', label: 'Settings', icon: Settings }
@@ -2081,9 +2141,16 @@ export default function AdminDashboard({
                 setTeacherForm({
                   name: '',
                   email: '',
+                  password: 'teacher123',
                   level: 'PRIMARY',
                   classes: [],
-                  subjects: []
+                  subjects: [],
+                  dateOfBirth: '',
+                  phoneNumber: '',
+                  qualification: '',
+                  profilePicture: '',
+                  hometown: '',
+                  ghanaCardNumber: ''
                 });
                 setTeacherError('');
                 setShowTeacherModal(true);
@@ -2120,8 +2187,22 @@ export default function AdminDashboard({
                 {teachers.filter((t) => t.role === 'TEACHER').map((t) => (
                   <tr key={t.id} className="hover:bg-mauve-50/10">
                     <td className="p-3 pl-4">
-                      <span className="block font-bold text-gray-900 text-xs">{t.name}</span>
-                      <span className="block text-mauve-800 font-semibold font-mono text-[10px]">{t.email}</span>
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-full overflow-hidden bg-mauve-100 border border-mauve-300 shrink-0 flex items-center justify-center font-bold text-xs text-mauve-900 shadow-xs">
+                          {t.profilePicture ? (
+                            <img src={t.profilePicture} alt={t.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span>{t.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}</span>
+                          )}
+                        </div>
+                        <div>
+                          <span className="block font-bold text-gray-900 text-xs">{t.name}</span>
+                          <span className="block text-mauve-800 font-semibold font-mono text-[10px]">{t.email}</span>
+                          {t.qualification && (
+                            <span className="text-[9px] text-amber-800 font-bold block">{t.qualification}</span>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="p-3">
                       <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
@@ -2175,9 +2256,16 @@ export default function AdminDashboard({
                             setTeacherForm({
                               name: t.name,
                               email: t.email,
+                              password: t.password || 'teacher123',
                               level: t.level || 'PRIMARY',
                               classes: t.classes || [],
-                              subjects: t.subjects || []
+                              subjects: t.subjects || [],
+                              dateOfBirth: t.dateOfBirth || '',
+                              phoneNumber: t.phoneNumber || '',
+                              qualification: t.qualification || '',
+                              profilePicture: t.profilePicture || '',
+                              hometown: t.hometown || '',
+                              ghanaCardNumber: t.ghanaCardNumber || ''
                             });
                             setTeacherError('');
                             setShowTeacherModal(true);
@@ -2232,7 +2320,7 @@ export default function AdminDashboard({
                   </h4>
                   <button
                     onClick={() => setShowTeacherModal(false)}
-                    className="text-gray-400 hover:text-gray-600 font-bold cursor-pointer"
+                    className="text-gray-400 hover:text-gray-600 font-bold cursor-pointer text-xl"
                   >
                     &times;
                   </button>
@@ -2246,7 +2334,69 @@ export default function AdminDashboard({
                 )}
 
                 <form onSubmit={handleRegisterTeacher} className="space-y-4 text-sm">
-                  <div className="grid grid-cols-2 gap-3.5">
+                  {/* Photo upload section */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-mauve-700 block">Teacher Profile Photograph</label>
+                    <div className="flex items-center gap-3 bg-mauve-50/50 p-3 rounded-xl border border-mauve-200">
+                      <div className="relative w-14 h-14 rounded-full overflow-hidden bg-mauve-200 border-2 border-mauve-300 shrink-0 flex items-center justify-center shadow-xs">
+                        {isUploadingTeacherPhoto ? (
+                          <Sparkles className="w-6 h-6 text-mauve-700 animate-spin" />
+                        ) : teacherForm.profilePicture ? (
+                          <>
+                            <img src={teacherForm.profilePicture} alt="Profile" className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => setTeacherForm({ ...teacherForm, profilePicture: '' })}
+                              className="absolute top-0 right-0 bg-red-600 text-white rounded-full p-0.5 hover:bg-red-700 transition"
+                              title="Remove photo"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <Camera className="w-6 h-6 text-mauve-400" />
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <label className="px-3 py-1.5 bg-white hover:bg-mauve-50 border border-mauve-300 text-mauve-900 rounded-lg text-xs font-bold cursor-pointer transition shadow-xs inline-flex items-center gap-1.5">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>{isUploadingTeacherPhoto ? 'Uploading...' : teacherForm.profilePicture ? 'Change Photo' : 'Upload Photograph'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            disabled={isUploadingTeacherPhoto}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (file.size > 2 * 1024 * 1024) {
+                                  alert('Image size exceeds 2MB limit.');
+                                  return;
+                                }
+                                setIsUploadingTeacherPhoto(true);
+                                try {
+                                  const tempId = editingTeacher?.id || teacherForm.email || `t-${Date.now()}`;
+                                  const uploadedUrl = await uploadTeacherPhotoToSupabase(file, tempId);
+                                  setTeacherForm(prev => ({ ...prev, profilePicture: uploadedUrl }));
+                                } catch (err) {
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    setTeacherForm(prev => ({ ...prev, profilePicture: reader.result as string }));
+                                  };
+                                  reader.readAsDataURL(file);
+                                } finally {
+                                  setIsUploadingTeacherPhoto(false);
+                                }
+                              }
+                            }}
+                          />
+                        </label>
+                        <p className="text-[10px] text-mauve-500 font-medium">PNG or JPEG, passport format (max 2MB).</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-mauve-700 block">Teacher Fullname</label>
                       <input
@@ -2255,8 +2405,7 @@ export default function AdminDashboard({
                         placeholder="Mrs. Mary Mensah"
                         value={teacherForm.name}
                         onChange={(e) => setTeacherForm({ ...teacherForm, name: e.target.value })}
-                        disabled={!!editingTeacher}
-                        className={`w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white ${editingTeacher ? 'bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed' : ''}`}
+                        className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
                       />
                     </div>
 
@@ -2268,10 +2417,85 @@ export default function AdminDashboard({
                         placeholder="mary@eastfield.com"
                         value={teacherForm.email}
                         onChange={(e) => setTeacherForm({ ...teacherForm, email: e.target.value })}
-                        disabled={!!editingTeacher}
-                        className={`w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white ${editingTeacher ? 'bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed' : ''}`}
+                        className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
                       />
                     </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-mauve-700 block">Teacher Portal Password</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. teacher123"
+                        value={teacherForm.password}
+                        onChange={(e) => setTeacherForm({ ...teacherForm, password: e.target.value })}
+                        className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white font-mono text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-mauve-700 block">Date of Birth</label>
+                      <input
+                        type="date"
+                        value={teacherForm.dateOfBirth}
+                        onChange={(e) => setTeacherForm({ ...teacherForm, dateOfBirth: e.target.value })}
+                        className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-mauve-700 block">Phone Number</label>
+                      <input
+                        type="tel"
+                        placeholder="e.g. +233 24 123 4567"
+                        value={teacherForm.phoneNumber}
+                        onChange={(e) => setTeacherForm({ ...teacherForm, phoneNumber: e.target.value })}
+                        className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-mauve-700 block">Hometown</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Cape Coast / Kumasi"
+                        value={teacherForm.hometown}
+                        onChange={(e) => setTeacherForm({ ...teacherForm, hometown: e.target.value })}
+                        className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-mauve-700 block">Ghana Card Number</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. GHA-000000000-0"
+                        value={teacherForm.ghanaCardNumber}
+                        onChange={(e) => setTeacherForm({ ...teacherForm, ghanaCardNumber: e.target.value })}
+                        className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white uppercase font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-mauve-700 block">Academic Qualification</label>
+                    <input
+                      type="text"
+                      list="teacher-qualifications-list"
+                      placeholder="e.g. B.Ed in Basic Education"
+                      value={teacherForm.qualification}
+                      onChange={(e) => setTeacherForm({ ...teacherForm, qualification: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
+                    />
+                    <datalist id="teacher-qualifications-list">
+                      <option value="B.Ed. Basic Education" />
+                      <option value="B.Sc. Mathematics Education" />
+                      <option value="B.A. English Studies & Linguistics" />
+                      <option value="Diploma in Basic Education (DBE)" />
+                      <option value="M.Ed. Educational Curriculum & Instruction" />
+                      <option value="M.A. Educational Leadership" />
+                      <option value="Postgraduate Diploma in Education (PGDE)" />
+                      <option value="Early Childhood Education Certificate" />
+                    </datalist>
                   </div>
 
                   <div className="space-y-1">
@@ -2281,13 +2505,12 @@ export default function AdminDashboard({
                         <button
                           key={l}
                           type="button"
-                          disabled={!!editingTeacher}
                           onClick={() => handleTeacherLevelChange(l as AcademicLevel)}
-                          className={`flex-1 py-2 text-xs font-semibold border rounded-xl transition ${
+                          className={`flex-1 py-2 text-xs font-semibold border rounded-xl transition cursor-pointer ${
                             teacherForm.level === l
-                              ? 'bg-mauve-100 border-mauve-400 text-mauve-900'
-                              : 'border-mauve-200 hover:bg-mauve-50 text-mauve-600'
-                          } ${editingTeacher ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                              ? 'bg-mauve-900 border-mauve-900 text-white font-bold shadow-xs'
+                              : 'border-mauve-200 hover:bg-mauve-50 text-mauve-600 bg-white'
+                          }`}
                         >
                           {l}
                         </button>
@@ -2478,6 +2701,487 @@ export default function AdminDashboard({
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TEACHERS PROFILE TAB VIEW */}
+      {activeTab === 'teacher-profiles' && (
+        <div className="space-y-5 animate-fadeIn no-print">
+          {/* Banner Header */}
+          <div className="bg-gradient-to-r from-mauve-900 via-purple-900 to-slate-900 text-white p-5 rounded-2xl shadow-sm border border-mauve-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <Contact className="w-6 h-6 text-amber-400" />
+                <h3 className="font-display font-bold text-lg uppercase tracking-wide">Teacher Profiles & Academic Credentials</h3>
+              </div>
+              <p className="text-xs text-purple-100 font-medium mt-1 leading-relaxed max-w-2xl">
+                Comprehensive staff profiles detailing teacher profile photographs, birth dates, academic qualifications, phone numbers, and assigned syllabus classes.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setEditingTeacher(null);
+                setTeacherForm({
+                  name: '',
+                  email: '',
+                  password: 'teacher123',
+                  level: 'PRIMARY',
+                  classes: [],
+                  subjects: [],
+                  dateOfBirth: '',
+                  phoneNumber: '',
+                  qualification: '',
+                  profilePicture: '',
+                  hometown: '',
+                  ghanaCardNumber: ''
+                });
+                setTeacherError('');
+                setShowTeacherModal(true);
+              }}
+              className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-sm transition cursor-pointer shrink-0"
+            >
+              <UserPlus className="w-4 h-4 text-slate-950" />
+              <span>Add Teacher Profile</span>
+            </button>
+          </div>
+
+          {/* Metric Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white p-3.5 rounded-xl border border-mauve-200 shadow-xs flex items-center gap-3">
+              <div className="p-2.5 bg-mauve-100 rounded-xl text-mauve-900">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-mauve-600 tracking-wider block">Total Teachers</span>
+                <span className="text-lg font-black text-mauve-900">{teachers.filter(t => t.role === 'TEACHER').length}</span>
+              </div>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-mauve-200 shadow-xs flex items-center gap-3">
+              <div className="p-2.5 bg-emerald-100 rounded-xl text-emerald-800">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-mauve-600 tracking-wider block">Profiles Complete</span>
+                <span className="text-lg font-black text-emerald-900">
+                  {teachers.filter(t => t.role === 'TEACHER' && (t.qualification || t.phoneNumber || t.profilePicture)).length}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-mauve-200 shadow-xs flex items-center gap-3">
+              <div className="p-2.5 bg-amber-100 rounded-xl text-amber-800">
+                <GraduationCap className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-mauve-600 tracking-wider block">Qualifications Logged</span>
+                <span className="text-lg font-black text-amber-900">
+                  {teachers.filter(t => t.role === 'TEACHER' && t.qualification).length}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-white p-3.5 rounded-xl border border-mauve-200 shadow-xs flex items-center gap-3">
+              <div className="p-2.5 bg-cyan-100 rounded-xl text-cyan-800">
+                <School className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-mauve-600 tracking-wider block">JHS Tutors (Max 2 Subs)</span>
+                <span className="text-lg font-black text-cyan-900">
+                  {teachers.filter(t => t.role === 'TEACHER' && t.level === 'JHS').length}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Level Filter Controls */}
+          <div className="bg-white p-3.5 rounded-xl border border-mauve-200 shadow-xs flex flex-col md:flex-row gap-3 justify-between items-center">
+            <div className="relative w-full md:w-80">
+              <Search className="w-4 h-4 text-mauve-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search profile by name, phone, qualification..."
+                value={teacherProfileSearchTerm}
+                onChange={(e) => setTeacherProfileSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-mauve-200 text-xs text-mauve-900 outline-none focus:ring-2 focus:ring-mauve-500 bg-white"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-1.5 w-full md:w-auto">
+              {['ALL', 'NURSERY', 'KINDERGARTEN', 'PRIMARY', 'JHS'].map((lvl) => (
+                <button
+                  key={lvl}
+                  onClick={() => setTeacherProfileLevelFilter(lvl)}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    teacherProfileLevelFilter === lvl
+                      ? 'bg-mauve-900 text-white shadow-xs'
+                      : 'bg-mauve-50 text-mauve-700 hover:bg-mauve-100 border border-mauve-200'
+                  }`}
+                >
+                  {lvl === 'ALL' ? 'All Divisions' : lvl}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Teacher Profile Cards Grid */}
+          {filteredTeacherProfiles.length === 0 ? (
+            <div className="bg-white p-8 rounded-2xl border border-mauve-200 text-center space-y-2">
+              <Users className="w-10 h-10 text-mauve-300 mx-auto" />
+              <p className="font-bold text-mauve-800 text-sm">No Teacher Profiles Found</p>
+              <p className="text-xs text-mauve-500">Try adjusting your search criteria or register a new teacher.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredTeacherProfiles.map((t) => (
+                <div key={t.id} className="bg-white rounded-2xl border border-mauve-200 shadow-xs hover:shadow-md transition flex flex-col justify-between overflow-hidden">
+                  <div>
+                    {/* Card Header & Photo */}
+                    <div className="bg-gradient-to-r from-mauve-900 to-slate-900 p-4 text-white relative">
+                      <div className="flex items-start gap-3">
+                        <div className="w-16 h-16 rounded-2xl overflow-hidden bg-mauve-800 border-2 border-amber-400 shrink-0 shadow-md flex items-center justify-center">
+                          {t.profilePicture ? (
+                            <img src={t.profilePicture} alt={t.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="font-display font-black text-xl text-amber-300">
+                              {t.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                              t.level === 'NURSERY' ? 'bg-rose-100 text-rose-900' :
+                              t.level === 'KINDERGARTEN' ? 'bg-amber-100 text-amber-900' :
+                              t.level === 'PRIMARY' ? 'bg-mauve-100 text-mauve-900' :
+                              'bg-cyan-100 text-cyan-900'
+                            }`}>
+                              {t.level || 'PRIMARY'}
+                            </span>
+                            <span className="text-[10px] text-amber-300 font-mono font-bold">
+                              {t.role}
+                            </span>
+                          </div>
+                          <h4 className="font-display font-bold text-base text-white truncate">{t.name}</h4>
+                          <p className="text-[11px] text-purple-200 truncate">{t.email}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Card Body Profile Information */}
+                    <div className="p-4 space-y-3 text-xs">
+                      {/* Qualification Badge */}
+                      <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-2.5 flex items-center gap-2">
+                        <GraduationCap className="w-4 h-4 text-amber-700 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[9px] uppercase font-bold text-amber-800 block">Qualification</span>
+                          <span className="font-bold text-amber-950 text-xs block truncate">
+                            {t.qualification || 'Not Specified'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-mauve-900">
+                        <div className="bg-mauve-50/50 p-2 rounded-xl border border-mauve-100">
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-mauve-600 uppercase mb-0.5">
+                            <Calendar className="w-3 h-3" />
+                            <span>Date of Birth</span>
+                          </div>
+                          <span className="font-bold text-xs block text-mauve-950">
+                            {t.dateOfBirth ? t.dateOfBirth : 'N/A'}
+                          </span>
+                        </div>
+
+                        <div className="bg-mauve-50/50 p-2 rounded-xl border border-mauve-100">
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-mauve-600 uppercase mb-0.5">
+                            <Phone className="w-3 h-3" />
+                            <span>Phone Number</span>
+                          </div>
+                          {t.phoneNumber ? (
+                            <a href={`tel:${t.phoneNumber}`} className="font-bold text-xs text-mauve-800 hover:underline block truncate">
+                              {t.phoneNumber}
+                            </a>
+                          ) : (
+                            <span className="text-mauve-400 font-medium">N/A</span>
+                          )}
+                        </div>
+
+                        <div className="bg-mauve-50/50 p-2 rounded-xl border border-mauve-100">
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-mauve-600 uppercase mb-0.5">
+                            <MapPin className="w-3 h-3 text-emerald-600" />
+                            <span>Hometown</span>
+                          </div>
+                          <span className="font-bold text-xs block text-mauve-950 truncate">
+                            {t.hometown ? t.hometown : 'N/A'}
+                          </span>
+                        </div>
+
+                        <div className="bg-mauve-50/50 p-2 rounded-xl border border-mauve-100">
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-mauve-600 uppercase mb-0.5">
+                            <IdCard className="w-3 h-3 text-cyan-600" />
+                            <span>Ghana Card</span>
+                          </div>
+                          <span className="font-bold text-[11px] font-mono block text-mauve-950 truncate">
+                            {t.ghanaCardNumber ? t.ghanaCardNumber : 'N/A'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Assigned Classes */}
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-mauve-600 block mb-1">Classroom Assigned</span>
+                        <div className="flex flex-wrap gap-1">
+                          {t.classes && t.classes.length > 0 ? (
+                            t.classes.map(c => (
+                              <span key={c} className="bg-mauve-100 text-mauve-900 font-bold text-[10px] px-2 py-0.5 rounded-lg border border-mauve-200">
+                                {c}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-gray-400 italic text-[11px]">Unassigned</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Subjects Handled */}
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-mauve-600 block mb-1">Subjects Handled</span>
+                        <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
+                          {t.subjects && t.subjects.length > 0 ? (
+                            t.subjects.map(sId => {
+                              const sub = subjects.find(s => s.id === sId);
+                              return (
+                                <span key={sId} className="bg-mauve-50 text-mauve-800 font-semibold text-[10px] px-2 py-0.5 rounded border border-mauve-150">
+                                  {sub ? sub.name : sId}
+                                </span>
+                              );
+                            })
+                          ) : (
+                            <span className="text-gray-400 italic text-[11px]">No subjects assigned</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Actions */}
+                  <div className="p-3 bg-mauve-50/30 border-t border-mauve-100 flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => setViewingTeacherProfileModal(t)}
+                      className="flex-1 py-1.5 px-2 bg-white hover:bg-mauve-50 text-mauve-900 border border-mauve-250 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-mauve-700" />
+                      <span>View Badge</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setEditingTeacher(t);
+                        setTeacherForm({
+                          name: t.name,
+                          email: t.email,
+                          password: t.password || 'teacher123',
+                          level: t.level || 'PRIMARY',
+                          classes: t.classes || [],
+                          subjects: t.subjects || [],
+                          dateOfBirth: t.dateOfBirth || '',
+                          phoneNumber: t.phoneNumber || '',
+                          qualification: t.qualification || '',
+                          profilePicture: t.profilePicture || '',
+                          hometown: t.hometown || '',
+                          ghanaCardNumber: t.ghanaCardNumber || ''
+                        });
+                        setTeacherError('');
+                        setShowTeacherModal(true);
+                      }}
+                      className="p-1.5 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 rounded-xl transition cursor-pointer"
+                      title="Edit Teacher Profile"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+
+                    {confirmDeleteTeacherId === t.id ? (
+                      <div className="flex items-center gap-1 animate-pulse">
+                        <button
+                          onClick={() => {
+                            handleDeleteTeacher(t.id);
+                            setConfirmDeleteTeacherId(null);
+                          }}
+                          className="px-2 py-1 bg-rose-600 text-white font-bold rounded text-[10px] hover:bg-rose-700 cursor-pointer"
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          onClick={() => setConfirmDeleteTeacherId(null)}
+                          className="px-2 py-1 bg-gray-200 text-gray-700 font-bold rounded text-[10px] hover:bg-gray-300 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDeleteTeacherId(t.id)}
+                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl transition cursor-pointer border border-rose-150"
+                        title="Delete Teacher"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Teacher Profile Credential Sheet Modal */}
+          {viewingTeacherProfileModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn">
+              <div className="bg-white rounded-2xl border border-mauve-200 w-full max-w-xl p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-start border-b border-mauve-100 pb-4">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-mauve-600 block">Eastfield Academy Official Staff Record</span>
+                    <h3 className="font-display font-bold text-mauve-900 text-xl">Teacher Profile Credential Sheet</h3>
+                  </div>
+                  <button
+                    onClick={() => setViewingTeacherProfileModal(null)}
+                    className="p-1 text-gray-400 hover:text-gray-600 rounded-lg cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="bg-gradient-to-br from-mauve-900 via-slate-900 to-purple-950 rounded-2xl p-6 text-white space-y-4 shadow-lg border border-mauve-800">
+                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+                    <div className="w-24 h-24 rounded-2xl overflow-hidden bg-mauve-800 border-2 border-amber-400 shrink-0 shadow-md flex items-center justify-center">
+                      {viewingTeacherProfileModal.profilePicture ? (
+                        <img src={viewingTeacherProfileModal.profilePicture} alt={viewingTeacherProfileModal.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="font-display font-black text-2xl text-amber-300">
+                          {viewingTeacherProfileModal.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-center sm:text-left space-y-1 min-w-0 flex-1">
+                      <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-400 text-slate-950 inline-block mb-1">
+                        {viewingTeacherProfileModal.level || 'PRIMARY'} DIVISION TEACHER
+                      </span>
+                      <h4 className="font-display font-bold text-2xl text-white">{viewingTeacherProfileModal.name}</h4>
+                      <p className="text-xs text-purple-200 font-mono">{viewingTeacherProfileModal.email}</p>
+                      {viewingTeacherProfileModal.phoneNumber && (
+                        <p className="text-xs text-amber-300 font-bold flex items-center justify-center sm:justify-start gap-1 mt-1">
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>{viewingTeacherProfileModal.phoneNumber}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-3 border-t border-mauve-800/80 text-xs">
+                    <div className="bg-white/10 p-2.5 rounded-xl">
+                      <span className="text-[9px] uppercase font-bold text-purple-200 block">Date of Birth</span>
+                      <span className="font-bold text-white text-sm block">
+                        {viewingTeacherProfileModal.dateOfBirth || 'Not Specified'}
+                      </span>
+                    </div>
+
+                    <div className="bg-white/10 p-2.5 rounded-xl">
+                      <span className="text-[9px] uppercase font-bold text-purple-200 block">Academic Qualification</span>
+                      <span className="font-bold text-amber-300 text-sm block truncate">
+                        {viewingTeacherProfileModal.qualification || 'Not Specified'}
+                      </span>
+                    </div>
+
+                    <div className="bg-white/10 p-2.5 rounded-xl">
+                      <span className="text-[9px] uppercase font-bold text-purple-200 block">Hometown</span>
+                      <span className="font-bold text-white text-sm block truncate">
+                        {viewingTeacherProfileModal.hometown || 'Not Specified'}
+                      </span>
+                    </div>
+
+                    <div className="bg-white/10 p-2.5 rounded-xl">
+                      <span className="text-[9px] uppercase font-bold text-purple-200 block">Ghana Card Number</span>
+                      <span className="font-bold text-amber-300 font-mono text-sm block truncate">
+                        {viewingTeacherProfileModal.ghanaCardNumber || 'Not Specified'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="border border-mauve-150 rounded-xl p-3 bg-mauve-50/30 space-y-1">
+                    <span className="font-bold text-mauve-900 block uppercase text-[10px] tracking-wider">Classroom Assignment</span>
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {viewingTeacherProfileModal.classes && viewingTeacherProfileModal.classes.length > 0 ? (
+                        viewingTeacherProfileModal.classes.map(c => (
+                          <span key={c} className="bg-mauve-800 text-white font-bold text-xs px-2.5 py-1 rounded-lg">
+                            {c}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-gray-500 italic">No classroom assigned</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="border border-mauve-150 rounded-xl p-3 bg-mauve-50/30 space-y-1">
+                    <span className="font-bold text-mauve-900 block uppercase text-[10px] tracking-wider">Syllabus Subject Expertise</span>
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {viewingTeacherProfileModal.subjects && viewingTeacherProfileModal.subjects.length > 0 ? (
+                        viewingTeacherProfileModal.subjects.map(sId => {
+                          const sub = subjects.find(s => s.id === sId);
+                          return (
+                            <span key={sId} className="bg-white border border-mauve-250 text-mauve-900 font-bold text-xs px-2.5 py-1 rounded-lg shadow-xs">
+                              {sub ? sub.name : sId}
+                            </span>
+                          );
+                        })
+                      ) : (
+                        <span className="text-gray-500 italic">No subject assigned</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-3 border-t border-mauve-100">
+                  <button
+                    onClick={() => {
+                      const tToEdit = viewingTeacherProfileModal;
+                      setViewingTeacherProfileModal(null);
+                      setEditingTeacher(tToEdit);
+                      setTeacherForm({
+                        name: tToEdit.name,
+                        email: tToEdit.email,
+                        password: tToEdit.password || 'teacher123',
+                        level: tToEdit.level || 'PRIMARY',
+                        classes: tToEdit.classes || [],
+                        subjects: tToEdit.subjects || [],
+                        dateOfBirth: tToEdit.dateOfBirth || '',
+                        phoneNumber: tToEdit.phoneNumber || '',
+                        qualification: tToEdit.qualification || '',
+                        profilePicture: tToEdit.profilePicture || '',
+                        hometown: tToEdit.hometown || '',
+                        ghanaCardNumber: tToEdit.ghanaCardNumber || ''
+                      });
+                      setTeacherError('');
+                      setShowTeacherModal(true);
+                    }}
+                    className="flex-1 py-2.5 bg-mauve-800 hover:bg-mauve-900 text-white rounded-xl font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-xs"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    <span>Edit Profile</span>
+                  </button>
+                  <button
+                    onClick={() => window.print()}
+                    className="py-2.5 px-4 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 rounded-xl font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-xs"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Print Badge</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

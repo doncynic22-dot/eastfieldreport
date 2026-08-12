@@ -12,7 +12,7 @@ export interface CustomInventoryItem {
 export interface ClassroomInventoryRecord {
   id: string;
   locationName: string; // e.g., 'Primary 1', 'Staff Room', 'Main Yard'
-  category: 'Classroom' | 'Administrative' | 'Facility' | 'Transport' | 'Other';
+  category: 'Classroom' | 'Administrative' | 'Facility' | 'Transport' | 'Kitchen' | 'Other';
   studentChairs: number;
   studentTables: number;
   textbooks: number;
@@ -23,6 +23,7 @@ export interface ClassroomInventoryRecord {
   teacherTables: number;
   computers?: number;
   projectors?: number;
+  wallCharts?: number;
   customItems?: CustomInventoryItem[];
   notes?: string;
   updatedAt: string;
@@ -42,6 +43,12 @@ export interface User {
   level?: AcademicLevel;
   subjects?: string[]; // JHS teachers strictly have at most 2 subjects
   classes?: string[];  // Classes they are registered to teach
+  dateOfBirth?: string;
+  phoneNumber?: string;
+  qualification?: string;
+  profilePicture?: string;
+  hometown?: string;
+  ghanaCardNumber?: string;
 }
 
 export interface Student {
