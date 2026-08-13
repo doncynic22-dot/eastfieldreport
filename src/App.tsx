@@ -989,19 +989,17 @@ export default function App() {
             >
               Academy Hub
             </button>
-            {!isAdminAuthenticated && (
-              <button
-                onClick={() => setActivePortal('teacher')}
-                className={`px-4 py-2 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition cursor-pointer ${
-                  activePortal === 'teacher'
-                    ? 'bg-violet-800 text-white border-2 border-violet-300 shadow-md'
-                    : 'bg-[#2A085A] text-violet-100 hover:bg-violet-900 border border-violet-500/40'
-                }`}
-                id="nav-teacher-portal"
-              >
-                Teacher Portal
-              </button>
-            )}
+            <button
+              onClick={() => setActivePortal('teacher')}
+              className={`px-4 py-2 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition cursor-pointer ${
+                activePortal === 'teacher'
+                  ? 'bg-violet-800 text-white border-2 border-violet-300 shadow-md'
+                  : 'bg-[#2A085A] text-violet-100 hover:bg-violet-900 border border-violet-500/40'
+              }`}
+              id="nav-teacher-portal"
+            >
+              Teacher Portal
+            </button>
             <button
               onClick={() => setActivePortal('attendance')}
               className={`px-4 py-2 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition cursor-pointer ${
@@ -1013,19 +1011,17 @@ export default function App() {
             >
               Attendance Portal
             </button>
-            {!currentUser && (
-              <button
-                onClick={() => setActivePortal('admin')}
-                className={`px-4 py-2 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition cursor-pointer ${
-                  activePortal === 'admin'
-                    ? 'bg-violet-800 text-white border-2 border-violet-300 shadow-md'
-                    : 'bg-[#2A085A] text-violet-100 hover:bg-violet-900 border border-violet-500/40'
-                }`}
-                id="nav-admin-portal"
-              >
-                Admin Portal
-              </button>
-            )}
+            <button
+              onClick={() => setActivePortal('admin')}
+              className={`px-4 py-2 rounded-lg text-sm sm:text-base font-extrabold uppercase tracking-wider transition cursor-pointer ${
+                activePortal === 'admin'
+                  ? 'bg-violet-800 text-white border-2 border-violet-300 shadow-md'
+                  : 'bg-[#2A085A] text-violet-100 hover:bg-violet-900 border border-violet-500/40'
+              }`}
+              id="nav-admin-portal"
+            >
+              Admin Portal
+            </button>
           </nav>
 
           {/* Mobile Menu Toggle Button */}
@@ -1042,32 +1038,30 @@ export default function App() {
         </div>
 
         {/* ALWAYS-VISIBLE MOBILE GRID QUICK NAV BAR */}
-        <div className="md:hidden bg-[#150330] border-t border-violet-800/60 p-2 grid grid-cols-2 gap-1.5 shadow-inner">
+        <div className="md:hidden bg-[#150330] border-t border-violet-800/60 p-2 grid grid-cols-4 gap-1 shadow-inner">
           <button
             onClick={() => setActivePortal('hub')}
-            className={`w-full justify-center px-3 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1 text-center ${
+            className={`w-full justify-center px-1 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center text-center ${
               activePortal === 'hub'
                 ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
                 : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
             }`}
           >
-            Academy Hub
+            Hub
           </button>
-          {!isAdminAuthenticated && (
-            <button
-              onClick={() => setActivePortal('teacher')}
-              className={`w-full justify-center px-3 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1 text-center ${
-                activePortal === 'teacher'
-                  ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
-                  : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
-              }`}
-            >
-              Teacher Portal
-            </button>
-          )}
+          <button
+            onClick={() => setActivePortal('teacher')}
+            className={`w-full justify-center px-1 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center text-center ${
+              activePortal === 'teacher'
+                ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
+            }`}
+          >
+            Teacher
+          </button>
           <button
             onClick={() => setActivePortal('attendance')}
-            className={`w-full justify-center px-3 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1 text-center ${
+            className={`w-full justify-center px-1 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center text-center ${
               activePortal === 'attendance'
                 ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
                 : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
@@ -1075,18 +1069,16 @@ export default function App() {
           >
             Attendance
           </button>
-          {!currentUser && (
-            <button
-              onClick={() => setActivePortal('admin')}
-              className={`w-full justify-center px-3 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1 text-center ${
-                activePortal === 'admin'
-                  ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
-                  : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
-              }`}
-            >
-              Admin Portal
-            </button>
-          )}
+          <button
+            onClick={() => setActivePortal('admin')}
+            className={`w-full justify-center px-1 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition cursor-pointer flex items-center justify-center text-center ${
+              activePortal === 'admin'
+                ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
+            }`}
+          >
+            Admin
+          </button>
         </div>
 
         {/* Mobile Dropdown Navigation Menu */}
@@ -1106,21 +1098,19 @@ export default function App() {
               Academy Hub
             </button>
 
-            {!isAdminAuthenticated && (
-              <button
-                onClick={() => {
-                  setActivePortal('teacher');
-                  setIsMobileMenuOpen(false);
-                }}
-                className={`w-full text-left px-4 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition ${
-                  activePortal === 'teacher'
-                    ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
-                    : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
-                }`}
-              >
-                Teacher Portal
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setActivePortal('teacher');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`w-full text-left px-4 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition ${
+                activePortal === 'teacher'
+                  ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                  : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
+              }`}
+            >
+              Teacher Portal
+            </button>
 
             <button
               onClick={() => {
@@ -1136,21 +1126,19 @@ export default function App() {
               Attendance Portal
             </button>
 
-            {!currentUser && (
-              <button
-                onClick={() => {
-                  setActivePortal('admin');
-                  setIsMobileMenuOpen(false);
-                }}
-                className={`w-full text-left px-4 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition ${
-                  activePortal === 'admin'
-                    ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
-                    : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
-                }`}
-              >
-                Admin Portal
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setActivePortal('admin');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`w-full text-left px-4 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition ${
+                activePortal === 'admin'
+                  ? 'bg-violet-700 text-white border-2 border-violet-200 shadow-md'
+                  : 'bg-[#2B085C] text-violet-100 hover:bg-violet-800 border border-violet-500/40'
+              }`}
+            >
+              Admin Portal
+            </button>
           </div>
         )}
       </header>
@@ -1216,6 +1204,12 @@ export default function App() {
                     className="bg-[#1E0650] border border-white/30 hover:bg-[#2B0D5D] text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer uppercase tracking-wider shadow-md"
                   >
                     Enter Admin Portal
+                  </button>
+                  <button
+                    onClick={() => setActivePortal('attendance')}
+                    className="bg-violet-900 hover:bg-violet-800 border border-white/30 text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer uppercase tracking-wider shadow-md"
+                  >
+                    Open Attendance Portal
                   </button>
                 </div>
               </div>

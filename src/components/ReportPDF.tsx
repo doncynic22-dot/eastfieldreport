@@ -8,6 +8,7 @@ import { Student, Grade, Attendance, Subject, ReportConfig, StudentBill } from '
 import { getNextClassAndLevel } from '../services/promotionService';
 import { Printer, Check, Settings2, FileText, Sparkles, ExternalLink, Sliders, GraduationCap, Download, Mail, MessageSquare, Share2, Copy, CheckCircle2, Phone, X, Edit2 } from 'lucide-react';
 import { generateEmailReportBody, sendGuardianEmail, sendWhatsAppReport } from '../services/emailDispatcher';
+import { sendArkeselSingleSMS, interpolateReportCardTemplate, DEFAULT_REPORT_CARD_SMS_TEMPLATES } from '../services/arkeselSmsService';
 import { findMatchingGrade, matchesSubject } from '../utils/subjectUtils';
 import { formatReopeningDate } from '../utils/dateUtils';
 import { saveSupabaseConfig } from '../lib/supabase';
@@ -185,6 +186,12 @@ export default function ReportPDF({
 
   const [customRollNumber, setCustomRollNumber] = useState(student.rollNumber);
   const [customClassRoll, setCustomClassRoll] = useState(allClassStudents.length);
+
+  // Arkesel Report Card SMS Modal States
+  const [showArkeselSmsModal, setShowArkeselSmsModal] = useState(false);
+  const [arkeselSmsMsg, setArkeselSmsMsg] = useState('');
+  const [isSendingArkeselSms, setIsSendingArkeselSms] = useState(false);
+  const [arkeselSmsResult, setArkeselSmsResult] = useState<{ success: boolean; msg: string } | null>(null);
 
   // Check if current config term is Third Term
   const termLower = (config.term || '').toLowerCase();
@@ -467,6 +474,44 @@ export default function ReportPDF({
     sendWhatsAppReport(getDispatchOptions());
   };
 
+  const handleOpenArkeselSmsModal = () => {
+    const studentBill = bills.find(b => b.studentId === student.id);
+    const feeBalance = studentBill ? (
+      parseFloat(studentBill.arrears || '0') +
+      parseFloat(studentBill.tuition || '0') +
+      parseFloat(studentBill.computing || '0') +
+      parseFloat(studentBill.utility || '0') +
+      parseFloat(studentBill.stationery || '0') +
+      parseFloat(studentBill.pta || '0')
+    ) : 0;
+
+    const defaultTpl = DEFAULT_REPORT_CARD_SMS_TEMPLATES[0].content;
+    const interpolated = interpolateReportCardTemplate(defaultTpl, student, config, feeBalance);
+    setArkeselSmsMsg(interpolated);
+    setArkeselSmsResult(null);
+    setShowArkeselSmsModal(true);
+  };
+
+  const handleExecuteArkeselSms = async () => {
+    if (!student.guardianPhone) {
+      setArkeselSmsResult({ success: false, msg: 'Parent phone number is missing on student profile.' });
+      return;
+    }
+    setIsSendingArkeselSms(true);
+    setArkeselSmsResult(null);
+
+    const res = await sendArkeselSingleSMS({
+      recipientPhone: student.guardianPhone,
+      message: arkeselSmsMsg
+    });
+
+    setIsSendingArkeselSms(false);
+    setArkeselSmsResult({
+      success: res.success,
+      msg: res.message
+    });
+  };
+
   const handleCopyMessage = () => {
     const bodyText = generateEmailReportBody(getDispatchOptions());
     navigator.clipboard.writeText(bodyText);
@@ -602,6 +647,15 @@ export default function ReportPDF({
             >
               <Share2 className="w-3.5 h-3.5 shrink-0" />
               <span>Send Softcopy</span>
+            </button>
+
+            <button
+              onClick={handleOpenArkeselSmsModal}
+              className="flex-1 md:flex-none bg-mauve-950 hover:bg-mauve-900 active:scale-[0.98] text-white font-bold text-xs px-3.5 py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm uppercase tracking-wider border border-mauve-800"
+              title="Send direct SMS notification to parent via Arkesel Gateway"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>SMS Alert (Arkesel)</span>
             </button>
 
             {onUpdateGrade && (
@@ -1295,9 +1349,9 @@ export default function ReportPDF({
                     </span>
                   </div>
 
-                  <div className="border border-mauve-500/20 rounded-lg overflow-hidden bg-white shadow-xs">
+                  <div className="border border-mauve-500/20 rounded-lg overflow-x-auto bg-white shadow-xs">
                     <div className="max-h-64 overflow-y-auto">
-                      <table className="w-full text-left text-xs border-collapse font-sans">
+                      <table className="w-full text-left text-xs border-collapse font-sans min-w-[550px]">
                         <thead className="bg-mauve-900 text-white font-bold text-[10px] uppercase tracking-wider sticky top-0 z-10">
                           <tr>
                             <th className="p-2 pl-3">Subject Name</th>
@@ -1590,8 +1644,8 @@ export default function ReportPDF({
                 </div>
 
                 {/* Subject Grades Table */}
-                <div className="overflow-hidden border-2 border-[#7285DE] rounded bg-white shadow-sm mx-2">
-                  <table className="w-full text-left border-collapse font-serif text-[11px]">
+                <div className="overflow-x-auto border-2 border-[#7285DE] rounded bg-white shadow-sm mx-2">
+                  <table className="w-full text-left border-collapse font-serif text-[11px] min-w-[550px]">
                     <thead>
                       {isNursery ? (
                         <tr className="bg-[#B5C4F7] text-[#2B3B63] font-extrabold text-[9px] uppercase tracking-wider border-b-2 border-[#7285DE]">
@@ -1809,8 +1863,8 @@ export default function ReportPDF({
                   {/* Left Column: Attendance & Bills */}
                   <div className="space-y-3 print:space-y-2">
                     {/* Attendance, Attitude & Conduct */}
-                    <div className="overflow-hidden border-2 border-[#7285DE] rounded bg-white shadow-sm">
-                      <table className="w-full text-center border-collapse font-serif text-[10px]">
+                    <div className="overflow-x-auto border-2 border-[#7285DE] rounded bg-white shadow-sm">
+                      <table className="w-full text-center border-collapse font-serif text-[10px] min-w-[300px]">
                         <thead>
                           <tr className="bg-[#B5C4F7] text-[#2B3B63] font-extrabold text-[8px] uppercase tracking-wider border-b border-[#7285DE]">
                             <th className="p-1 border-r border-[#7285DE] w-1/3">ATTENDANCE</th>
@@ -2011,8 +2065,8 @@ export default function ReportPDF({
               )}
 
               {/* Transcript Table */}
-              <div className="overflow-hidden border border-slate-900 rounded-sm">
-                <table className="w-full text-left border-collapse font-serif text-xs">
+              <div className="overflow-x-auto border border-slate-900 rounded-sm">
+                <table className="w-full text-left border-collapse font-serif text-xs min-w-[550px]">
                   <thead>
                     <tr className="bg-[#709ED9] text-slate-900 font-extrabold text-[11px] uppercase tracking-wider border-b border-slate-950">
                       <th className="p-1.5 sm:p-2 pl-3 sm:pl-4 border-r border-slate-900 bg-white">Subject</th>
@@ -2338,8 +2392,8 @@ export default function ReportPDF({
               </div>
 
               {/* 4. Main Grades Transcript Table */}
-              <div className="overflow-hidden border border-mauve-500/20 rounded">
-                <table className="w-full text-left border-collapse text-xs">
+              <div className="overflow-x-auto border border-mauve-500/20 rounded">
+                <table className="w-full text-left border-collapse text-xs min-w-[550px]">
                   <thead>
                     <tr className="bg-mauve-900 text-white font-bold text-[11px] uppercase tracking-wide">
                       <th className="p-3 pl-4 bg-white text-mauve-900 border-b border-mauve-100">Subject Details</th>
@@ -2538,6 +2592,90 @@ export default function ReportPDF({
           )}
         </div>
       </div>
+
+      {/* ARKESEL DIRECT REPORT CARD SMS MODAL OVERLAY */}
+      {showArkeselSmsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn no-print">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-gray-200 overflow-hidden space-y-4 p-6">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-mauve-950 text-amber-400 flex items-center justify-center font-bold">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display font-extrabold text-sm text-mauve-950">
+                    Send Report Card SMS Alert via Arkesel
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Recipient: <strong className="text-gray-800">{student.guardianName}</strong> ({student.guardianPhone || 'No Phone'})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowArkeselSmsModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {arkeselSmsResult && (
+              <div
+                className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${
+                  arkeselSmsResult.success
+                    ? 'bg-emerald-50 text-emerald-900 border border-emerald-300'
+                    : 'bg-red-50 text-red-900 border border-red-300'
+                }`}
+              >
+                {arkeselSmsResult.success ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <X className="w-4 h-4 text-red-600 shrink-0" />
+                )}
+                <span>{arkeselSmsResult.msg}</span>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-gray-700">SMS Alert Content:</label>
+              <textarea
+                rows={4}
+                value={arkeselSmsMsg}
+                onChange={(e) => setArkeselSmsMsg(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-xl font-mono text-xs text-gray-800 focus:ring-2 focus:ring-mauve-500 outline-none leading-relaxed"
+              />
+              <div className="flex justify-between text-[11px] text-gray-500 font-mono">
+                <span>{arkeselSmsMsg.length} characters</span>
+                <span>{Math.ceil(arkeselSmsMsg.length / 160) || 1} SMS Credit(s)</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={() => setShowArkeselSmsModal(false)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSendingArkeselSms || !student.guardianPhone}
+                onClick={handleExecuteArkeselSms}
+                className={`px-5 py-2 font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-md ${
+                  !student.guardianPhone || isSendingArkeselSms
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-mauve-950 hover:bg-mauve-900 text-white'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
+                <span>{isSendingArkeselSms ? 'Sending SMS...' : 'Dispatch Arkesel SMS'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   </div>
 );

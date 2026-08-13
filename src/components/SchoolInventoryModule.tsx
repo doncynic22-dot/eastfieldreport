@@ -1322,8 +1322,8 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
                   ))}
                 </div>
 
-                <div className="border border-gray-300 rounded-xl overflow-hidden bg-white shadow-xs">
-                  <table className="w-full text-left border-collapse">
+                <div className="border border-gray-300 rounded-xl overflow-x-auto bg-white shadow-xs">
+                  <table className="w-full text-left border-collapse min-w-[500px]">
                     <thead>
                       <tr className="bg-blue-900 text-white text-xs uppercase font-black tracking-wide border-b border-blue-500 shadow-xs">
                         <th className="py-3 px-3.5 border-r border-blue-800 w-1/3 text-amber-300 font-black">LOCATION</th>

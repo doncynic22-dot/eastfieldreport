@@ -839,8 +839,8 @@ export default function FeesDashboard({
               </div>
 
               {/* TABLE */}
-              <div className="border border-gray-200 rounded-xl overflow-hidden">
-                <table className="w-full text-left border-collapse">
+              <div className="border border-gray-200 rounded-xl overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[500px]">
                   <thead>
                     <tr className="bg-gray-100 border-b border-gray-200 text-gray-700 text-xs font-extrabold uppercase tracking-wider">
                       <th className="py-3 px-4">Fee Description / Type</th>

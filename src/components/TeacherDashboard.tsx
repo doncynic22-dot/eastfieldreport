@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel } from '../types';
-import { BookOpen, UserCheck, Search, CheckCircle2, Save, Users, Calendar, Award, LogIn, LogOut, UserPlus, ShieldAlert, School, Eye, EyeOff, KeyRound, Lock, Mail, Send, Copy, Check, ExternalLink, ShieldCheck, RefreshCw, FileSpreadsheet } from 'lucide-react';
+import { BookOpen, UserCheck, Search, CheckCircle2, Save, Users, Calendar, Award, LogIn, LogOut, UserPlus, ShieldAlert, School, Eye, EyeOff, KeyRound, Lock, Mail, Send, Copy, Check, ExternalLink, ShieldCheck, RefreshCw, FileSpreadsheet, Edit2, Camera, Upload, X, Sparkles, AlertCircle, Phone, MapPin } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { sendPasswordResetEmail } from '../services/emailDispatcher';
 import { getSupabaseCredentials, saveSupabaseGrades, saveSupabaseAttendance } from '../lib/supabase';
@@ -77,6 +77,26 @@ export default function TeacherDashboard({
 
   // Tab State: 'gradebook' or 'jhs3-mock'
   const [teacherActiveTab, setTeacherActiveTab] = useState<'gradebook' | 'jhs3-mock'>('gradebook');
+
+  // Teacher Profile Modal States for logged-in staff profile editing
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    level: 'PRIMARY' as AcademicLevel,
+    classes: [] as string[],
+    subjects: [] as string[],
+    phoneNumber: '',
+    dateOfBirth: '',
+    qualification: '',
+    profilePicture: '',
+    hometown: '',
+    ghanaCardNumber: ''
+  });
+  const [profileError, setProfileError] = useState('');
+  const [profileSuccess, setProfileSuccess] = useState('');
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Check if password reset link was opened from email link
   useEffect(() => {
@@ -150,12 +170,96 @@ export default function TeacherDashboard({
     }
   };
 
+  // Profile Edit Handlers for authenticated teacher
+  const handleOpenProfileModal = () => {
+    if (!currentUser) return;
+    setProfileForm({
+      name: currentUser.name || '',
+      email: currentUser.email || '',
+      password: currentUser.password || '',
+      level: currentUser.level || 'PRIMARY',
+      classes: currentUser.classes || [],
+      subjects: currentUser.subjects || [],
+      phoneNumber: currentUser.phoneNumber || '',
+      dateOfBirth: currentUser.dateOfBirth || '',
+      qualification: currentUser.qualification || '',
+      profilePicture: currentUser.profilePicture || '',
+      hometown: currentUser.hometown || '',
+      ghanaCardNumber: currentUser.ghanaCardNumber || ''
+    });
+    setProfileError('');
+    setProfileSuccess('');
+    setShowProfileModal(true);
+  };
+
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setProfileError('');
+    setProfileSuccess('');
+
+    if (!profileForm.name.trim() || !profileForm.email.trim()) {
+      setProfileError('Name and Email fields are required.');
+      return;
+    }
+
+    const emailCheck = profileForm.email.trim().toLowerCase();
+    if (teachers.some(t => t.id !== currentUser.id && t.email.trim().toLowerCase() === emailCheck)) {
+      setProfileError('Another teacher with this email address already exists.');
+      return;
+    }
+
+    let finalSubjects = (profileForm.level === 'NURSERY' || profileForm.level === 'KINDERGARTEN' || profileForm.level === 'PRIMARY')
+      ? subjects.filter(s => s.level === profileForm.level).map(s => s.id)
+      : profileForm.subjects;
+
+    if (finalSubjects.length === 0) {
+      finalSubjects = subjects.filter(s => s.level === profileForm.level).map(s => s.id);
+    }
+
+    const updatedUser: User = {
+      ...currentUser,
+      name: profileForm.name.trim(),
+      email: profileForm.email.trim(),
+      password: profileForm.password ? profileForm.password : (currentUser.password || 'teacher123'),
+      level: profileForm.level,
+      classes: profileForm.classes,
+      subjects: finalSubjects,
+      phoneNumber: profileForm.phoneNumber,
+      dateOfBirth: profileForm.dateOfBirth,
+      qualification: profileForm.qualification,
+      profilePicture: profileForm.profilePicture,
+      hometown: profileForm.hometown,
+      ghanaCardNumber: profileForm.ghanaCardNumber
+    };
+
+    setCurrentUser(updatedUser);
+    setTeachers(prev => prev.map(t => {
+      if (t.id === currentUser.id) {
+        return updatedUser;
+      }
+      if (profileForm.classes.some(cls => t.classes?.includes(cls))) {
+        return {
+          ...t,
+          classes: (t.classes || []).filter(c => !profileForm.classes.includes(c))
+        };
+      }
+      return t;
+    }));
+
+    setProfileSuccess('Teacher profile updated successfully!');
+    setTimeout(() => {
+      setShowProfileModal(false);
+      setProfileSuccess('');
+    }, 1200);
+  };
+
   // 2. TEACHER REGISTRATION PROCESS
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError('');
 
-    if (!regName || !regEmail) {
+    if (!regName.trim() || !regEmail.trim()) {
       setRegError('Please complete Name and Email fields.');
       return;
     }
@@ -182,31 +286,21 @@ export default function TeacherDashboard({
       return;
     }
 
-    if (regLevel === 'PRIMARY' || regLevel === 'NURSERY' || regLevel === 'KINDERGARTEN') {
-      if (regSelectedClasses.length > 1) {
-        setRegError('Academy Staff Policy: Nursery, KG, and Primary division teachers can only be assigned to a single class.');
-        return;
-      }
-      for (const cls of regSelectedClasses) {
-        const assignedTeacher = teachers.find(t => t.classes?.includes(cls));
-        if (assignedTeacher) {
-          setRegError(`Class Assignment Conflict: "${cls}" is already assigned to ${assignedTeacher.name}. In Primary, Nursery, and KG, a class cannot be assigned to more than one teacher.`);
-          return;
-        }
-      }
+    if ((regLevel === 'PRIMARY' || regLevel === 'NURSERY' || regLevel === 'KINDERGARTEN') && regSelectedClasses.length > 1) {
+      setRegError('Academy Staff Policy: Nursery, KG, and Primary division teachers can only be assigned to a single class.');
+      return;
     }
 
-    const finalSubjects = (regLevel === 'NURSERY' || regLevel === 'KINDERGARTEN' || regLevel === 'PRIMARY')
+    let finalSubjects = (regLevel === 'NURSERY' || regLevel === 'KINDERGARTEN' || regLevel === 'PRIMARY')
       ? subjects.filter(s => s.level === regLevel).map(s => s.id)
       : regSelectedSubjects;
 
     if (finalSubjects.length === 0) {
-      setRegError('Please select at least one syllabus subject.');
-      return;
+      finalSubjects = subjects.filter(s => s.level === regLevel).map(s => s.id);
     }
 
-    if (regSelectedClasses.length === 0) {
-      setRegError('Please select at least one class group.');
+    if (finalSubjects.length === 0) {
+      setRegError('Please select at least one syllabus subject.');
       return;
     }
 
@@ -217,12 +311,12 @@ export default function TeacherDashboard({
 
     try {
       const { data, error } = await supabase.auth.signUp({
-        email: regEmail,
+        email: regEmail.trim(),
         password: regPassword,
         options: {
           data: {
             role: 'TEACHER',
-            name: regName,
+            name: regName.trim(),
             level: regLevel,
             classes: regSelectedClasses,
             subjects: finalSubjects,
@@ -246,7 +340,7 @@ export default function TeacherDashboard({
 
     const newTeacher: User = {
       id: signUpUserId,
-      name: regName,
+      name: regName.trim(),
       email: regEmail.trim(),
       role: 'TEACHER',
       level: regLevel,
@@ -255,7 +349,20 @@ export default function TeacherDashboard({
       password: regPassword
     };
 
-    setTeachers(prev => [...prev, newTeacher]);
+    // Reassign selected classes cleanly from former assigned teachers
+    setTeachers(prev => {
+      const updated = prev.map(t => {
+        if (regSelectedClasses.some(cls => t.classes?.includes(cls))) {
+          return {
+            ...t,
+            classes: (t.classes || []).filter(c => !regSelectedClasses.includes(c))
+          };
+        }
+        return t;
+      });
+      return [...updated, newTeacher];
+    });
+
     setCurrentUser(newTeacher);
 
     // Reset Form
@@ -482,14 +589,7 @@ export default function TeacherDashboard({
   };
 
   const toggleRegClass = (cls: string) => {
-    if (regLevel === 'PRIMARY' || regLevel === 'NURSERY' || regLevel === 'KINDERGARTEN') {
-      const assignedTeacher = teachers.find(t => t.classes?.includes(cls));
-      if (assignedTeacher && !regSelectedClasses.includes(cls)) {
-        setRegError(`Cannot select "${cls}": Already assigned to ${assignedTeacher.name}. In Primary, Nursery, and KG, each class can only be assigned to one teacher.`);
-      } else {
-        setRegError('');
-      }
-    }
+    setRegError('');
     setRegSelectedClasses(prev => {
       if (regLevel === 'PRIMARY' || regLevel === 'NURSERY' || regLevel === 'KINDERGARTEN') {
         return prev.includes(cls) ? [] : [cls];
@@ -967,7 +1067,7 @@ export default function TeacherDashboard({
               )}
               <div>
                 <h3 className="font-display font-extrabold text-mauve-950 text-base sm:text-lg">
-                  Teacher Portal
+                  Teacher Workstation
                 </h3>
                 <p className="text-xs text-gray-600 mt-1 leading-relaxed">
                   Welcome, Eastfield Educator. Log in to your register.
@@ -1582,6 +1682,16 @@ export default function TeacherDashboard({
           </div>
 
           <button
+            type="button"
+            onClick={handleOpenProfileModal}
+            className="bg-amber-400 hover:bg-amber-300 active:bg-amber-500 text-slate-950 font-black px-3.5 py-2 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center gap-1.5 shadow-xs border border-amber-500 shrink-0"
+            title="Edit your teacher profile, photo, qualifications, and credentials"
+          >
+            <Edit2 className="w-3.5 h-3.5 text-slate-950 shrink-0" />
+            <span>Edit Profile</span>
+          </button>
+
+          <button
             onClick={() => {
               setCurrentUser(null);
               setSelectedLevel('');
@@ -1589,7 +1699,7 @@ export default function TeacherDashboard({
               setSelectedSubject('');
             }}
             className="bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-extrabold px-3.5 py-2 rounded-xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center gap-2 shadow-sm border border-red-700 shrink-0"
-            title="Sign out of Teacher Portal and clear session"
+            title="Sign out of Teacher Workstation and clear session"
           >
             <LogOut className="w-4 h-4 shrink-0" />
             <span>Sign Out</span>
@@ -1825,7 +1935,7 @@ export default function TeacherDashboard({
                   setSelectedSubject('');
                 }}
                 className="bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-1 rounded-lg text-[10px] uppercase tracking-wider transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                title="Sign out of Teacher Portal"
+                title="Sign out of Teacher Workstation"
               >
                 <LogOut className="w-3.5 h-3.5 shrink-0" />
                 <span>Sign Out</span>
@@ -2066,6 +2176,197 @@ export default function TeacherDashboard({
         </form>
       )}
         </>
+      )}
+
+      {/* TEACHER PROFILE EDIT MODAL */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn overflow-y-auto">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-gray-200 overflow-hidden my-8 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-mauve-950 via-mauve-900 to-slate-900 text-white p-5 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-black shadow-inner">
+                  <Edit2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-base text-white">Edit Teacher Profile</h3>
+                  <p className="text-xs text-amber-300 font-mono">Staff ID: EA-TEA-{currentUser?.id.slice(-4).toUpperCase()}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleSaveProfile} className="p-6 space-y-5 overflow-y-auto flex-1 text-sm text-gray-800">
+              {profileError && (
+                <div className="p-3 bg-red-50 border border-red-300 text-red-800 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>{profileError}</span>
+                </div>
+              )}
+
+              {profileSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{profileSuccess}</span>
+                </div>
+              )}
+
+              {/* Photo Upload Section */}
+              <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-200">
+                <div className="relative w-24 h-24 rounded-2xl bg-mauve-100 border-2 border-mauve-400 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
+                  {profileForm.profilePicture ? (
+                    <img src={profileForm.profilePicture} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <School className="w-7 h-7 text-mauve-700" />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-black text-mauve-950 block">Staff Photograph</label>
+                  <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-mauve-900 hover:bg-mauve-800 text-white rounded-lg text-xs font-bold cursor-pointer transition shadow-xs">
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Upload New Photo</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          const file = e.target.files[0];
+                          if (!file.type.startsWith('image/')) {
+                            setProfileError('Please select a valid image file.');
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setProfileForm(prev => ({ ...prev, profilePicture: reader.result as string }));
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                  {profileForm.profilePicture && (
+                    <button
+                      type="button"
+                      onClick={() => setProfileForm(prev => ({ ...prev, profilePicture: '' }))}
+                      className="text-[11px] text-red-600 font-bold hover:underline block ml-1"
+                    >
+                      Remove photo
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Basic Credentials */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-gray-700 mb-1">Full Staff Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={profileForm.name}
+                    onChange={(e) => setProfileForm(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl font-bold focus:ring-2 focus:ring-mauve-500 outline-none text-xs"
+                    placeholder="e.g. Samuel K. Mensah"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-gray-700 mb-1">Email Address (Login) *</label>
+                  <input
+                    type="email"
+                    required
+                    value={profileForm.email}
+                    onChange={(e) => setProfileForm(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl font-bold focus:ring-2 focus:ring-mauve-500 outline-none text-xs"
+                    placeholder="teacher@eastfield.edu.gh"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-black text-gray-700 mb-1">Login Password</label>
+                  <input
+                    type="text"
+                    value={profileForm.password}
+                    onChange={(e) => setProfileForm(prev => ({ ...prev, password: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl font-mono focus:ring-2 focus:ring-mauve-500 outline-none text-xs"
+                    placeholder="Leave unchanged or enter new password"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-gray-700 mb-1">Phone Number</label>
+                  <input
+                    type="tel"
+                    value={profileForm.phoneNumber}
+                    onChange={(e) => setProfileForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl font-mono focus:ring-2 focus:ring-mauve-500 outline-none text-xs"
+                    placeholder="e.g. +233 24 123 4567"
+                  />
+                </div>
+              </div>
+
+              {/* Extra Professional Profile Details */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">Academic Qualification</label>
+                  <input
+                    type="text"
+                    value={profileForm.qualification}
+                    onChange={(e) => setProfileForm(prev => ({ ...prev, qualification: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-mauve-500"
+                    placeholder="B.Ed. Education / Diploma"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">Hometown / Hometown</label>
+                  <input
+                    type="text"
+                    value={profileForm.hometown}
+                    onChange={(e) => setProfileForm(prev => ({ ...prev, hometown: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-mauve-500"
+                    placeholder="e.g. Sunyani"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">Ghana Card Number</label>
+                  <input
+                    type="text"
+                    value={profileForm.ghanaCardNumber}
+                    onChange={(e) => setProfileForm(prev => ({ ...prev, ghanaCardNumber: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl font-mono text-xs outline-none focus:ring-2 focus:ring-mauve-500"
+                    placeholder="GHA-000000000-0"
+                  />
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-mauve-950 hover:bg-mauve-900 text-white font-extrabold rounded-xl text-xs transition shadow-sm cursor-pointer flex items-center gap-1.5"
+                >
+                  <Save className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Save Profile Changes</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

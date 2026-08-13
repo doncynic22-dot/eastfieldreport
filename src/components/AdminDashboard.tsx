@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill, User } from '../types';
-import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History, Contact, PhoneCall, Briefcase, BadgeCheck, UserCheck, MapPin, IdCard } from 'lucide-react';
+import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History, Contact, PhoneCall, Briefcase, BadgeCheck, UserCheck, MapPin, IdCard, Zap, Eye } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import FeesCollectionModule from './FeesCollectionModule';
 import FeesDashboard from './FeesDashboard';
@@ -13,6 +13,8 @@ import SchoolInventoryModule from './SchoolInventoryModule';
 import JHS3MockExamModule from './JHS3MockExamModule';
 import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryModule';
 import BulkSMSModule from './BulkSMSModule';
+import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
+import TeacherDashboard from './TeacherDashboard';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion } from '../services/promotionService';
@@ -46,7 +48,7 @@ interface AdminDashboardProps {
 }
 
 
-type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'bulk-sms' | 'transcripts' | 'jhs3-mock' | 'terminal-history' | 'students' | 'teachers' | 'teacher-profiles' | 'class-assignments' | 'inventory' | 'config';
+type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'bulk-sms' | 'report-sms-alerts' | 'transcripts' | 'jhs3-mock' | 'terminal-history' | 'students' | 'teachers' | 'teacher-profiles' | 'class-assignments' | 'inventory' | 'config';
 
 export default function AdminDashboard({
   students,
@@ -155,6 +157,7 @@ export default function AdminDashboard({
   const [teacherProfileSearchTerm, setTeacherProfileSearchTerm] = useState('');
   const [teacherProfileLevelFilter, setTeacherProfileLevelFilter] = useState('ALL');
   const [viewingTeacherProfileModal, setViewingTeacherProfileModal] = useState<User | null>(null);
+  const [selectedWorkstationTeacher, setSelectedWorkstationTeacher] = useState<User | null>(null);
 
   // Transcript Selector state
   const [selectedClass, setSelectedClass] = useState('Primary 4');
@@ -1099,41 +1102,43 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {/* 2. TAB TOGGLES (RESPONSIVE WRAPPING GRID SO ALL TABS ARE VISIBLE) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 pb-3 border-b border-mauve-500/10 no-print">
-        {[
-          { id: 'analytics', label: 'Overview Metrics', icon: Users },
-          { id: 'fees-dashboard', label: 'Fees Dashboard', icon: BarChart3 },
-          { id: 'fees', label: 'Fees Collection', icon: CreditCard },
-          { id: 'bulk-sms', label: 'Bulk Parent SMS', icon: MessageSquare },
-          { id: 'transcripts', label: 'Transcripts', icon: FileSpreadsheet },
-          { id: 'jhs3-mock', label: 'JHS 3 Mock Portal', icon: Award },
-          { id: 'terminal-history', label: 'JHS Assessment History', icon: History },
-          { id: 'students', label: 'Admissions', icon: GraduationCap },
-          { id: 'teachers', label: 'Staff Directory', icon: BookOpen },
-          { id: 'teacher-profiles', label: 'Teachers Profile', icon: Contact },
-          { id: 'class-assignments', label: 'Assign Class Teacher', icon: School },
-          { id: 'inventory', label: 'School Inventory', icon: Boxes },
-          { id: 'config', label: 'Settings', icon: Settings }
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as AdminTab)}
-              className={`flex items-center justify-start gap-2 px-3.5 py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all duration-150 cursor-pointer border w-full ${
-                isActive
-                  ? 'bg-amber-400 text-slate-950 shadow-md border-2 border-amber-500 ring-2 ring-amber-300 font-black'
-                  : 'bg-mauve-900 text-white/90 hover:bg-amber-300 hover:text-slate-950 border-mauve-700/80 font-bold'
-              }`}
-              id={`admin-tab-${tab.id}`}
-            >
-              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-slate-950' : 'text-amber-300/80'}`} />
-              <span className="truncate">{tab.label}</span>
-            </button>
-          );
-        })}
+      {/* 2. TAB TOGGLES (ARRANGED VERTICALLY WITH 2 PER ROW ON MOBILE SCREENS) */}
+      <div className="pb-3 border-b border-mauve-500/10 no-print">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-2">
+          {[
+            { id: 'analytics', label: 'Overview Metrics', icon: Users },
+            { id: 'fees-dashboard', label: 'Fees Dashboard', icon: BarChart3 },
+            { id: 'fees', label: 'Fees Collection', icon: CreditCard },
+            { id: 'bulk-sms', label: 'Bulk Parent SMS', icon: MessageSquare },
+            { id: 'report-sms-alerts', label: 'Report SMS Alerts', icon: Zap },
+            { id: 'transcripts', label: 'Transcripts', icon: FileSpreadsheet },
+            { id: 'jhs3-mock', label: 'JHS 3 Mock Portal', icon: Award },
+            { id: 'terminal-history', label: 'JHS Assessment History', icon: History },
+            { id: 'students', label: 'Admissions', icon: GraduationCap },
+            { id: 'teachers', label: 'Staff Directory', icon: BookOpen },
+            { id: 'class-assignments', label: 'Assign Class Teacher', icon: School },
+            { id: 'inventory', label: 'School Inventory', icon: Boxes },
+            { id: 'config', label: 'Settings', icon: Settings }
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as AdminTab)}
+                className={`flex items-center justify-start gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2.5 rounded-xl text-[11px] sm:text-xs uppercase tracking-wider transition-all duration-150 cursor-pointer border w-full text-left min-h-[44px] ${
+                  isActive
+                    ? 'bg-amber-400 text-slate-950 shadow-md border-2 border-amber-500 ring-2 ring-amber-300 font-black'
+                    : 'bg-mauve-900 text-white/90 hover:bg-amber-300 hover:text-slate-950 border-mauve-700/80 font-bold'
+                }`}
+                id={`admin-tab-${tab.id}`}
+              >
+                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-slate-950' : 'text-amber-300/80'}`} />
+                <span className="truncate">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* 3. TAB VIEWS */}
@@ -1236,6 +1241,17 @@ export default function AdminDashboard({
         />
       )}
 
+      {/* REPORT CARD SMS ALERT SERVICE MODULE */}
+      {activeTab === 'report-sms-alerts' && (
+        <ReportCardSMSAlertModule
+          students={students}
+          bills={bills}
+          grades={grades}
+          config={config}
+          classes={classes}
+        />
+      )}
+
       {/* B. TRANSCRIPT CENTER VIEW */}
       {activeTab === 'transcripts' && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 animate-fadeIn">
@@ -1296,6 +1312,18 @@ export default function AdminDashboard({
               >
                 <Printer className="w-3.5 h-3.5 shrink-0" />
                 <span>Bulk Print Class ({studentsInSelectedClass.length})</span>
+              </button>
+            </div>
+
+            {/* Arkesel Report Card SMS Alert Service Button */}
+            <div className="pt-2 border-t border-mauve-500/10 space-y-1">
+              <label className="text-[10px] uppercase font-bold text-mauve-900 block">5. Arkesel SMS Alert Service</label>
+              <button
+                onClick={() => setActiveTab('report-sms-alerts')}
+                className="w-full bg-mauve-950 hover:bg-mauve-900 active:scale-[0.98] text-white font-bold py-2 px-3 rounded text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shadow-sm uppercase tracking-wider border border-mauve-800"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Bulk Report Card SMS Alerts</span>
               </button>
             </div>
 
@@ -1562,7 +1590,7 @@ export default function AdminDashboard({
           {/* Table Directory */}
           <div className="bg-white rounded border border-mauve-500/20 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse min-w-[650px]">
                 <thead>
                   <tr className="bg-mauve-50 border-b border-mauve-500/20 text-[11px] font-bold text-mauve-900 uppercase tracking-wider">
                     <th 
@@ -2171,8 +2199,8 @@ export default function AdminDashboard({
           </div>
 
           {/* Table Directory */}
-          <div className="bg-white rounded border border-mauve-500/20 overflow-hidden shadow-sm">
-            <table className="w-full text-left border-collapse">
+          <div className="bg-white rounded border border-mauve-500/20 overflow-x-auto shadow-sm">
+            <table className="w-full text-left border-collapse min-w-[650px]">
               <thead>
                 <tr className="bg-mauve-50 border-b border-mauve-500/20 text-[11px] font-bold text-mauve-900 uppercase tracking-wider">
                   <th className="p-3 pl-4">Staff Details</th>
@@ -2188,7 +2216,7 @@ export default function AdminDashboard({
                   <tr key={t.id} className="hover:bg-mauve-50/10">
                     <td className="p-3 pl-4">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-full overflow-hidden bg-mauve-100 border border-mauve-300 shrink-0 flex items-center justify-center font-bold text-xs text-mauve-900 shadow-xs">
+                        <div className="w-14 h-14 rounded-2xl overflow-hidden bg-mauve-100 border-2 border-mauve-300 shrink-0 flex items-center justify-center font-bold text-sm text-mauve-900 shadow-sm">
                           {t.profilePicture ? (
                             <img src={t.profilePicture} alt={t.name} className="w-full h-full object-cover" />
                           ) : (
@@ -2250,6 +2278,22 @@ export default function AdminDashboard({
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1.5 pl-2">
+                        <button
+                          onClick={() => setViewingTeacherProfileModal(t)}
+                          className="px-2 py-1 bg-mauve-50 hover:bg-mauve-100 text-mauve-900 border border-mauve-250 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                          title="View Full Profile"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-mauve-700" />
+                          <span className="hidden sm:inline">View Profile</span>
+                        </button>
+                        <button
+                          onClick={() => setSelectedWorkstationTeacher(t)}
+                          className="px-2 py-1 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-lg text-[11px] font-extrabold transition flex items-center gap-1 cursor-pointer shadow-xs border border-amber-300"
+                          title="Open Workstation for Gradebook & Assessments"
+                        >
+                          <BookOpen className="w-3.5 h-3.5 text-slate-950" />
+                          <span className="hidden sm:inline">Workstation</span>
+                        </button>
                         <button
                           onClick={() => {
                             setEditingTeacher(t);
@@ -2338,7 +2382,7 @@ export default function AdminDashboard({
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-mauve-700 block">Teacher Profile Photograph</label>
                     <div className="flex items-center gap-3 bg-mauve-50/50 p-3 rounded-xl border border-mauve-200">
-                      <div className="relative w-14 h-14 rounded-full overflow-hidden bg-mauve-200 border-2 border-mauve-300 shrink-0 flex items-center justify-center shadow-xs">
+                      <div className="relative w-20 h-20 rounded-2xl overflow-hidden bg-mauve-200 border-2 border-mauve-400 shrink-0 flex items-center justify-center shadow-md">
                         {isUploadingTeacherPhoto ? (
                           <Sparkles className="w-6 h-6 text-mauve-700 animate-spin" />
                         ) : teacherForm.profilePicture ? (
@@ -2422,7 +2466,7 @@ export default function AdminDashboard({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-mauve-700 block">Teacher Portal Password</label>
+                      <label className="text-xs font-semibold text-mauve-700 block">Teacher Access Password</label>
                       <input
                         type="text"
                         placeholder="e.g. teacher123"
@@ -2842,11 +2886,11 @@ export default function AdminDashboard({
                     {/* Card Header & Photo */}
                     <div className="bg-gradient-to-r from-mauve-900 to-slate-900 p-4 text-white relative">
                       <div className="flex items-start gap-3">
-                        <div className="w-16 h-16 rounded-2xl overflow-hidden bg-mauve-800 border-2 border-amber-400 shrink-0 shadow-md flex items-center justify-center">
+                        <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden bg-mauve-800 border-4 border-amber-400 shrink-0 shadow-lg flex items-center justify-center">
                           {t.profilePicture ? (
                             <img src={t.profilePicture} alt={t.name} className="w-full h-full object-cover" />
                           ) : (
-                            <span className="font-display font-black text-xl text-amber-300">
+                            <span className="font-display font-black text-2xl text-amber-300">
                               {t.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                             </span>
                           )}
@@ -2968,13 +3012,21 @@ export default function AdminDashboard({
                   </div>
 
                   {/* Card Actions */}
-                  <div className="p-3 bg-mauve-50/30 border-t border-mauve-100 flex items-center justify-between gap-2">
+                  <div className="p-3 bg-mauve-50/30 border-t border-mauve-100 flex items-center justify-between gap-1.5 flex-wrap">
                     <button
                       onClick={() => setViewingTeacherProfileModal(t)}
-                      className="flex-1 py-1.5 px-2 bg-white hover:bg-mauve-50 text-mauve-900 border border-mauve-250 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                      className="py-1.5 px-2.5 bg-white hover:bg-mauve-50 text-mauve-900 border border-mauve-250 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 shadow-xs cursor-pointer"
                     >
-                      <FileText className="w-3.5 h-3.5 text-mauve-700" />
-                      <span>View Badge</span>
+                      <Eye className="w-3.5 h-3.5 text-mauve-700" />
+                      <span>View Profile</span>
+                    </button>
+
+                    <button
+                      onClick={() => setSelectedWorkstationTeacher(t)}
+                      className="py-1.5 px-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 border border-amber-300 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                    >
+                      <BookOpen className="w-3.5 h-3.5 text-slate-950" />
+                      <span>Workstation</span>
                     </button>
 
                     <button
@@ -3036,155 +3088,7 @@ export default function AdminDashboard({
             </div>
           )}
 
-          {/* Teacher Profile Credential Sheet Modal */}
-          {viewingTeacherProfileModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn">
-              <div className="bg-white rounded-2xl border border-mauve-200 w-full max-w-xl p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-start border-b border-mauve-100 pb-4">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-mauve-600 block">Eastfield Academy Official Staff Record</span>
-                    <h3 className="font-display font-bold text-mauve-900 text-xl">Teacher Profile Credential Sheet</h3>
-                  </div>
-                  <button
-                    onClick={() => setViewingTeacherProfileModal(null)}
-                    className="p-1 text-gray-400 hover:text-gray-600 rounded-lg cursor-pointer"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="bg-gradient-to-br from-mauve-900 via-slate-900 to-purple-950 rounded-2xl p-6 text-white space-y-4 shadow-lg border border-mauve-800">
-                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
-                    <div className="w-24 h-24 rounded-2xl overflow-hidden bg-mauve-800 border-2 border-amber-400 shrink-0 shadow-md flex items-center justify-center">
-                      {viewingTeacherProfileModal.profilePicture ? (
-                        <img src={viewingTeacherProfileModal.profilePicture} alt={viewingTeacherProfileModal.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="font-display font-black text-2xl text-amber-300">
-                          {viewingTeacherProfileModal.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="text-center sm:text-left space-y-1 min-w-0 flex-1">
-                      <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-400 text-slate-950 inline-block mb-1">
-                        {viewingTeacherProfileModal.level || 'PRIMARY'} DIVISION TEACHER
-                      </span>
-                      <h4 className="font-display font-bold text-2xl text-white">{viewingTeacherProfileModal.name}</h4>
-                      <p className="text-xs text-purple-200 font-mono">{viewingTeacherProfileModal.email}</p>
-                      {viewingTeacherProfileModal.phoneNumber && (
-                        <p className="text-xs text-amber-300 font-bold flex items-center justify-center sm:justify-start gap-1 mt-1">
-                          <Phone className="w-3.5 h-3.5" />
-                          <span>{viewingTeacherProfileModal.phoneNumber}</span>
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 pt-3 border-t border-mauve-800/80 text-xs">
-                    <div className="bg-white/10 p-2.5 rounded-xl">
-                      <span className="text-[9px] uppercase font-bold text-purple-200 block">Date of Birth</span>
-                      <span className="font-bold text-white text-sm block">
-                        {viewingTeacherProfileModal.dateOfBirth || 'Not Specified'}
-                      </span>
-                    </div>
-
-                    <div className="bg-white/10 p-2.5 rounded-xl">
-                      <span className="text-[9px] uppercase font-bold text-purple-200 block">Academic Qualification</span>
-                      <span className="font-bold text-amber-300 text-sm block truncate">
-                        {viewingTeacherProfileModal.qualification || 'Not Specified'}
-                      </span>
-                    </div>
-
-                    <div className="bg-white/10 p-2.5 rounded-xl">
-                      <span className="text-[9px] uppercase font-bold text-purple-200 block">Hometown</span>
-                      <span className="font-bold text-white text-sm block truncate">
-                        {viewingTeacherProfileModal.hometown || 'Not Specified'}
-                      </span>
-                    </div>
-
-                    <div className="bg-white/10 p-2.5 rounded-xl">
-                      <span className="text-[9px] uppercase font-bold text-purple-200 block">Ghana Card Number</span>
-                      <span className="font-bold text-amber-300 font-mono text-sm block truncate">
-                        {viewingTeacherProfileModal.ghanaCardNumber || 'Not Specified'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3 text-xs">
-                  <div className="border border-mauve-150 rounded-xl p-3 bg-mauve-50/30 space-y-1">
-                    <span className="font-bold text-mauve-900 block uppercase text-[10px] tracking-wider">Classroom Assignment</span>
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {viewingTeacherProfileModal.classes && viewingTeacherProfileModal.classes.length > 0 ? (
-                        viewingTeacherProfileModal.classes.map(c => (
-                          <span key={c} className="bg-mauve-800 text-white font-bold text-xs px-2.5 py-1 rounded-lg">
-                            {c}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-gray-500 italic">No classroom assigned</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="border border-mauve-150 rounded-xl p-3 bg-mauve-50/30 space-y-1">
-                    <span className="font-bold text-mauve-900 block uppercase text-[10px] tracking-wider">Syllabus Subject Expertise</span>
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {viewingTeacherProfileModal.subjects && viewingTeacherProfileModal.subjects.length > 0 ? (
-                        viewingTeacherProfileModal.subjects.map(sId => {
-                          const sub = subjects.find(s => s.id === sId);
-                          return (
-                            <span key={sId} className="bg-white border border-mauve-250 text-mauve-900 font-bold text-xs px-2.5 py-1 rounded-lg shadow-xs">
-                              {sub ? sub.name : sId}
-                            </span>
-                          );
-                        })
-                      ) : (
-                        <span className="text-gray-500 italic">No subject assigned</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-3 pt-3 border-t border-mauve-100">
-                  <button
-                    onClick={() => {
-                      const tToEdit = viewingTeacherProfileModal;
-                      setViewingTeacherProfileModal(null);
-                      setEditingTeacher(tToEdit);
-                      setTeacherForm({
-                        name: tToEdit.name,
-                        email: tToEdit.email,
-                        password: tToEdit.password || 'teacher123',
-                        level: tToEdit.level || 'PRIMARY',
-                        classes: tToEdit.classes || [],
-                        subjects: tToEdit.subjects || [],
-                        dateOfBirth: tToEdit.dateOfBirth || '',
-                        phoneNumber: tToEdit.phoneNumber || '',
-                        qualification: tToEdit.qualification || '',
-                        profilePicture: tToEdit.profilePicture || '',
-                        hometown: tToEdit.hometown || '',
-                        ghanaCardNumber: tToEdit.ghanaCardNumber || ''
-                      });
-                      setTeacherError('');
-                      setShowTeacherModal(true);
-                    }}
-                    className="flex-1 py-2.5 bg-mauve-800 hover:bg-mauve-900 text-white rounded-xl font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-xs"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                    <span>Edit Profile</span>
-                  </button>
-                  <button
-                    onClick={() => window.print()}
-                    className="py-2.5 px-4 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 rounded-xl font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-xs"
-                  >
-                    <Printer className="w-4 h-4" />
-                    <span>Print Badge</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Teacher Profile Cards Grid */}
         </div>
       )}
 
@@ -4623,6 +4527,221 @@ export default function AdminDashboard({
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Teacher Profile Credential Sheet Modal Overlay */}
+      {viewingTeacherProfileModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn no-print">
+          <div className="bg-white rounded-2xl border border-mauve-200 w-full max-w-xl p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start border-b border-mauve-100 pb-4">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-mauve-600 block">Eastfield Academy Official Staff Record</span>
+                <h3 className="font-display font-bold text-mauve-900 text-xl">Teacher Profile Credential Sheet</h3>
+              </div>
+              <button
+                onClick={() => setViewingTeacherProfileModal(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-gradient-to-br from-mauve-900 via-slate-900 to-purple-950 rounded-2xl p-6 text-white space-y-4 shadow-lg border border-mauve-800">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+                <div className="w-32 h-32 sm:w-36 sm:h-36 rounded-2xl overflow-hidden bg-mauve-800 border-4 border-amber-400 shrink-0 shadow-xl flex items-center justify-center">
+                  {viewingTeacherProfileModal.profilePicture ? (
+                    <img src={viewingTeacherProfileModal.profilePicture} alt={viewingTeacherProfileModal.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="font-display font-black text-2xl text-amber-300">
+                      {viewingTeacherProfileModal.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-center sm:text-left space-y-1 min-w-0 flex-1">
+                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-400 text-slate-950 inline-block mb-1">
+                    {viewingTeacherProfileModal.level || 'PRIMARY'} DIVISION TEACHER
+                  </span>
+                  <h4 className="font-display font-bold text-2xl text-white">{viewingTeacherProfileModal.name}</h4>
+                  <p className="text-xs text-purple-200 font-mono">{viewingTeacherProfileModal.email}</p>
+                  {viewingTeacherProfileModal.phoneNumber && (
+                    <p className="text-xs text-amber-300 font-bold flex items-center justify-center sm:justify-start gap-1 mt-1">
+                      <Phone className="w-3.5 h-3.5" />
+                      <span>{viewingTeacherProfileModal.phoneNumber}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-mauve-800/80 text-xs">
+                <div className="bg-blue-700/90 border border-blue-500/80 p-2.5 rounded-xl shadow-xs">
+                  <span className="text-[9px] uppercase font-bold text-blue-100 block">Date of Birth</span>
+                  <span className="font-bold text-white text-sm block">
+                    {viewingTeacherProfileModal.dateOfBirth || 'Not Specified'}
+                  </span>
+                </div>
+
+                <div className="bg-blue-700/90 border border-blue-500/80 p-2.5 rounded-xl shadow-xs">
+                  <span className="text-[9px] uppercase font-bold text-blue-100 block">Academic Qualification</span>
+                  <span className="font-bold text-amber-300 text-sm block truncate">
+                    {viewingTeacherProfileModal.qualification || 'Not Specified'}
+                  </span>
+                </div>
+
+                <div className="bg-blue-700/90 border border-blue-500/80 p-2.5 rounded-xl shadow-xs">
+                  <span className="text-[9px] uppercase font-bold text-blue-100 block">Hometown</span>
+                  <span className="font-bold text-white text-sm block truncate">
+                    {viewingTeacherProfileModal.hometown || 'Not Specified'}
+                  </span>
+                </div>
+
+                <div className="bg-blue-700/90 border border-blue-500/80 p-2.5 rounded-xl shadow-xs">
+                  <span className="text-[9px] uppercase font-bold text-blue-100 block">Ghana Card Number</span>
+                  <span className="font-bold text-amber-300 font-mono text-sm block truncate">
+                    {viewingTeacherProfileModal.ghanaCardNumber || 'Not Specified'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="border border-mauve-150 rounded-xl p-3 bg-mauve-50/30 space-y-1">
+                <span className="font-bold text-mauve-900 block uppercase text-[10px] tracking-wider">Classroom Assignment</span>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {viewingTeacherProfileModal.classes && viewingTeacherProfileModal.classes.length > 0 ? (
+                    viewingTeacherProfileModal.classes.map(c => (
+                      <span key={c} className="bg-mauve-800 text-white font-bold text-xs px-2.5 py-1 rounded-lg">
+                        {c}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-gray-500 italic">No classroom assigned</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="border border-mauve-150 rounded-xl p-3 bg-mauve-50/30 space-y-1">
+                <span className="font-bold text-mauve-900 block uppercase text-[10px] tracking-wider">Syllabus Subject Expertise</span>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {viewingTeacherProfileModal.subjects && viewingTeacherProfileModal.subjects.length > 0 ? (
+                    viewingTeacherProfileModal.subjects.map(sId => {
+                      const sub = subjects.find(s => s.id === sId);
+                      return (
+                        <span key={sId} className="bg-white border border-mauve-250 text-mauve-900 font-bold text-xs px-2.5 py-1 rounded-lg shadow-xs">
+                          {sub ? sub.name : sId}
+                        </span>
+                      );
+                    })
+                  ) : (
+                    <span className="text-gray-500 italic">No subject assigned</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-3 border-t border-mauve-100">
+              <button
+                onClick={() => {
+                  const t = viewingTeacherProfileModal;
+                  setViewingTeacherProfileModal(null);
+                  setSelectedWorkstationTeacher(t);
+                }}
+                className="flex-1 py-2.5 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl font-extrabold transition flex items-center justify-center gap-1.5 cursor-pointer text-xs shadow-md border border-amber-300"
+              >
+                <BookOpen className="w-4 h-4 text-slate-950" />
+                <span>Open Teacher Workstation</span>
+              </button>
+              <button
+                onClick={() => {
+                  const tToEdit = viewingTeacherProfileModal;
+                  setViewingTeacherProfileModal(null);
+                  setEditingTeacher(tToEdit);
+                  setTeacherForm({
+                    name: tToEdit.name,
+                    email: tToEdit.email,
+                    password: tToEdit.password || 'teacher123',
+                    level: tToEdit.level || 'PRIMARY',
+                    classes: tToEdit.classes || [],
+                    subjects: tToEdit.subjects || [],
+                    dateOfBirth: tToEdit.dateOfBirth || '',
+                    phoneNumber: tToEdit.phoneNumber || '',
+                    qualification: tToEdit.qualification || '',
+                    profilePicture: tToEdit.profilePicture || '',
+                    hometown: tToEdit.hometown || '',
+                    ghanaCardNumber: tToEdit.ghanaCardNumber || ''
+                  });
+                  setTeacherError('');
+                  setShowTeacherModal(true);
+                }}
+                className="py-2.5 px-4 bg-mauve-800 hover:bg-mauve-900 text-white rounded-xl font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-xs"
+              >
+                <Edit2 className="w-4 h-4" />
+                <span>Edit Profile</span>
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="py-2.5 px-3 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 rounded-xl font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-xs"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Print Badge</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Teacher Workstation Modal Overlay */}
+      {selectedWorkstationTeacher && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md p-2 sm:p-4 animate-fadeIn no-print">
+          <div className="bg-white rounded-2xl shadow-2xl border border-mauve-300 max-w-7xl mx-auto p-4 sm:p-6 space-y-4 my-4">
+            <div className="bg-gradient-to-r from-mauve-900 via-purple-900 to-slate-900 p-4 rounded-xl text-white flex justify-between items-center shadow-md">
+              <div className="flex items-center gap-3">
+                <div className="w-14 h-14 rounded-2xl bg-amber-400 text-slate-950 font-black flex items-center justify-center shrink-0 text-lg shadow-sm border-2 border-amber-300 overflow-hidden">
+                  {selectedWorkstationTeacher.profilePicture ? (
+                    <img src={selectedWorkstationTeacher.profilePicture} alt={selectedWorkstationTeacher.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span>{selectedWorkstationTeacher.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}</span>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="bg-amber-400 text-slate-950 font-black text-[10px] uppercase px-2 py-0.5 rounded shadow-xs">
+                      Teacher Workstation
+                    </span>
+                    <span className="text-xs text-purple-200 font-bold">{selectedWorkstationTeacher.level || 'PRIMARY'} DIVISION</span>
+                  </div>
+                  <h3 className="font-display font-bold text-xl text-white">{selectedWorkstationTeacher.name}</h3>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedWorkstationTeacher(null)}
+                className="bg-white/10 hover:bg-white/20 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition cursor-pointer flex items-center gap-1.5 border border-white/20 shadow-sm"
+              >
+                <X className="w-4 h-4" />
+                <span>Exit Workstation</span>
+              </button>
+            </div>
+
+            <TeacherDashboard
+              students={students}
+              teachers={teachers}
+              setTeachers={setTeachers}
+              subjects={subjects}
+              grades={grades}
+              setGrades={setGrades || (() => {})}
+              attendance={attendance}
+              setAttendance={setAttendance}
+              config={config}
+              classes={classes}
+              currentUser={selectedWorkstationTeacher}
+              setCurrentUser={(usr) => {
+                if (!usr) setSelectedWorkstationTeacher(null);
+                else setSelectedWorkstationTeacher(usr);
+              }}
+              isAdminAuthenticated={true}
+            />
           </div>
         </div>
       )}
