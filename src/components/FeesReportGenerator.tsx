@@ -161,7 +161,7 @@ export default function FeesReportGenerator({
       'Student Name',
       'Class',
       'Fee Type',
-      'Total Payable (GHS)',
+      'Amount Payable / Due (GHS)',
       'Amount Paid (GHS)',
       'Outstanding Arrears (GHS)',
       'Payment Method',

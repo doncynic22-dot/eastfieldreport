@@ -32,7 +32,11 @@ import {
   Mail,
   ExternalLink,
   BarChart3,
-  Trash2
+  Trash2,
+  Edit2,
+  Save,
+  Check,
+  Lock
 } from 'lucide-react';
 import { fetchSupabaseFeePayments, saveSupabaseFeePayments, deleteSupabaseFeePayment, deleteSupabaseFeePaymentsBatch, clearAllSupabaseFeePayments } from '../lib/supabase';
 
@@ -298,6 +302,14 @@ export default function FeesCollectionModule({
   const [toastMessage, setToastMessage] = useState<{ text: string; receiptNumber: string } | null>(
     null
   );
+
+  // EDIT PAYMENT MODAL STATE
+  const [editingPayment, setEditingPayment] = useState<FeePayment | null>(null);
+  const [editTotalFeeAmount, setEditTotalFeeAmount] = useState<number>(0);
+  const [editAmountPaid, setEditAmountPaid] = useState<number>(0);
+  const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('Cash');
+  const [editPaymentDate, setEditPaymentDate] = useState<string>('');
+  const [editRemarks, setEditRemarks] = useState<string>('');
 
   // Dynamically filter students based on selectedClass
   const filteredStudents = useMemo(() => {
@@ -581,6 +593,60 @@ export default function FeesCollectionModule({
     setToastMessage({
       text: `${count} receipt(s) deleted and synchronized with database!`,
       receiptNumber: '',
+    });
+  };
+
+  const handleOpenEditPayment = (p: FeePayment) => {
+    setEditingPayment(p);
+    setEditTotalFeeAmount(p.totalFeeAmount);
+    setEditAmountPaid(p.amountPaid);
+    setEditPaymentMethod(p.paymentMethod);
+    setEditPaymentDate(p.paymentDate);
+    setEditRemarks(p.remarks || '');
+  };
+
+  const handleSaveEditPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPayment) return;
+    if (editTotalFeeAmount < 0 || editAmountPaid < 0) {
+      alert('Please enter valid positive amounts for Amount Payable and Amount Paid.');
+      return;
+    }
+
+    const updatedStatus: PaymentStatus =
+      editTotalFeeAmount <= 0 || editAmountPaid >= editTotalFeeAmount
+        ? 'Paid'
+        : editAmountPaid > 0
+        ? 'Partial'
+        : 'Pending';
+
+    const updatedList = feePayments.map((p) =>
+      p.id === editingPayment.id
+        ? {
+            ...p,
+            totalFeeAmount: Number(editTotalFeeAmount),
+            amountPaid: Number(editAmountPaid),
+            paymentMethod: editPaymentMethod,
+            paymentDate: editPaymentDate,
+            status: updatedStatus,
+            remarks: editRemarks.trim(),
+          }
+        : p
+    );
+
+    setFeePayments(updatedList);
+    try {
+      localStorage.setItem('ea_fee_payments', JSON.stringify(updatedList));
+      localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(updatedList));
+      window.dispatchEvent(new Event('storage'));
+    } catch (err) {
+      console.error('Failed to update localStorage after editing payment', err);
+    }
+    await saveSupabaseFeePayments(updatedList);
+    setEditingPayment(null);
+    setToastMessage({
+      text: `Fee payment record (${editingPayment.receiptNumber}) updated successfully.`,
+      receiptNumber: editingPayment.receiptNumber,
     });
   };
 
@@ -1043,34 +1109,31 @@ export default function FeesCollectionModule({
               )}
             </div>
 
-            {/* ROW 3: AMOUNT PAID + TOTAL FEE AMOUNT + PAYMENT METHOD */}
+            {/* ROW 3: AMOUNT PAID + TOTAL FEE AMOUNT (AMOUNT PAYABLE / DUE) + PAYMENT METHOD */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-black uppercase tracking-wider text-white block">
-                    Total Payable (GH₵) *
+                <div className="flex items-center justify-between mb-1.5 gap-1">
+                  <label className="text-xs font-black uppercase tracking-wider text-white block truncate">
+                    Amount Payable / Due (GH₵) *
                   </label>
-                  {feeTypeOption === 'School Fees' && (
-                    <span className="text-[10px] font-extrabold text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded border border-purple-400/30">
-                      🔒 Balance Due (Uneditable)
-                    </span>
-                  )}
+                  <span className="text-[10px] font-extrabold text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded border border-purple-400/30 shrink-0 flex items-center gap-1">
+                    <Lock className="w-3 h-3" />
+                    <span>Uneditable</span>
+                  </span>
                 </div>
                 <input
                   type="number"
                   step="0.01"
                   min="0"
                   value={totalFeeAmount}
-                  readOnly={feeTypeOption === 'School Fees'}
-                  disabled={feeTypeOption === 'School Fees'}
-                  onChange={(e) => setTotalFeeAmount(Number(e.target.value))}
-                  className={`w-full p-3 rounded-xl border text-sm font-extrabold outline-none ${
-                    feeTypeOption === 'School Fees'
-                      ? 'border-purple-400/40 bg-white/5 text-purple-200 cursor-not-allowed'
-                      : 'border-white/30 bg-[#1A0438] text-white focus:ring-2 focus:ring-purple-400'
-                  }`}
+                  readOnly
+                  disabled
+                  className="w-full p-3 rounded-xl border border-purple-400/40 bg-white/5 text-purple-200 font-extrabold text-sm outline-none cursor-not-allowed font-mono shadow-inner"
                   required
                 />
+                <span className="text-[10px] text-purple-300 font-medium block mt-1">
+                  Locked: Exactly matches the student's assessed Amount Due.
+                </span>
               </div>
 
               <div>
@@ -1082,10 +1145,19 @@ export default function FeesCollectionModule({
                   step="0.01"
                   min="0"
                   value={amountPaid}
-                  onChange={(e) => setAmountPaid(Number(e.target.value))}
+                  onChange={(e) => setAmountPaid(parseFloat(e.target.value) || 0)}
                   className="w-full p-3 rounded-xl border border-emerald-400/50 bg-[#1A0438] text-emerald-300 font-extrabold text-sm focus:ring-2 focus:ring-emerald-400 outline-none"
                   required
                 />
+                <div className="flex items-center gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setAmountPaid(totalFeeAmount)}
+                    className="text-[10px] text-emerald-300 hover:text-emerald-200 font-extrabold underline cursor-pointer"
+                  >
+                    Pay in Full (GH₵ {totalFeeAmount.toFixed(2)})
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -1356,11 +1428,11 @@ export default function FeesCollectionModule({
                 <th className="py-3 px-3">Student & Class</th>
                 <th className="py-3 px-3">Fee Type</th>
                 <th className="py-3 px-3 text-right">Amount Paid</th>
-                <th className="py-3 px-3 text-right">Total Payable</th>
+                <th className="py-3 px-3 text-right">Amount Payable (Due)</th>
                 <th className="py-3 px-3">Method</th>
                 <th className="py-3 px-3">Status</th>
                 <th className="py-3 px-3">Date</th>
-                <th className="py-3 px-3 text-center">Receipt</th>
+                <th className="py-3 px-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/10 text-xs">
@@ -1425,6 +1497,14 @@ export default function FeesCollectionModule({
                       </td>
                       <td className="py-3 px-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => handleOpenEditPayment(p)}
+                            className="px-2.5 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 font-extrabold text-xs rounded-lg transition inline-flex items-center gap-1 shadow-sm cursor-pointer border border-blue-400/40"
+                            title="Edit payment details (Amount Payable, Amount Paid, etc.)"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
                           <button
                             onClick={() => setActiveReceiptModal(p)}
                             className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs rounded-lg transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer border border-purple-400/30"
@@ -1724,6 +1804,184 @@ export default function FeesCollectionModule({
                 </a>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* EDIT FEE PAYMENT MODAL */}
+      {editingPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn no-print">
+          <div className="bg-[#1A0438] text-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-purple-400/40 animate-scaleUp">
+            {/* MODAL HEADER */}
+            <div className="flex items-center justify-between p-5 bg-[#250850] border-b border-white/15">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                  <Edit2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-extrabold text-white">
+                    Edit Fee Record & Amount Payable
+                  </h3>
+                  <p className="text-xs text-purple-200">
+                    Receipt: <span className="font-mono font-bold text-amber-300">{editingPayment.receiptNumber}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingPayment(null)}
+                className="p-1.5 text-purple-300 hover:text-white hover:bg-white/10 rounded-lg transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* MODAL BODY */}
+            <form onSubmit={handleSaveEditPayment} className="p-5 space-y-4">
+              {/* STUDENT INFO BADGE */}
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-purple-200 block text-[11px] font-medium">Student</span>
+                  <span className="font-extrabold text-white text-sm">{editingPayment.studentName}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-purple-200 block text-[11px] font-medium">Class / Fee Type</span>
+                  <span className="font-bold text-purple-100">{editingPayment.className} • {editingPayment.feeType}</span>
+                </div>
+              </div>
+
+              {/* INPUT: AMOUNT PAYABLE / DUE (UNEDITABLE) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-black uppercase tracking-wider text-white">
+                    Amount Payable / Due (GH₵) *
+                  </label>
+                  <span className="text-[10px] font-bold text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded border border-purple-400/30 flex items-center gap-1">
+                    <Lock className="w-3 h-3" />
+                    <span>Uneditable</span>
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editTotalFeeAmount}
+                  readOnly
+                  disabled
+                  className="w-full p-3 rounded-xl border border-white/20 bg-white/5 text-purple-200 font-extrabold text-sm outline-none cursor-not-allowed font-mono shadow-inner"
+                  required
+                />
+                <span className="text-[10px] text-purple-300 font-medium block mt-1">
+                  Fixed bill amount recorded at time of transaction.
+                </span>
+              </div>
+
+              {/* INPUT: AMOUNT PAID */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                    Amount Paid (GH₵) *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setEditAmountPaid(editTotalFeeAmount)}
+                    className="text-[10px] text-emerald-300 hover:text-emerald-200 font-extrabold underline cursor-pointer"
+                  >
+                    Match Full Payable
+                  </button>
+                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editAmountPaid}
+                  onChange={(e) => setEditAmountPaid(parseFloat(e.target.value) || 0)}
+                  className="w-full p-3 rounded-xl border border-emerald-400/50 bg-[#120228] text-emerald-300 font-extrabold text-sm focus:ring-2 focus:ring-emerald-400 outline-none"
+                  required
+                />
+              </div>
+
+              {/* LIVE CALCULATION PREVIEW */}
+              <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-purple-950/60 border border-purple-400/30 text-xs font-mono">
+                <div>
+                  <span className="text-purple-300 block text-[10px] font-extrabold uppercase">Calculated Status</span>
+                  <span className={`font-extrabold text-xs uppercase ${
+                    editAmountPaid >= editTotalFeeAmount ? 'text-emerald-300' : editAmountPaid > 0 ? 'text-amber-300' : 'text-rose-300'
+                  }`}>
+                    {editAmountPaid >= editTotalFeeAmount ? 'Paid in Full' : editAmountPaid > 0 ? 'Partial Payment' : 'Pending'}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-purple-300 block text-[10px] font-extrabold uppercase">Remaining Balance</span>
+                  <span className="font-extrabold text-white text-xs">
+                    GH₵ {Math.max(0, editTotalFeeAmount - editAmountPaid).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* PAYMENT METHOD & DATE */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-black uppercase tracking-wider text-white block mb-1.5">
+                    Payment Method *
+                  </label>
+                  <select
+                    value={editPaymentMethod}
+                    onChange={(e) => setEditPaymentMethod(e.target.value as PaymentMethod)}
+                    className="w-full p-2.5 rounded-xl border border-white/30 bg-[#120228] text-white font-bold text-xs outline-none"
+                  >
+                    {PAYMENT_METHOD_OPTIONS.map((m) => (
+                      <option key={m} value={m} className="bg-[#120228] text-white">
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-black uppercase tracking-wider text-white block mb-1.5">
+                    Payment Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={editPaymentDate}
+                    onChange={(e) => setEditPaymentDate(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-white/30 bg-[#120228] text-white font-mono font-bold text-xs outline-none"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* REMARKS */}
+              <div>
+                <label className="text-xs font-black uppercase tracking-wider text-white block mb-1.5">
+                  Remarks / Notes
+                </label>
+                <input
+                  type="text"
+                  value={editRemarks}
+                  onChange={(e) => setEditRemarks(e.target.value)}
+                  placeholder="Optional payment notes..."
+                  className="w-full p-2.5 rounded-xl border border-white/30 bg-[#120228] text-white text-xs font-medium outline-none"
+                />
+              </div>
+
+              {/* ACTION BUTTONS */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setEditingPayment(null)}
+                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-extrabold uppercase tracking-wider transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider shadow-lg transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save Changes</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

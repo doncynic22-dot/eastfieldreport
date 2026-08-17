@@ -235,7 +235,7 @@ export default function FeesDashboard({
       'Student Name',
       'Class',
       'Fee Type',
-      'Total Payable (GHS)',
+      'Amount Payable / Due (GHS)',
       'Amount Paid (GHS)',
       'Balance Arrears (GHS)',
       'Payment Method',
@@ -636,7 +636,7 @@ export default function FeesDashboard({
                 <th className="py-3.5 px-3">Class</th>
                 <th className="py-3.5 px-3">Fee Type</th>
                 <th className="py-3.5 px-3 text-right">Amount Paid</th>
-                <th className="py-3.5 px-3 text-right">Total Payable</th>
+                <th className="py-3.5 px-3 text-right">Amount Payable (Due)</th>
                 <th className="py-3.5 px-3">Method</th>
                 <th className="py-3.5 px-3">Status</th>
                 <th className="py-3.5 px-3">Date</th>
