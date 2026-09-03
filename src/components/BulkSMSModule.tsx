@@ -1039,11 +1039,11 @@ export default function BulkSMSModule({
                     onChange={(e) => setLevelFilter(e.target.value)}
                     className="w-full text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
-                    <option value="ALL" className="bg-white text-slate-900 font-bold py-1">All Levels</option>
-                    <option value="NURSERY" className="bg-white text-slate-900 font-bold py-1">Nursery</option>
-                    <option value="KINDERGARTEN" className="bg-white text-slate-900 font-bold py-1">Kindergarten</option>
-                    <option value="PRIMARY" className="bg-white text-slate-900 font-bold py-1">Primary</option>
-                    <option value="JHS" className="bg-white text-slate-900 font-bold py-1">JHS</option>
+                    <option value="ALL">All Levels</option>
+                    <option value="NURSERY">Nursery</option>
+                    <option value="KINDERGARTEN">Kindergarten</option>
+                    <option value="PRIMARY">Primary</option>
+                    <option value="JHS">JHS</option>
                   </select>
                 </div>
 
@@ -1054,9 +1054,9 @@ export default function BulkSMSModule({
                     onChange={(e) => setClassFilter(e.target.value)}
                     className="w-full text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
-                    <option value="ALL" className="bg-white text-slate-900 font-bold py-1">All Classes</option>
+                    <option value="ALL">All Classes</option>
                     {allClassList.map(cls => (
-                      <option key={cls} value={cls} className="bg-white text-slate-900 font-bold py-1">{cls}</option>
+                      <option key={cls} value={cls}>{cls}</option>
                     ))}
                   </select>
                 </div>
@@ -1068,10 +1068,10 @@ export default function BulkSMSModule({
                     onChange={(e) => setFeeFilter(e.target.value as any)}
                     className="w-full text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-xl p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                   >
-                    <option value="ALL" className="bg-white text-slate-900 font-bold py-1">All Parents (Regardless of Fee Status)</option>
-                    <option value="DEBTORS" className="bg-white text-slate-900 font-bold py-1">Parents with Outstanding Fee Balance (&gt; GH₵ 0.00)</option>
-                    <option value="HIGH_DEBTORS" className="bg-white text-slate-900 font-bold py-1">Overdue High Debtors (&gt; GH₵ 200.00)</option>
-                    <option value="PAID" className="bg-white text-slate-900 font-bold py-1">Fully Paid Parents (GH₵ 0.00 Balance)</option>
+                    <option value="ALL">All Parents (Regardless of Fee Status)</option>
+                    <option value="DEBTORS">Parents with Outstanding Fee Balance (&gt; GH₵ 0.00)</option>
+                    <option value="HIGH_DEBTORS">Overdue High Debtors (&gt; GH₵ 200.00)</option>
+                    <option value="PAID">Fully Paid Parents (GH₵ 0.00 Balance)</option>
                   </select>
                 </div>
               </div>
@@ -1102,11 +1102,11 @@ export default function BulkSMSModule({
                     No pupil admission profiles match your current filter criteria.
                   </div>
                 ) : (
-                  filteredStudents.map((item) => {
+                  filteredStudents.map((item, idx) => {
                     const isChecked = selectedStudentIds.includes(item.student.id);
                     return (
                       <div
-                        key={item.student.id}
+                        key={`${item.student.id}-${idx}`}
                         onClick={() => handleToggleStudent(item.student.id)}
                         className={`p-3 flex items-center justify-between gap-3 text-xs transition cursor-pointer ${
                           isChecked ? 'bg-amber-100 text-slate-950 border-l-4 border-l-amber-500 font-extrabold shadow-xs' : 'bg-white text-slate-900 hover:bg-amber-50/50'
@@ -1511,12 +1511,12 @@ export default function BulkSMSModule({
 
             {/* Dispatch Live List */}
             <div className="border border-slate-200 rounded-xl p-3 max-h-60 overflow-y-auto space-y-1.5 text-xs bg-slate-50 text-slate-900">
-              {selectedStudentItems.map((item) => {
+              {selectedStudentItems.map((item, idx) => {
                 const res = dispatchResults[item.student.id];
                 const status = res?.status;
                 const msg = res?.msg;
                 return (
-                  <div key={item.student.id} className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 shadow-2xs">
+                  <div key={`${item.student.id}-${idx}`} className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 shadow-2xs">
                     <div>
                       <span className="font-extrabold text-slate-900">{item.student.name}</span>
                       <span className="text-[10px] text-slate-500 font-mono block">

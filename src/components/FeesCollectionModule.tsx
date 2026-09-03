@@ -299,9 +299,14 @@ export default function FeesCollectionModule({
   // RECEIPT MODAL STATE
   const [activeReceiptModal, setActiveReceiptModal] = useState<FeePayment | null>(null);
   const [showClearConfirmModal, setShowClearConfirmModal] = useState<boolean>(false);
-  const [toastMessage, setToastMessage] = useState<{ text: string; receiptNumber: string } | null>(
-    null
-  );
+  const [receiptToDelete, setReceiptToDelete] = useState<FeePayment | null>(null);
+  const [showBatchDeleteModal, setShowBatchDeleteModal] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<{
+    text: string;
+    receiptNumber?: string;
+    type?: 'success' | 'delete' | 'info';
+  } | null>(null);
 
   // EDIT PAYMENT MODAL STATE
   const [editingPayment, setEditingPayment] = useState<FeePayment | null>(null);
@@ -521,8 +526,25 @@ export default function FeesCollectionModule({
   };
 
   const isSameReceipt = (a: FeePayment, b: FeePayment): boolean => {
-    if (a.id && b.id && a.id === b.id) return true;
-    if (a.receiptNumber && b.receiptNumber && a.receiptNumber === b.receiptNumber) return true;
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const aId = a.id ? String(a.id).trim() : '';
+    const bId = b.id ? String(b.id).trim() : '';
+    if (aId && bId && aId === bId) return true;
+
+    const aRec = a.receiptNumber ? String(a.receiptNumber).trim().toUpperCase() : '';
+    const bRec = b.receiptNumber ? String(b.receiptNumber).trim().toUpperCase() : '';
+    if (aRec && bRec && aRec === bRec) return true;
+
+    if (
+      a.studentId === b.studentId &&
+      a.feeType === b.feeType &&
+      Number(a.amountPaid) === Number(b.amountPaid) &&
+      a.paymentDate === b.paymentDate &&
+      a.createdAt === b.createdAt
+    ) {
+      return true;
+    }
     return false;
   };
 
@@ -544,56 +566,97 @@ export default function FeesCollectionModule({
     }
   };
 
-  const handleDeleteSingleReceipt = async (p: FeePayment) => {
-    const updated = feePayments.filter((item) => !isSameReceipt(item, p));
-    setFeePayments(updated);
-    setSelectedReceiptIds((prev) => prev.filter((key) => key !== getReceiptKey(p)));
-    try {
-      localStorage.setItem('ea_fee_payments', JSON.stringify(updated));
-      localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(updated));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {
-      console.error('Failed to update localStorage after receipt delete', e);
-    }
-    await deleteSupabaseFeePayment({ id: p.id, receiptNumber: p.receiptNumber });
-    await saveSupabaseFeePayments(updated);
-    setToastMessage({
-      text: `Receipt ${p.receiptNumber} deleted and synchronized with database!`,
-      receiptNumber: '',
-    });
+  const handleDeleteSingleReceipt = (p: FeePayment) => {
+    setReceiptToDelete(p);
   };
 
-  const handleDeleteSelectedReceipts = async () => {
-    if (selectedReceiptIds.length === 0) return;
-    const count = selectedReceiptIds.length;
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete ${count} selected receipt(s)? This action cannot be undone.`
-    );
-    if (!confirmDelete) return;
-
-    const remaining = feePayments.filter((p, idx) => !selectedReceiptIds.includes(getReceiptKey(p, idx)));
-    const deleted = feePayments.filter((p, idx) => selectedReceiptIds.includes(getReceiptKey(p, idx)));
-
-    setFeePayments(remaining);
-    setSelectedReceiptIds([]);
-
+  const confirmDeleteSingleReceipt = async () => {
+    if (!receiptToDelete) return;
+    const p = receiptToDelete;
+    setIsDeleting(true);
     try {
-      localStorage.setItem('ea_fee_payments', JSON.stringify(remaining));
-      localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(remaining));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {
-      console.error('Failed to update localStorage after batch delete', e);
+      const updated = feePayments.filter((item) => !isSameReceipt(item, p));
+      setFeePayments(updated);
+      setSelectedReceiptIds((prev) => prev.filter((key) => key !== getReceiptKey(p)));
+
+      try {
+        localStorage.setItem('ea_fee_payments', JSON.stringify(updated));
+        localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(updated));
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {
+        console.error('Failed to update localStorage after receipt delete', e);
+      }
+
+      if (activeReceiptModal && isSameReceipt(activeReceiptModal, p)) {
+        setActiveReceiptModal(null);
+      }
+      if (editingPayment && isSameReceipt(editingPayment, p)) {
+        setEditingPayment(null);
+      }
+
+      await deleteSupabaseFeePayment({ id: p.id, receiptNumber: p.receiptNumber });
+      await saveSupabaseFeePayments(updated);
+
+      setToastMessage({
+        text: `Receipt ${p.receiptNumber} for ${p.studentName} (GH₵ ${p.amountPaid.toFixed(2)}) was permanently deleted.`,
+        type: 'delete',
+      });
+      setTimeout(() => setToastMessage(null), 5000);
+    } catch (err) {
+      console.error('Failed to delete fee receipt:', err);
+    } finally {
+      setIsDeleting(false);
+      setReceiptToDelete(null);
     }
+  };
 
-    await deleteSupabaseFeePaymentsBatch(
-      deleted.map((p) => ({ id: p.id, receiptNumber: p.receiptNumber }))
-    );
-    await saveSupabaseFeePayments(remaining);
+  const handleDeleteSelectedReceipts = () => {
+    if (selectedReceiptIds.length === 0) return;
+    setShowBatchDeleteModal(true);
+  };
 
-    setToastMessage({
-      text: `${count} receipt(s) deleted and synchronized with database!`,
-      receiptNumber: '',
-    });
+  const confirmDeleteSelectedReceipts = async () => {
+    if (selectedReceiptIds.length === 0) return;
+    setIsDeleting(true);
+    const count = selectedReceiptIds.length;
+    try {
+      const remaining = feePayments.filter((p, idx) => !selectedReceiptIds.includes(getReceiptKey(p, idx)));
+      const deleted = feePayments.filter((p, idx) => selectedReceiptIds.includes(getReceiptKey(p, idx)));
+
+      setFeePayments(remaining);
+      setSelectedReceiptIds([]);
+
+      try {
+        localStorage.setItem('ea_fee_payments', JSON.stringify(remaining));
+        localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(remaining));
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {
+        console.error('Failed to update localStorage after batch delete', e);
+      }
+
+      if (activeReceiptModal && deleted.some((d) => isSameReceipt(d, activeReceiptModal))) {
+        setActiveReceiptModal(null);
+      }
+      if (editingPayment && deleted.some((d) => isSameReceipt(d, editingPayment))) {
+        setEditingPayment(null);
+      }
+
+      await deleteSupabaseFeePaymentsBatch(
+        deleted.map((p) => ({ id: p.id, receiptNumber: p.receiptNumber }))
+      );
+      await saveSupabaseFeePayments(remaining);
+
+      setToastMessage({
+        text: `Successfully deleted ${count} selected receipt(s) from ledger and synchronized with database.`,
+        type: 'delete',
+      });
+      setTimeout(() => setToastMessage(null), 5000);
+    } catch (err) {
+      console.error('Failed to batch delete fee receipts:', err);
+    } finally {
+      setIsDeleting(false);
+      setShowBatchDeleteModal(false);
+    }
   };
 
   const handleOpenEditPayment = (p: FeePayment) => {
@@ -713,34 +776,48 @@ export default function FeesCollectionModule({
     <div className="space-y-6 animate-fadeIn pb-12">
       {/* TOAST CONFIRMATION BANNER */}
       {toastMessage && (
-        <div className="bg-emerald-50 border border-emerald-300 text-emerald-950 px-4 py-3 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md animate-fadeIn no-print">
+        <div
+          className={`border px-4 py-3 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md animate-fadeIn no-print ${
+            toastMessage.type === 'delete'
+              ? 'bg-rose-950/90 border-rose-500/50 text-rose-100'
+              : 'bg-emerald-950/90 border-emerald-500/50 text-emerald-100'
+          }`}
+        >
           <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            {toastMessage.type === 'delete' ? (
+              <Trash2 className="w-5 h-5 text-rose-400 shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            )}
             <div>
-              <p className="font-extrabold text-sm sm:text-base text-emerald-950">
+              <p className="font-extrabold text-sm sm:text-base text-white">
                 {toastMessage.text}
               </p>
-              <p className="text-xs text-emerald-800">
-                Receipt Number: <span className="font-mono font-bold">{toastMessage.receiptNumber}</span>
-              </p>
+              {toastMessage.receiptNumber && toastMessage.type !== 'delete' && (
+                <p className="text-xs text-emerald-200">
+                  Receipt Number: <span className="font-mono font-bold text-amber-300">{toastMessage.receiptNumber}</span>
+                </p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 self-end sm:self-center">
-            <button
-              onClick={() => {
-                const rec = feePayments.find(
-                  (p) => p.receiptNumber === toastMessage.receiptNumber
-                );
-                if (rec) setActiveReceiptModal(rec);
-              }}
-              className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print Receipt</span>
-            </button>
+            {toastMessage.receiptNumber && toastMessage.type !== 'delete' && (
+              <button
+                onClick={() => {
+                  const rec = feePayments.find(
+                    (p) => p.receiptNumber === toastMessage.receiptNumber
+                  );
+                  if (rec) setActiveReceiptModal(rec);
+                }}
+                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Receipt</span>
+              </button>
+            )}
             <button
               onClick={() => setToastMessage(null)}
-              className="p-1 text-emerald-700 hover:text-emerald-900 transition"
+              className="p-1 text-white/70 hover:text-white transition cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -862,10 +939,10 @@ export default function FeesCollectionModule({
                 <select
                   value={selectedClass}
                   onChange={(e) => setSelectedClass(e.target.value)}
-                  className="w-full p-3 rounded-xl border border-white/30 bg-[#1A0438] text-white font-extrabold text-sm focus:ring-2 focus:ring-purple-400 outline-none"
+                  className="w-full p-3 rounded-xl border-2 border-purple-300 bg-white text-mauve-950 font-bold text-sm focus:ring-2 focus:ring-purple-400 outline-none shadow-sm cursor-pointer"
                 >
                   {availableClasses.map((cls) => (
-                    <option key={cls} value={cls} className="bg-[#1A0438] text-white font-bold">
+                    <option key={cls} value={cls}>
                       {cls}
                     </option>
                   ))}
@@ -883,10 +960,10 @@ export default function FeesCollectionModule({
                 <select
                   value={feeTypeOption}
                   onChange={handleFeeTypeChange}
-                  className="w-full p-3 rounded-xl border border-white/30 bg-[#1A0438] text-white font-extrabold text-sm focus:ring-2 focus:ring-purple-400 outline-none"
+                  className="w-full p-3 rounded-xl border-2 border-purple-300 bg-white text-mauve-950 font-bold text-sm focus:ring-2 focus:ring-purple-400 outline-none shadow-sm cursor-pointer"
                 >
                   {availableFeeTypes.map((ft) => (
-                    <option key={ft} value={ft} className="bg-[#1A0438] text-white font-bold">
+                    <option key={ft} value={ft}>
                       {ft}
                     </option>
                   ))}
@@ -993,10 +1070,10 @@ export default function FeesCollectionModule({
                 <select
                   value={selectedStudentId}
                   onChange={(e) => setSelectedStudentId(e.target.value)}
-                  className="w-full p-3 rounded-xl border border-white/30 bg-[#1A0438] text-white font-extrabold text-sm focus:ring-2 focus:ring-purple-400 outline-none"
+                  className="w-full p-3 rounded-xl border-2 border-purple-300 bg-white text-mauve-950 font-bold text-sm focus:ring-2 focus:ring-purple-400 outline-none shadow-sm cursor-pointer"
                 >
-                  {filteredStudents.map((s) => (
-                    <option key={s.id} value={s.id} className="bg-[#1A0438] text-white font-bold">
+                  {filteredStudents.map((s, idx) => (
+                    <option key={`${s.id}-${idx}`} value={s.id}>
                       {s.name} (Roll: {s.rollNumber || s.id}) — Guardian: {s.guardianName}
                     </option>
                   ))}
@@ -1167,10 +1244,10 @@ export default function FeesCollectionModule({
                 <select
                   value={paymentMethod}
                   onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                  className="w-full p-3 rounded-xl border border-white/30 bg-[#1A0438] text-white font-extrabold text-sm focus:ring-2 focus:ring-purple-400 outline-none"
+                  className="w-full p-3 rounded-xl border-2 border-purple-300 bg-white text-mauve-950 font-bold text-sm focus:ring-2 focus:ring-purple-400 outline-none shadow-sm cursor-pointer"
                 >
                   {PAYMENT_METHOD_OPTIONS.map((m) => (
-                    <option key={m} value={m} className="bg-[#1A0438] text-white font-bold">
+                    <option key={m} value={m}>
                       {m}
                     </option>
                   ))}
@@ -1360,7 +1437,7 @@ export default function FeesCollectionModule({
             <select
               value={filterClass}
               onChange={(e) => setFilterClass(e.target.value)}
-              className="w-full p-2.5 rounded-xl border border-white/30 bg-[#1A0438] text-white text-xs font-bold outline-none"
+              className="w-full p-2.5 rounded-xl border-2 border-purple-300 bg-white text-mauve-950 text-xs font-bold outline-none shadow-sm cursor-pointer"
             >
               <option value="ALL">All Classes / Forms</option>
               {availableClasses.map((c) => (
@@ -1376,7 +1453,7 @@ export default function FeesCollectionModule({
             <select
               value={filterFeeType}
               onChange={(e) => setFilterFeeType(e.target.value)}
-              className="w-full p-2.5 rounded-xl border border-white/30 bg-[#1A0438] text-white text-xs font-bold outline-none"
+              className="w-full p-2.5 rounded-xl border-2 border-purple-300 bg-white text-mauve-950 text-xs font-bold outline-none shadow-sm cursor-pointer"
             >
               <option value="ALL">All Fee Types</option>
               <option value="DAILY_ALL" className="text-purple-300 font-extrabold">
@@ -1395,7 +1472,7 @@ export default function FeesCollectionModule({
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="w-full p-2.5 rounded-xl border border-white/30 bg-[#1A0438] text-white text-xs font-bold outline-none"
+              className="w-full p-2.5 rounded-xl border-2 border-purple-300 bg-white text-mauve-950 text-xs font-bold outline-none shadow-sm cursor-pointer"
             >
               <option value="ALL">All Payment Statuses</option>
               <option value="Paid">Paid in Full</option>
@@ -1441,7 +1518,7 @@ export default function FeesCollectionModule({
                   const isPaid = p.status === 'Paid';
                   const isPartial = p.status === 'Partial';
                   return (
-                    <tr key={p.id} className="hover:bg-white/5 transition">
+                    <tr key={`${p.id}-${idx}`} className="hover:bg-white/5 transition">
                       <td className="py-3 px-3">
                         <input
                           type="checkbox"
@@ -1537,6 +1614,120 @@ export default function FeesCollectionModule({
         </div>
       </div>
 
+      {/* SINGLE RECEIPT DELETE CONFIRMATION MODAL */}
+      {receiptToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn no-print">
+          <div className="bg-[#1A0438] text-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-rose-500/40 p-6 space-y-4 animate-scaleUp">
+            <div className="flex items-center gap-3 text-rose-300">
+              <div className="p-2.5 rounded-xl bg-rose-500/20 border border-rose-400/30">
+                <Trash2 className="w-6 h-6 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-extrabold text-white">Delete Fee Receipt?</h3>
+                <p className="text-xs text-rose-200">Permanent ledger & database deletion</p>
+              </div>
+            </div>
+
+            {/* RECEIPT SUMMARY CARD */}
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-2 text-xs">
+              <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                <span className="text-gray-300 font-medium">Receipt No:</span>
+                <span className="font-mono font-extrabold text-amber-300 text-sm">
+                  {receiptToDelete.receiptNumber}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 font-medium">Student:</span>
+                <span className="font-extrabold text-white">
+                  {receiptToDelete.studentName} ({receiptToDelete.className})
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 font-medium">Fee Type:</span>
+                <span className="font-bold text-purple-200">{receiptToDelete.feeType}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 font-medium">Amount Paid:</span>
+                <span className="font-mono font-extrabold text-emerald-400 text-sm">
+                  GH₵ {receiptToDelete.amountPaid.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 font-medium">Payment Date:</span>
+                <span className="font-mono text-gray-200">{receiptToDelete.paymentDate}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-300 leading-relaxed">
+              Are you sure you want to delete this recorded fee payment? The student balance and class ledger will recalculate immediately.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setReceiptToDelete(null)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={confirmDeleteSingleReceipt}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs transition shadow-lg cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isDeleting ? 'Deleting...' : 'Yes, Delete Receipt'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BATCH RECEIPT DELETE CONFIRMATION MODAL */}
+      {showBatchDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn no-print">
+          <div className="bg-[#1A0438] text-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-rose-500/40 p-6 space-y-4 animate-scaleUp">
+            <div className="flex items-center gap-3 text-rose-300">
+              <div className="p-2.5 rounded-xl bg-rose-500/20 border border-rose-400/30">
+                <Trash2 className="w-6 h-6 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-extrabold text-white">
+                  Delete {selectedReceiptIds.length} Selected Receipts?
+                </h3>
+                <p className="text-xs text-rose-200">Bulk permanent ledger deletion</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-300 leading-relaxed">
+              Are you sure you want to permanently delete <strong className="text-white font-bold">{selectedReceiptIds.length}</strong> selected fee receipt(s)? This will remove them from the ledger and recalculate student balances.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowBatchDeleteModal(false)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={confirmDeleteSelectedReceipts}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs transition shadow-lg cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isDeleting ? 'Deleting...' : `Yes, Delete ${selectedReceiptIds.length} Receipts`}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CLEAR ALL RECEIPTS CONFIRMATION MODAL */}
       {showClearConfirmModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
@@ -1577,8 +1768,9 @@ export default function FeesCollectionModule({
                   setShowClearConfirmModal(false);
                   setToastMessage({
                     text: 'All fee receipt records have been permanently cleared and synchronized with database!',
-                    receiptNumber: '',
+                    type: 'delete',
                   });
+                  setTimeout(() => setToastMessage(null), 5000);
                 }}
                 className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs transition shadow-lg cursor-pointer flex items-center gap-1.5"
               >
@@ -1607,6 +1799,14 @@ export default function FeesCollectionModule({
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setReceiptToDelete(activeReceiptModal)}
+                  className="px-3 py-2 bg-rose-600/80 hover:bg-rose-600 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 shadow-md cursor-pointer uppercase tracking-wider border border-rose-400/30"
+                  title="Delete this receipt record"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete Receipt</span>
+                </button>
+                <button
                   onClick={() => window.print()}
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 shadow-md cursor-pointer uppercase tracking-wider"
                 >
@@ -1615,7 +1815,7 @@ export default function FeesCollectionModule({
                 </button>
                 <button
                   onClick={() => setActiveReceiptModal(null)}
-                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition"
+                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1927,10 +2127,10 @@ export default function FeesCollectionModule({
                   <select
                     value={editPaymentMethod}
                     onChange={(e) => setEditPaymentMethod(e.target.value as PaymentMethod)}
-                    className="w-full p-2.5 rounded-xl border border-white/30 bg-[#120228] text-white font-bold text-xs outline-none"
+                    className="w-full p-2.5 rounded-xl border-2 border-purple-300 bg-white text-mauve-950 font-bold text-xs outline-none shadow-sm cursor-pointer"
                   >
                     {PAYMENT_METHOD_OPTIONS.map((m) => (
-                      <option key={m} value={m} className="bg-[#120228] text-white">
+                      <option key={m} value={m}>
                         {m}
                       </option>
                     ))}
@@ -1965,21 +2165,35 @@ export default function FeesCollectionModule({
               </div>
 
               {/* ACTION BUTTONS */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+              <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/10">
                 <button
                   type="button"
-                  onClick={() => setEditingPayment(null)}
-                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-extrabold uppercase tracking-wider transition cursor-pointer"
+                  onClick={() => {
+                    const toDelete = editingPayment;
+                    setEditingPayment(null);
+                    setReceiptToDelete(toDelete);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs font-extrabold uppercase tracking-wider transition cursor-pointer flex items-center gap-1.5"
                 >
-                  Cancel
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Record</span>
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider shadow-lg transition flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Save Changes</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingPayment(null)}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-extrabold uppercase tracking-wider transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider shadow-lg transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Save Changes</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

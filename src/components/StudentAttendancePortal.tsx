@@ -854,12 +854,12 @@ export default function StudentAttendancePortal({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 text-xs">
-                  {filteredStudents.map(student => {
+                  {filteredStudents.map((student, sIdx) => {
                     const status = getStudentStatusForDate(student.id);
                     const termSummary = getTermAttendanceSummary(student.id);
 
                     return (
-                      <tr key={student.id} className="hover:bg-mauve-50/40 transition">
+                      <tr key={`${student.id}-${sIdx}`} className="hover:bg-mauve-50/40 transition">
                         {/* Student Name & Avatar */}
                         <td className="p-3 pl-4">
                           <div className="flex items-center gap-3">
@@ -1022,7 +1022,7 @@ export default function StudentAttendancePortal({
                 {filteredStudents.map((student, idx) => {
                   const summary = getTermAttendanceSummary(student.id);
                   return (
-                    <tr key={student.id} className="hover:bg-gray-50">
+                    <tr key={`${student.id}-${idx}`} className="hover:bg-gray-50">
                       <td className="p-3 border-r border-gray-300 font-mono text-gray-500">
                         {idx + 1}
                       </td>

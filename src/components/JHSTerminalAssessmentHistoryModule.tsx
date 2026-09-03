@@ -147,11 +147,20 @@ export default function JHSTerminalAssessmentHistoryModule({
     return subjects.filter((s) => s.level === 'JHS' || !s.level);
   }, [subjects]);
 
-  // Filter JHS Students
+  // Filter JHS Students with strict deduplication
   const jhsStudents = useMemo(() => {
+    const seen = new Set<string>();
     return students.filter((st) => {
+      if (!st || !st.id) return false;
+      const cleanId = st.id.trim();
+      if (seen.has(cleanId)) return false;
       const cls = (st.className || '').toUpperCase();
-      return st.level === 'JHS' || cls.includes('JHS') || cls.includes('JUNIOR') || cls.includes('GRADUAT') || cls.includes('ALUMNI');
+      const isJhs = st.level === 'JHS' || cls.includes('JHS') || cls.includes('JUNIOR') || cls.includes('GRADUAT') || cls.includes('ALUMNI');
+      if (isJhs) {
+        seen.add(cleanId);
+        return true;
+      }
+      return false;
     });
   }, [students]);
 
@@ -581,7 +590,7 @@ export default function JHSTerminalAssessmentHistoryModule({
                   const avg = rec.overallAverage;
 
                   return (
-                    <tr key={rec.id} className="hover:bg-amber-50/50 transition">
+                    <tr key={`${rec.id}-${idx}`} className="hover:bg-amber-50/50 transition">
                       <td className="py-3 px-3.5 text-center font-mono font-bold text-slate-500 border-r border-slate-200">
                         {idx + 1}
                       </td>
@@ -687,8 +696,8 @@ export default function JHSTerminalAssessmentHistoryModule({
                     }}
                     className="w-full text-xs p-2.5 rounded-xl border border-slate-300 font-bold bg-white"
                   >
-                    {jhsStudents.map((st) => (
-                      <option key={st.id} value={st.id}>
+                    {jhsStudents.map((st, idx) => (
+                      <option key={`${st.id}-${idx}`} value={st.id}>
                         {st.name} ({st.rollNumber}) - {st.className}
                       </option>
                     ))}
@@ -1204,7 +1213,7 @@ export default function JHSTerminalAssessmentHistoryModule({
                       filteredRecords.map((rec, idx) => {
                         const formattedStudentName = rec.studentName ? rec.studentName.replace(/\s+/g, ' ') : '';
                         return (
-                          <tr key={rec.id} className="hover:bg-amber-50/40">
+                          <tr key={`${rec.id}-${idx}`} className="hover:bg-amber-50/40">
                             <td className="p-1 text-center border-r border-slate-300 font-mono text-slate-600 print:text-[6.5px] print:p-0.5">{idx + 1}</td>
                             <td className="p-1 border-r border-slate-300 font-bold text-slate-950 print:text-[6.5px] print:p-0.5 whitespace-nowrap overflow-hidden">
                               <span className="inline-block whitespace-nowrap">{formattedStudentName}</span>

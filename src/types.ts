@@ -147,6 +147,7 @@ export interface ReportConfig {
   selectedTemplate?: string; // 'dynamic' | 'compact' | 'high-fidelity' | 'classic'
   reopeningDate?: string; // e.g., '2026-09-15'
   lastPromotedYear?: string; // e.g., '2026/2027'
+  promotionUndoneYear?: string; // e.g., '2025/2026'
   lastPromotionDate?: string;
   prePromotionSnapshot?: Student[];
   autoPromoteOnReopening?: boolean;
@@ -157,6 +158,7 @@ export interface ReportConfig {
   showAttendanceSection?: boolean;
   accentColor?: string;
   watermarkText?: string;
+  updatedAt?: string;
 }
 
 export type FeeTypeCategory =
@@ -242,5 +244,59 @@ export interface SyncAuditLog {
   status: 'SUCCESS' | 'FAILED' | 'PENDING';
   details?: string;
   timestamp: string;
+  updatedAt?: string;
+}
+
+export type BookStockCategory = 'Textbook' | 'Customised Exercise Book' | 'Customised Textbook';
+
+export interface BookStockItem {
+  id: string;
+  title: string;
+  category: BookStockCategory;
+  publication: string;
+  subjectType: string;
+  targetClass: string;
+  unitPrice: number;
+  costPrice?: number;
+  quantityInStock: number;
+  quantitySold: number;
+  quantityRemaining: number;
+  lowStockThreshold: number;
+  shelfLocation?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BookSaleItem {
+  bookId: string;
+  title: string;
+  category: BookStockCategory;
+  publication: string;
+  subjectType: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+}
+
+export interface BookSaleRecord {
+  id: string;
+  receiptNumber: string;
+  buyerName: string;
+  buyerType: 'Student' | 'Parent' | 'Teacher' | 'Walk-in / Other';
+  studentId?: string;
+  className?: string;
+  contactNumber?: string;
+  items: BookSaleItem[];
+  subtotal: number;
+  discount: number;
+  totalAmount: number;
+  paymentMethod: PaymentMethod;
+  paymentReference?: string;
+  saleDate: string; // YYYY-MM-DD
+  saleTime: string; // HH:mm
+  recordedBy: string;
+  remarks?: string;
+  createdAt: string;
   updatedAt?: string;
 }

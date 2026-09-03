@@ -34,7 +34,9 @@ import {
   Tv,
   Tag,
   LayoutGrid,
-  ChefHat
+  ChefHat,
+  Library,
+  BarChart3
 } from 'lucide-react';
 
 export type { ClassroomInventoryRecord, CustomInventoryItem };
@@ -43,9 +45,13 @@ const DEFAULT_INVENTORY_DATA: ClassroomInventoryRecord[] = [];
 
 interface SchoolInventoryModuleProps {
   allSchoolClasses?: string[];
+  onOpenBookInventory?: () => void;
 }
 
-export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolInventoryModuleProps) {
+export default function SchoolInventoryModule({
+  allSchoolClasses = [],
+  onOpenBookInventory
+}: SchoolInventoryModuleProps) {
   const [inventory, setInventory] = useState<ClassroomInventoryRecord[]>(() => {
     try {
       const saved = localStorage.getItem('ea_school_inventory') || localStorage.getItem('mock_supabase_ea_inventory');
@@ -667,6 +673,36 @@ export default function SchoolInventoryModule({ allSchoolClasses = [] }: SchoolI
           </button>
         </div>
       </div>
+
+      {/* QUICK LINK TO BOOK INVENTORY & SALES PERFORMANCE CHART */}
+      {onOpenBookInventory && (
+        <div className="bg-gradient-to-r from-purple-950/80 via-[#18042f] to-indigo-950/80 p-4 rounded-2xl border border-purple-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md no-print">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-600/30 border border-purple-500/40 text-purple-300 flex items-center justify-center shrink-0">
+              <BarChart3 className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <div className="text-white text-sm font-bold flex items-center gap-2">
+                <span>Textbook Stock Dashboard & POS Sales Ledger</span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                  Recharts Visualizer
+                </span>
+              </div>
+              <p className="text-xs text-purple-200/80">
+                Manage Ghana syllabus textbooks, custom exercise books, daily cash/MoMo receipts, and comparative Total Sales vs. Remaining Stock bar charts.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onOpenBookInventory}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl transition shadow flex items-center justify-center gap-2 cursor-pointer shrink-0 uppercase tracking-wider"
+          >
+            <Library className="w-4 h-4" />
+            <span>Open Textbook Stock Dashboard →</span>
+          </button>
+        </div>
+      )}
 
       {/* SUM TOTAL METRICS GRID */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">

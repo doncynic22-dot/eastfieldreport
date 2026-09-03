@@ -83,12 +83,20 @@ export default function JHS3MockExamModule({
     }
   }, [isAdmin, viewMode]);
 
-  // Filter JHS 3 Students specifically
+  // Filter JHS 3 Students specifically with strict deduplication
   const jhs3Students = useMemo(() => {
+    const seen = new Set<string>();
     return students.filter((s) => {
-      if (!s.className) return false;
+      if (!s || !s.id || !s.className) return false;
+      const cleanId = s.id.trim();
+      if (seen.has(cleanId)) return false;
       const cls = s.className.trim().toUpperCase();
-      return cls === 'JHS 3' || cls === 'JHS3' || cls === 'JUNIOR HIGH SCHOOL 3';
+      const isJhs3 = cls === 'JHS 3' || cls === 'JHS3' || cls === 'JUNIOR HIGH SCHOOL 3';
+      if (isJhs3) {
+        seen.add(cleanId);
+        return true;
+      }
+      return false;
     });
   }, [students]);
 
@@ -767,14 +775,14 @@ export default function JHS3MockExamModule({
                       </td>
                     </tr>
                   ) : (
-                    filteredBroadsheet.map((row) => {
+                    filteredBroadsheet.map((row, rIdx) => {
                       const metaAggr = getBECEGradeMeta(
                         Math.min(9, Math.max(1, Math.round(row.calcs.totalAggregate / 6)))
                       );
 
                       return (
                         <tr
-                          key={row.student.id}
+                          key={`${row.student.id}-${rIdx}`}
                           className={`hover:bg-blue-50/40 transition ${
                             row.rank === 1 ? 'bg-amber-50/60 font-semibold' : ''
                           }`}
@@ -998,7 +1006,7 @@ export default function JHS3MockExamModule({
 
                   return (
                     <div
-                      key={st.id}
+                      key={`${st.id}-${idx}`}
                       className="p-3.5 bg-slate-50 hover:bg-violet-50/50 rounded-xl border-2 border-slate-200 focus-within:border-violet-500 shadow-2xs transition flex items-center justify-between gap-3"
                     >
                       {/* LEFT: Pupil Number & Student Name */}
@@ -1075,7 +1083,7 @@ export default function JHS3MockExamModule({
                       const gradeMeta = computedGrade !== null ? getBECEGradeMeta(computedGrade) : null;
 
                       return (
-                        <tr key={st.id} className="hover:bg-violet-50/50 transition">
+                        <tr key={`${st.id}-${idx}`} className="hover:bg-violet-50/50 transition">
                           <td className="py-3 px-3.5 text-center border-r border-slate-200 font-mono font-black text-slate-600 align-middle">
                             {idx + 1}
                           </td>

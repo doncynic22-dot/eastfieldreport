@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord } from '../types';
-import { DEFAULT_INVENTORY_DATA } from '../data/mockData';
+import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord, BookStockItem, BookSaleRecord } from '../types';
+import { DEFAULT_INVENTORY_DATA, DEFAULT_BOOK_STOCK_ITEMS, DEFAULT_BOOK_SALES } from '../data/mockData';
 
 // Helper to retrieve credentials from env or localStorage
 export function getSupabaseCredentials() {
@@ -329,6 +329,49 @@ CREATE TABLE IF NOT EXISTS public.ea_jhs_mock_exams (
 );
 ALTER TABLE public.ea_jhs_mock_exams DISABLE ROW LEVEL SECURITY;
 
+CREATE TABLE IF NOT EXISTS public.ea_book_stock (
+  id VARCHAR PRIMARY KEY,
+  title VARCHAR NOT NULL,
+  category VARCHAR NOT NULL DEFAULT 'Textbook',
+  publication VARCHAR NOT NULL,
+  subject_type VARCHAR NOT NULL,
+  target_class VARCHAR DEFAULT 'All Classes',
+  unit_price NUMERIC DEFAULT 0,
+  cost_price NUMERIC DEFAULT 0,
+  quantity_in_stock INTEGER DEFAULT 0,
+  quantity_sold INTEGER DEFAULT 0,
+  quantity_remaining INTEGER DEFAULT 0,
+  low_stock_threshold INTEGER DEFAULT 20,
+  shelf_location VARCHAR,
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+ALTER TABLE public.ea_book_stock DISABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS public.ea_book_sales (
+  id VARCHAR PRIMARY KEY,
+  receipt_number VARCHAR NOT NULL,
+  buyer_name VARCHAR NOT NULL,
+  buyer_type VARCHAR DEFAULT 'Parent',
+  student_id VARCHAR,
+  class_name VARCHAR,
+  contact_number VARCHAR,
+  items JSONB DEFAULT '[]'::jsonb,
+  subtotal NUMERIC DEFAULT 0,
+  discount NUMERIC DEFAULT 0,
+  total_amount NUMERIC DEFAULT 0,
+  payment_method VARCHAR DEFAULT 'Cash',
+  payment_reference VARCHAR,
+  sale_date VARCHAR NOT NULL,
+  sale_time VARCHAR,
+  recorded_by VARCHAR,
+  remarks TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+ALTER TABLE public.ea_book_sales DISABLE ROW LEVEL SECURITY;
+
 -- 8. Disable Row Level Security (RLS) on all tables to ensure public frontend sync operates correctly
 ALTER TABLE public.ea_config DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_students DISABLE ROW LEVEL SECURITY;
@@ -341,13 +384,8 @@ ALTER TABLE public.ea_fee_structures DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_daily_collections DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_sync_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_inventory DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_grades DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_attendance DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_bills DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_fee_payments DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_fee_structures DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_daily_collections DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_sync_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_book_stock DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_book_sales DISABLE ROW LEVEL SECURITY;
 
 -- 9. Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';
@@ -846,11 +884,14 @@ export async function testSupabaseConnection(): Promise<{ success: boolean; mess
           message: 'Connected to Supabase, but schema tables are missing! Please click "Execute Setup Script" or run the SQL schema in your Supabase SQL editor.' 
         };
       }
+      if (isMissingTableOrConnectionError(error)) {
+        return { success: false, message: 'Supabase cloud endpoint is unreachable. Local offline storage is active.' };
+      }
       return { success: false, message: `Supabase Error: ${error.message} (Code ${error.code})` };
     }
     return { success: true, message: 'Successfully connected and verified database tables!' };
   } catch (err: any) {
-    return { success: false, message: `Network/Connection Error: ${err.message || err}` };
+    return { success: false, message: 'Supabase cloud endpoint is unreachable. Local offline storage is active.' };
   }
 }
 
@@ -860,39 +901,44 @@ async function safeUpsert(table: string, payload: any, client: SupabaseClient, o
   let attempts = 0;
   const maxAttempts = 15; // safety limit to prevent infinite loops
 
-  while (attempts < maxAttempts) {
-    const upsertOptions = onConflict ? { onConflict } : undefined;
-    const { data, error } = await client.from(table).upsert(currentPayload, upsertOptions);
-    if (!error) {
-      return { data, error: null };
-    }
-
-    // Check if it's a missing column error (PGRST204)
-    if (error.code === 'PGRST204' || error.message?.includes('schema cache') || error.message?.includes('column')) {
-      const match = error.message.match(/Could not find the '([^']+)' column/);
-      if (match && match[1]) {
-        const missingColumn = match[1];
-        console.warn(`[Supabase SafeUpsert] Column '${missingColumn}' is missing from table '${table}'. Dynamic healing active - omitting column and retrying.`);
-        
-        // Remove the missing column from payload
-        if (Array.isArray(currentPayload)) {
-          currentPayload = currentPayload.map(item => {
-            const newItem = { ...item };
-            delete newItem[missingColumn];
-            return newItem;
-          });
-        } else {
-          delete currentPayload[missingColumn];
-        }
-        attempts++;
-        continue;
+  try {
+    while (attempts < maxAttempts) {
+      const upsertOptions = onConflict ? { onConflict } : undefined;
+      const { data, error } = await client.from(table).upsert(currentPayload, upsertOptions);
+      if (!error) {
+        return { data, error: null };
       }
+
+      // Check if it's a missing column error (PGRST204)
+      if (error.code === 'PGRST204' || error.message?.includes('schema cache') || error.message?.includes('column')) {
+        const match = error.message.match(/Could not find the '([^']+)' column/);
+        if (match && match[1]) {
+          const missingColumn = match[1];
+          console.warn(`[Supabase SafeUpsert] Column '${missingColumn}' is missing from table '${table}'. Dynamic healing active - omitting column and retrying.`);
+          
+          // Remove the missing column from payload
+          if (Array.isArray(currentPayload)) {
+            currentPayload = currentPayload.map(item => {
+              const newItem = { ...item };
+              delete newItem[missingColumn];
+              return newItem;
+            });
+          } else {
+            delete currentPayload[missingColumn];
+          }
+          attempts++;
+          continue;
+        }
+      }
+      
+      // For other errors, return them
+      return { data: null, error };
     }
-    
-    // For other errors, return them
-    return { data: null, error };
+    return { data: null, error: { message: 'Max healing attempts reached', code: 'HEALING_FAILED' } };
+  } catch (err: any) {
+    console.warn(`[Supabase SafeUpsert] Network or fetch exception on table ${table}:`, err);
+    return { data: null, error: { message: err?.message || 'Failed to fetch', code: 'NETWORK_ERROR' } };
   }
-  return { data: null, error: { message: 'Max healing attempts reached', code: 'HEALING_FAILED' } };
 }
 
 // Helper to check if database table is missing or network/fetch connection failed
@@ -910,11 +956,15 @@ function isMissingTableOrConnectionError(error: any): boolean {
   return (
     isMissingTableError(error) ||
     code === 'TypeError' ||
+    code === 'NETWORK_ERROR' ||
     message.includes('Failed to fetch') ||
+    message.includes('failed to fetch') ||
     message.includes('network') ||
+    message.includes('Network') ||
     message.includes('fetch') ||
     message.includes('Failed to connect') ||
-    message.includes('URL and Anon Key')
+    message.includes('URL and Anon Key') ||
+    message.includes('unreachable')
   );
 }
 
@@ -1002,6 +1052,8 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
       selectedTemplate: data.report_template || 'dynamic',
       reopeningDate: data.reopening_date || undefined,
       lastPromotedYear: data.last_promoted_year || undefined,
+      promotionUndoneYear: data.promotion_undone_year || undefined,
+      prePromotionSnapshot: data.pre_promotion_snapshot || undefined,
       autoPromoteOnReopening: data.auto_promote_on_reopening !== undefined ? data.auto_promote_on_reopening : true,
       schoolMotto: data.school_motto || 'Knowledge, Character & Excellence',
       customNoticeNote: data.custom_notice_note || undefined,
@@ -1009,7 +1061,8 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
       showConductColumn: data.show_conduct_column !== undefined ? data.show_conduct_column : true,
       showAttendanceSection: data.show_attendance_section !== undefined ? data.show_attendance_section : true,
       accentColor: data.accent_color || '#1e1b4b',
-      watermarkText: data.watermark_text || undefined
+      watermarkText: data.watermark_text || undefined,
+      updatedAt: data.updated_at || undefined
     };
   } catch (err: any) {
     if (isMissingTableOrConnectionError(err)) {
@@ -1021,9 +1074,12 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
 }
 
 export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean> {
+  const updatedIso = config.updatedAt || new Date().toISOString();
+  const configWithTimestamp = { ...config, updatedAt: updatedIso };
+
   // Always persist to local storage immediately
-  localStorage.setItem('mock_supabase_ea_config', JSON.stringify(config));
-  localStorage.setItem('ea_config', JSON.stringify(config));
+  localStorage.setItem('mock_supabase_ea_config', JSON.stringify(configWithTimestamp));
+  localStorage.setItem('ea_config', JSON.stringify(configWithTimestamp));
 
   const client = getSupabaseClient();
   if (!client) return true;
@@ -1055,6 +1111,8 @@ export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean>
       report_template: config.selectedTemplate || 'dynamic',
       reopening_date: config.reopeningDate || null,
       last_promoted_year: config.lastPromotedYear || null,
+      promotion_undone_year: config.promotionUndoneYear || null,
+      pre_promotion_snapshot: config.prePromotionSnapshot || null,
       auto_promote_on_reopening: config.autoPromoteOnReopening !== undefined ? config.autoPromoteOnReopening : true,
       school_motto: config.schoolMotto || null,
       custom_notice_note: config.customNoticeNote || null,
@@ -1091,21 +1149,162 @@ export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean>
   }
 }
 
+// Helper to track deleted student IDs and identifiers in localStorage
+export function getDeletedStudentIds(): string[] {
+  try {
+    const saved = localStorage.getItem('ea_deleted_student_ids');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
+export function recordDeletedStudentId(id: string, rollNumber?: string, studentName?: string): void {
+  if (!id && !rollNumber && !studentName) return;
+  try {
+    const current = getDeletedStudentIds();
+    const toAdd: string[] = [];
+    if (id) toAdd.push(id.trim());
+    if (rollNumber) {
+      const r = rollNumber.trim();
+      toAdd.push(r);
+      const cleanR = r.replace(/[^A-Za-z0-9]/g, '');
+      if (cleanR) toAdd.push(cleanR);
+    }
+    if (studentName) {
+      const n = studentName.trim().toLowerCase();
+      if (n) toAdd.push(n);
+    }
+    const currentLower = new Set(current.map(x => String(x).toLowerCase().trim()));
+    const newItems = toAdd.filter(x => !currentLower.has(x.toLowerCase().trim()));
+    if (newItems.length > 0) {
+      localStorage.setItem('ea_deleted_student_ids', JSON.stringify([...current, ...newItems]));
+    }
+  } catch (e) {}
+}
+
+export function isStudentDeleted(student?: { id?: string; rollNumber?: string; name?: string } | null): boolean {
+  if (!student) return false;
+  const deleted = getDeletedStudentIds();
+  if (deleted.length === 0) return false;
+  const deletedSet = new Set(deleted.map(x => String(x).toLowerCase().trim()));
+  
+  if (student.id && deletedSet.has(student.id.toLowerCase().trim())) return true;
+  if (student.rollNumber) {
+    const r = student.rollNumber.toLowerCase().trim();
+    const cleanR = r.replace(/[^a-z0-9]/g, '');
+    if (deletedSet.has(r) || (cleanR && deletedSet.has(cleanR))) return true;
+  }
+  if (student.name) {
+    const n = student.name.toLowerCase().trim();
+    if (deletedSet.has(n)) return true;
+  }
+  return false;
+}
+
+export function removeDeletedStudentId(id: string): void {
+  if (!id) return;
+  try {
+    const current = getDeletedStudentIds();
+    const idLower = id.toLowerCase().trim();
+    const filtered = current.filter(item => item.toLowerCase().trim() !== idLower);
+    localStorage.setItem('ea_deleted_student_ids', JSON.stringify(filtered));
+  } catch (e) {}
+}
+
+// Helper to track deleted teacher IDs in localStorage
+export function getDeletedTeacherIds(): string[] {
+  try {
+    const saved = localStorage.getItem('ea_deleted_teacher_ids');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
+export function recordDeletedTeacherId(id: string, email?: string, name?: string): void {
+  if (!id && !email && !name) return;
+  try {
+    const current = getDeletedTeacherIds();
+    const toAdd: string[] = [];
+    if (id) toAdd.push(id.trim());
+    if (email) toAdd.push(email.trim().toLowerCase());
+    if (name) toAdd.push(name.trim().toLowerCase());
+    const currentLower = new Set(current.map(x => String(x).toLowerCase().trim()));
+    const newItems = toAdd.filter(x => !currentLower.has(x.toLowerCase().trim()));
+    if (newItems.length > 0) {
+      localStorage.setItem('ea_deleted_teacher_ids', JSON.stringify([...current, ...newItems]));
+    }
+  } catch (e) {}
+}
+
+export function removeDeletedTeacherId(id: string): void {
+  if (!id) return;
+  try {
+    const current = getDeletedTeacherIds();
+    const idLower = id.toLowerCase().trim();
+    const filtered = current.filter(item => item.toLowerCase().trim() !== idLower);
+    localStorage.setItem('ea_deleted_teacher_ids', JSON.stringify(filtered));
+  } catch (e) {}
+}
+
 // 2. SYNC STUDENTS
 export async function fetchSupabaseStudents(): Promise<Student[] | null> {
+  const filterDeleted = (list: Student[]) => {
+    return list.filter(s => !isStudentDeleted(s));
+  };
+
   const client = getSupabaseClient();
-  if (!client) return null;
+  if (!client) {
+    const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return filterDeleted(parsed);
+      } catch (e) {}
+    }
+    return null;
+  }
   try {
+    // 1. Sync any recent DELETE_STUDENT logs to ensure global deletion propagation
+    try {
+      const { data: logs } = await client
+        .from('ea_sync_logs')
+        .select('*')
+        .eq('action_type', 'DELETE_STUDENT')
+        .order('timestamp', { ascending: false })
+        .limit(100);
+      if (logs && Array.isArray(logs)) {
+        logs.forEach((log: any) => {
+          const details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {});
+          const id = details.id || details.studentId;
+          const rollNumber = details.rollNumber;
+          const studentName = details.studentName || details.name;
+          recordDeletedStudentId(id, rollNumber, studentName);
+        });
+      }
+    } catch (logErr) {}
+
     const { data, error } = await client.from('ea_students').select('*');
     if (error) {
       if (isMissingTableOrConnectionError(error)) {
         const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
-        return cached ? JSON.parse(cached) : null;
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) return filterDeleted(parsed);
+          } catch (e) {}
+        }
+        return null;
       }
       return null;
     }
     if (!data) return null;
-    return data.map(item => ({
+    const mapped = data.map(item => ({
       id: item.id,
       name: item.name || '',
       rollNumber: item.roll_number || '',
@@ -1116,20 +1315,46 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       guardianPhone: item.guardian_phone || '',
       photoUrl: item.photo_url || '',
     }));
+
+    // If Supabase returned records that are marked deleted in tombstone registry, purge them from DB in background
+    const recordsToPurge = mapped.filter(s => isStudentDeleted(s));
+    if (recordsToPurge.length > 0) {
+      const purgeIds = recordsToPurge.map(s => s.id);
+      client.from('ea_grades').delete().in('student_id', purgeIds).then(() => {});
+      client.from('ea_attendance').delete().in('student_id', purgeIds).then(() => {});
+      client.from('ea_bills').delete().in('student_id', purgeIds).then(() => {});
+      client.from('ea_fee_payments').delete().in('student_id', purgeIds).then(() => {});
+      client.from('ea_jhs_mock_exams').delete().in('student_id', purgeIds).then(() => {});
+      client.from('ea_students').delete().in('id', purgeIds).then(() => {});
+    }
+
+    return filterDeleted(mapped);
   } catch (err: any) {
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
-      return cached ? JSON.parse(cached) : null;
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return filterDeleted(parsed);
+        } catch (e) {}
+      }
     }
     return null;
   }
 }
 
 export async function saveSupabaseStudents(students: Student[]): Promise<boolean> {
+  // Filter out any students that have been marked deleted
+  const validStudents = students.filter(s => !isStudentDeleted(s));
+
+  // Always persist to local cache immediately to guarantee offline/local persistence
+  localStorage.setItem('mock_supabase_ea_students', JSON.stringify(validStudents));
+  localStorage.setItem('ea_students', JSON.stringify(validStudents));
+
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) return true;
   try {
-    const payloads = students.map(s => ({
+    const payloads = validStudents.map(s => ({
       id: s.id,
       name: s.name,
       roll_number: s.rollNumber,
@@ -1144,7 +1369,7 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
     let { error } = await safeUpsert('ea_students', payloads, client);
     if (error && (error.message?.includes('photo_url') || error.message?.includes('guardian_phone') || error.code === '42703')) {
       console.warn('Supabase ea_students table missing photo_url/guardian_phone column. Retrying without new columns until SQL migration is run.');
-      const legacyPayloads = students.map(s => ({
+      const legacyPayloads = validStudents.map(s => ({
         id: s.id,
         name: s.name,
         roll_number: s.rollNumber,
@@ -1159,55 +1384,87 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
     }
     if (error) {
       if (isMissingTableOrConnectionError(error)) {
-        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(students));
         return true;
       }
       return false;
     }
     
-    // Prune deleted students
-    if (students.length === 0) {
-      await client.from('ea_students').delete().not('id', 'is', null);
-    } else {
-      const { data: existingRows } = await client.from('ea_students').select('id');
-      if (existingRows && existingRows.length > 0) {
-        const activeIds = new Set(students.map(s => String(s.id)));
-        const toDeleteIds = existingRows
-          .filter(row => !activeIds.has(String(row.id)))
-          .map(row => row.id)
-          .filter(Boolean);
-        if (toDeleteIds.length > 0) {
-          await client.from('ea_students').delete().in('id', toDeleteIds);
+    // Prune deleted students safely
+    try {
+      if (validStudents.length === 0) {
+        await client.from('ea_grades').delete().not('id', 'is', null);
+        await client.from('ea_attendance').delete().not('id', 'is', null);
+        await client.from('ea_bills').delete().not('id', 'is', null);
+        await client.from('ea_fee_payments').delete().not('id', 'is', null);
+        await client.from('ea_students').delete().not('id', 'is', null);
+      } else {
+        const { data: existingRows } = await client.from('ea_students').select('id');
+        const activeIds = new Set(validStudents.map(s => String(s.id)));
+        const tombstoneIds = getDeletedStudentIds().filter(Boolean);
+        
+        let toDeleteIds: string[] = [];
+        if (existingRows && existingRows.length > 0) {
+          toDeleteIds = existingRows
+            .filter(row => !activeIds.has(String(row.id)))
+            .map(row => row.id)
+            .filter(Boolean);
+        }
+        const combinedDeleteIds = Array.from(new Set([...toDeleteIds, ...tombstoneIds]));
+        if (combinedDeleteIds.length > 0) {
+          await client.from('ea_grades').delete().in('student_id', combinedDeleteIds);
+          await client.from('ea_attendance').delete().in('student_id', combinedDeleteIds);
+          await client.from('ea_bills').delete().in('student_id', combinedDeleteIds);
+          await client.from('ea_fee_payments').delete().in('student_id', combinedDeleteIds);
+          await client.from('ea_jhs_mock_exams').delete().in('student_id', combinedDeleteIds);
+          await client.from('ea_students').delete().in('id', combinedDeleteIds);
         }
       }
+    } catch (pruneErr) {
+      console.warn('Student prune notice:', pruneErr);
     }
 
     return true;
   } catch (err: any) {
-    if (isMissingTableOrConnectionError(err)) {
-      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(students));
-      return true;
-    }
-    localStorage.setItem('mock_supabase_ea_students', JSON.stringify(students));
     return true;
   }
 }
 
 // 3. SYNC TEACHERS / USERS
 export async function fetchSupabaseTeachers(): Promise<User[] | null> {
+  const deletedTeacherIds = new Set(getDeletedTeacherIds());
+  const filterDeleted = (list: User[]) => {
+    if (deletedTeacherIds.size === 0) return list;
+    return list.filter(t => !deletedTeacherIds.has(t.id));
+  };
+
   const client = getSupabaseClient();
-  if (!client) return null;
+  if (!client) {
+    const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return filterDeleted(parsed);
+      } catch (e) {}
+    }
+    return null;
+  }
   try {
     const { data, error } = await client.from('ea_teachers').select('*');
     if (error) {
       if (isMissingTableOrConnectionError(error)) {
         const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
-        return cached ? JSON.parse(cached) : null;
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) return filterDeleted(parsed);
+          } catch (e) {}
+        }
+        return null;
       }
       return null;
     }
     if (!data) return null;
-    return data.map(item => ({
+    const mapped = data.map(item => ({
       id: item.id,
       name: item.name || '',
       email: item.email || '',
@@ -1223,18 +1480,37 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
       hometown: item.hometown || undefined,
       ghanaCardNumber: item.ghana_card_number || item.ghanaCardNumber || undefined,
     }));
+
+    if (deletedTeacherIds.size > 0) {
+      const recordsToPurge = mapped.filter(t => deletedTeacherIds.has(t.id));
+      if (recordsToPurge.length > 0) {
+        const purgeIds = recordsToPurge.map(t => t.id);
+        client.from('ea_teachers').delete().in('id', purgeIds).then(() => {});
+      }
+    }
+
+    return filterDeleted(mapped);
   } catch (err: any) {
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
-      return cached ? JSON.parse(cached) : null;
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return filterDeleted(parsed);
+        } catch (e) {}
+      }
     }
     return null;
   }
 }
 
 export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
+  // Always persist to local cache immediately to guarantee offline/local persistence
+  localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(teachers));
+  localStorage.setItem('ea_teachers', JSON.stringify(teachers));
+
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) return true;
   try {
     const payloads = teachers.map(t => ({
       id: t.id,
@@ -1256,105 +1532,252 @@ export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
     const { error } = await safeUpsert('ea_teachers', payloads, client);
     if (error) {
       if (isMissingTableOrConnectionError(error)) {
-        localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(teachers));
         return true;
       }
       return false;
     }
 
-    // Prune deleted teachers
-    if (teachers.length === 0) {
-      await client.from('ea_teachers').delete().not('id', 'is', null);
-    } else {
-      const { data: existingRows } = await client.from('ea_teachers').select('id');
-      if (existingRows && existingRows.length > 0) {
-        const activeIds = new Set(teachers.map(t => String(t.id)));
-        const toDeleteIds = existingRows
-          .filter(row => !activeIds.has(String(row.id)))
-          .map(row => row.id)
-          .filter(Boolean);
-        if (toDeleteIds.length > 0) {
-          await client.from('ea_teachers').delete().in('id', toDeleteIds);
+    // Prune deleted teachers safely
+    try {
+      if (teachers.length === 0) {
+        await client.from('ea_teachers').delete().not('id', 'is', null);
+      } else {
+        const { data: existingRows } = await client.from('ea_teachers').select('id');
+        if (existingRows && existingRows.length > 0) {
+          const activeIds = new Set(teachers.map(t => String(t.id)));
+          const toDeleteIds = existingRows
+            .filter(row => !activeIds.has(String(row.id)))
+            .map(row => row.id)
+            .filter(Boolean);
+          if (toDeleteIds.length > 0) {
+            await client.from('ea_teachers').delete().in('id', toDeleteIds);
+          }
         }
       }
+    } catch (pruneErr) {
+      console.warn('Teacher prune notice:', pruneErr);
     }
 
     return true;
   } catch (err: any) {
-    if (isMissingTableOrConnectionError(err)) {
-      localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(teachers));
-      return true;
-    }
-    localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(teachers));
     return true;
   }
 }
 
-export async function deleteSupabaseStudent(id: string): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client) return false;
+export async function deleteSupabaseStudent(id: string, rollNumber?: string, studentName?: string): Promise<boolean> {
+  if (!id && !rollNumber && !studentName) return true;
+  recordDeletedStudentId(id, rollNumber, studentName);
+
+  const normName = studentName ? studentName.toLowerCase().trim() : '';
+  const normRoll = rollNumber ? rollNumber.toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+  const studentKeys = [id, rollNumber].filter(Boolean) as string[];
+
+  // 1. Immediately purge from local caches
   try {
-    const { error } = await client.from('ea_students').delete().eq('id', id);
-    if (error) {
-      if (isMissingTableOrConnectionError(error)) {
-        const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
-        if (cached) {
-          const students = JSON.parse(cached) as Student[];
-          const updated = students.filter(s => s.id !== id);
-          localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updated));
-        }
-        return true;
-      }
-      return false;
-    }
-    // Also delete any associated grades or attendance to keep database clean
-    await client.from('ea_grades').delete().eq('student_id', id);
-    await client.from('ea_attendance').delete().eq('student_id', id);
-    return true;
-  } catch (err: any) {
-    if (isMissingTableOrConnectionError(err)) {
-      const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
-      if (cached) {
-        const students = JSON.parse(cached) as Student[];
-        const updated = students.filter(s => s.id !== id);
+    const isTargetStudent = (s: any) => {
+      if (s.id && s.id === id) return true;
+      if (rollNumber && s.rollNumber && s.rollNumber === rollNumber) return true;
+      if (normRoll && s.rollNumber && s.rollNumber.toUpperCase().replace(/[^A-Z0-9]/g, '') === normRoll) return true;
+      if (normName && s.name && s.name.toLowerCase().trim() === normName) return true;
+      return isStudentDeleted(s);
+    };
+
+    const cachedStudents = localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students');
+    if (cachedStudents) {
+      const parsed = JSON.parse(cachedStudents);
+      if (Array.isArray(parsed)) {
+        const updated = parsed.filter(s => !isTargetStudent(s));
+        localStorage.setItem('ea_students', JSON.stringify(updated));
         localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updated));
       }
+    }
+
+    const cachedGrades = localStorage.getItem('ea_grades') || localStorage.getItem('mock_supabase_ea_grades');
+    if (cachedGrades) {
+      const parsed = JSON.parse(cachedGrades);
+      if (Array.isArray(parsed)) {
+        const updated = parsed.filter((g: any) => !studentKeys.includes(g.studentId));
+        localStorage.setItem('ea_grades', JSON.stringify(updated));
+        localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(updated));
+      }
+    }
+
+    const cachedAtt = localStorage.getItem('ea_attendance') || localStorage.getItem('mock_supabase_ea_attendance');
+    if (cachedAtt) {
+      const parsed = JSON.parse(cachedAtt);
+      if (Array.isArray(parsed)) {
+        const updated = parsed.filter((a: any) => !studentKeys.includes(a.studentId));
+        localStorage.setItem('ea_attendance', JSON.stringify(updated));
+        localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(updated));
+      }
+    }
+
+    const cachedDailyAtt = localStorage.getItem('ea_daily_attendance');
+    if (cachedDailyAtt) {
+      const parsed = JSON.parse(cachedDailyAtt);
+      if (Array.isArray(parsed)) {
+        const updated = parsed.filter((r: any) => !studentKeys.includes(r.studentId));
+        localStorage.setItem('ea_daily_attendance', JSON.stringify(updated));
+      }
+    }
+
+    const cachedBills = localStorage.getItem('ea_bills') || localStorage.getItem('mock_supabase_ea_bills');
+    if (cachedBills) {
+      const parsed = JSON.parse(cachedBills);
+      if (Array.isArray(parsed)) {
+        const updated = parsed.filter((b: any) => !studentKeys.includes(b.studentId));
+        localStorage.setItem('ea_bills', JSON.stringify(updated));
+        localStorage.setItem('mock_supabase_ea_bills', JSON.stringify(updated));
+      }
+    }
+
+    const cachedFee = localStorage.getItem('ea_fee_payments') || localStorage.getItem('mock_supabase_ea_fee_payments');
+    if (cachedFee) {
+      const parsed = JSON.parse(cachedFee);
+      if (Array.isArray(parsed)) {
+        const updated = parsed.filter((p: any) => {
+          if (studentKeys.includes(p.studentId)) return false;
+          if (normName && p.studentName && p.studentName.toLowerCase().trim() === normName) return false;
+          return true;
+        });
+        localStorage.setItem('ea_fee_payments', JSON.stringify(updated));
+        localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(updated));
+      }
+    }
+
+    const cachedJhsMock = localStorage.getItem('ea_jhs_mock_exams') || localStorage.getItem('mock_supabase_ea_jhs_mock_exams');
+    if (cachedJhsMock) {
+      const parsed = JSON.parse(cachedJhsMock);
+      if (Array.isArray(parsed)) {
+        const updated = parsed.filter((m: any) => !studentKeys.includes(m.studentId));
+        localStorage.setItem('ea_jhs_mock_exams', JSON.stringify(updated));
+        localStorage.setItem('mock_supabase_ea_jhs_mock_exams', JSON.stringify(updated));
+      }
+    }
+
+    const cachedTerminal = localStorage.getItem('ea_jhs_terminal_assessment_history');
+    if (cachedTerminal) {
+      const parsed = JSON.parse(cachedTerminal);
+      if (Array.isArray(parsed)) {
+        const updated = parsed.filter((rec: any) => {
+          if (studentKeys.includes(rec.studentId)) return false;
+          if (rollNumber && rec.rollNumber === rollNumber) return false;
+          if (normName && rec.studentName && rec.studentName.toLowerCase().trim() === normName) return false;
+          return true;
+        });
+        localStorage.setItem('ea_jhs_terminal_assessment_history', JSON.stringify(updated));
+      }
+    }
+
+    const cachedPreProm = localStorage.getItem('ea_pre_promotion_students');
+    if (cachedPreProm) {
+      const parsed = JSON.parse(cachedPreProm);
+      if (Array.isArray(parsed)) {
+        const updated = parsed.filter(s => !isTargetStudent(s));
+        localStorage.setItem('ea_pre_promotion_students', JSON.stringify(updated));
+      }
+    }
+
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('ea_students_updated'));
+    window.dispatchEvent(new Event('ea_grades_updated'));
+    window.dispatchEvent(new Event('ea_attendance_updated'));
+    window.dispatchEvent(new Event('ea_bills_updated'));
+    window.dispatchEvent(new Event('ea_fee_payments_updated'));
+  } catch (e) {
+    console.warn('Local student delete cleanup error:', e);
+  }
+
+  // 2. Delete from Supabase remote database
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      for (const k of studentKeys) {
+        await client.from('ea_grades').delete().eq('student_id', k);
+        await client.from('ea_attendance').delete().eq('student_id', k);
+        await client.from('ea_bills').delete().eq('student_id', k);
+        await client.from('ea_fee_payments').delete().eq('student_id', k);
+        await client.from('ea_jhs_mock_exams').delete().eq('student_id', k);
+      }
+      if (id) {
+        await client.from('ea_students').delete().eq('id', id);
+      }
+      if (rollNumber) {
+        await client.from('ea_students').delete().eq('roll_number', rollNumber);
+      }
+      if (studentName) {
+        await client.from('ea_students').delete().ilike('name', studentName);
+      }
+
+      // Log deletion in ea_sync_logs to sync across other client devices
+      try {
+        await client.from('ea_sync_logs').insert([{
+          id: `del_st_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          action_type: 'DELETE_STUDENT',
+          description: `Student permanently deleted: ${studentName || id} (${rollNumber || id})`,
+          performed_by: 'Admin',
+          status: 'SUCCESS',
+          details: { id, rollNumber, studentName, timestamp: new Date().toISOString() },
+          timestamp: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }]);
+      } catch (logErr) {}
+
+      return true;
+    } catch (err: any) {
+      console.warn('deleteSupabaseStudent remote exception:', err);
       return true;
     }
-    return false;
   }
+  return true;
 }
 
-export async function deleteSupabaseTeacher(id: string): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client) return false;
+export async function deleteSupabaseTeacher(id: string, email?: string, name?: string): Promise<boolean> {
+  if (!id && !email) return true;
+  recordDeletedTeacherId(id, email, name);
+
   try {
-    const { error } = await client.from('ea_teachers').delete().eq('id', id);
-    if (error) {
-      if (isMissingTableOrConnectionError(error)) {
-        const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
-        if (cached) {
-          const teachers = JSON.parse(cached) as User[];
-          const updated = teachers.filter(t => t.id !== id);
-          localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(updated));
-        }
+    const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
+    if (cached) {
+      const teachers = JSON.parse(cached) as User[];
+      const updated = teachers.filter(t => {
+        if (t.id === id) return false;
+        if (email && t.email.toLowerCase() === email.toLowerCase()) return false;
         return true;
-      }
-      return false;
+      });
+      localStorage.setItem('ea_teachers', JSON.stringify(updated));
+      localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(updated));
     }
-    return true;
-  } catch (err: any) {
-    if (isMissingTableOrConnectionError(err)) {
-      const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
-      if (cached) {
-        const teachers = JSON.parse(cached) as User[];
-        const updated = teachers.filter(t => t.id !== id);
-        localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(updated));
-      }
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('ea_teachers_updated'));
+  } catch (e) {}
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      if (id) await client.from('ea_teachers').delete().eq('id', id);
+      if (email) await client.from('ea_teachers').delete().ilike('email', email);
+
+      try {
+        await client.from('ea_sync_logs').insert([{
+          id: `del_tch_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          action_type: 'DELETE_TEACHER',
+          description: `Staff member permanently deleted: ${name || email || id}`,
+          performed_by: 'Admin',
+          status: 'SUCCESS',
+          details: { id, email, name, timestamp: new Date().toISOString() },
+          timestamp: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }]);
+      } catch (logErr) {}
+
+      return true;
+    } catch (e) {
+      console.warn('deleteSupabaseTeacher Supabase error:', e);
       return true;
     }
-    return false;
   }
+  return true;
 }
 
 // 4. SYNC GRADES
@@ -1582,24 +2005,69 @@ export async function saveSupabaseBills(bills: StudentBill[]): Promise<boolean> 
   }
 }
 
+// Helper to track deleted fee payment IDs & receipt numbers in localStorage
+export function getDeletedFeePaymentIds(): string[] {
+  try {
+    const saved = localStorage.getItem('ea_deleted_fee_payment_ids');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return [];
+}
+
+export function recordDeletedFeePaymentId(idOrReceipt: string): void {
+  if (!idOrReceipt) return;
+  try {
+    const current = getDeletedFeePaymentIds();
+    const clean = idOrReceipt.trim();
+    if (clean && !current.includes(clean)) {
+      localStorage.setItem('ea_deleted_fee_payment_ids', JSON.stringify([...current, clean]));
+    }
+  } catch (e) {}
+}
+
 // 7. SYNC FEE PAYMENTS
 export async function fetchSupabaseFeePayments(): Promise<FeePayment[] | null> {
+  const deletedIds = new Set(getDeletedFeePaymentIds().map(x => x.toUpperCase()));
+  const filterDeleted = (list: FeePayment[]) => {
+    if (deletedIds.size === 0) return list;
+    return list.filter(item => {
+      if (item.id && deletedIds.has(item.id.trim().toUpperCase())) return false;
+      if (item.receiptNumber && deletedIds.has(item.receiptNumber.trim().toUpperCase())) return false;
+      return true;
+    });
+  };
+
   const client = getSupabaseClient();
   if (!client) {
     const cached = localStorage.getItem('mock_supabase_ea_fee_payments') || localStorage.getItem('ea_fee_payments');
-    return cached ? JSON.parse(cached) : null;
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return filterDeleted(parsed);
+      } catch (e) {}
+    }
+    return null;
   }
   try {
     const { data, error } = await client.from('ea_fee_payments').select('*');
     if (error) {
       if (isMissingTableOrConnectionError(error)) {
         const cached = localStorage.getItem('mock_supabase_ea_fee_payments') || localStorage.getItem('ea_fee_payments');
-        return cached ? JSON.parse(cached) : null;
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) return filterDeleted(parsed);
+          } catch (e) {}
+        }
+        return null;
       }
       return null;
     }
     if (!data) return null;
-    return data.map(item => ({
+    const mapped = data.map(item => ({
       id: item.id || item.receipt_number || String(Math.random()),
       receiptNumber: item.receipt_number || '',
       studentId: item.student_id || '',
@@ -1616,16 +2084,47 @@ export async function fetchSupabaseFeePayments(): Promise<FeePayment[] | null> {
       createdAt: item.created_at || new Date().toISOString(),
       updatedAt: item.updated_at || undefined,
     }));
+
+    if (deletedIds.size > 0) {
+      const recordsToPurge = mapped.filter(item => {
+        if (item.id && deletedIds.has(item.id.trim().toUpperCase())) return true;
+        if (item.receiptNumber && deletedIds.has(item.receiptNumber.trim().toUpperCase())) return true;
+        return false;
+      });
+      if (recordsToPurge.length > 0) {
+        const idsToPurge = recordsToPurge.map(r => r.id).filter(Boolean);
+        const recsToPurge = recordsToPurge.map(r => r.receiptNumber).filter(Boolean);
+        if (idsToPurge.length > 0) client.from('ea_fee_payments').delete().in('id', idsToPurge).then(() => {});
+        if (recsToPurge.length > 0) client.from('ea_fee_payments').delete().in('receipt_number', recsToPurge).then(() => {});
+      }
+    }
+
+    return filterDeleted(mapped);
   } catch (err: any) {
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_fee_payments') || localStorage.getItem('ea_fee_payments');
-      return cached ? JSON.parse(cached) : null;
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return filterDeleted(parsed);
+        } catch (e) {}
+      }
     }
     return null;
   }
 }
 
 export async function forceResyncSupabaseFeePayments(): Promise<{ success: boolean; count: number; data: FeePayment[]; message: string }> {
+  const deletedIds = new Set(getDeletedFeePaymentIds().map(x => x.toUpperCase()));
+  const filterDeleted = (list: FeePayment[]) => {
+    if (deletedIds.size === 0) return list;
+    return list.filter(item => {
+      if (item.id && deletedIds.has(item.id.trim().toUpperCase())) return false;
+      if (item.receiptNumber && deletedIds.has(item.receiptNumber.trim().toUpperCase())) return false;
+      return true;
+    });
+  };
+
   const client = getSupabaseClient();
   if (!client) {
     return { success: false, count: 0, data: [], message: 'Supabase client is not connected.' };
@@ -1653,15 +2152,16 @@ export async function forceResyncSupabaseFeePayments(): Promise<{ success: boole
       updatedAt: item.updated_at || undefined,
     }));
 
-    localStorage.setItem('ea_fee_payments', JSON.stringify(freshPayments));
-    localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(freshPayments));
+    const cleanPayments = filterDeleted(freshPayments);
+    localStorage.setItem('ea_fee_payments', JSON.stringify(cleanPayments));
+    localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(cleanPayments));
     window.dispatchEvent(new Event('storage'));
 
     return {
       success: true,
-      count: freshPayments.length,
-      data: freshPayments,
-      message: `Synchronized ${freshPayments.length} fee payment record(s) from Supabase.`
+      count: cleanPayments.length,
+      data: cleanPayments,
+      message: `Synchronized ${cleanPayments.length} fee payment record(s) from Supabase.`
     };
   } catch (err: any) {
     return { success: false, count: 0, data: [], message: `Sync exception: ${err.message || err}` };
@@ -1675,6 +2175,11 @@ export async function saveSupabaseFeePayments(payments: FeePayment[]): Promise<b
   const client = getSupabaseClient();
   if (!client) return true;
   try {
+    if (!payments || payments.length === 0) {
+      await client.from('ea_fee_payments').delete().not('id', 'is', null);
+      return true;
+    }
+
     const payloads = payments.map(p => ({
       id: p.id || p.receiptNumber || `fee_${Date.now()}_${Math.random()}`,
       receipt_number: p.receiptNumber,
@@ -1708,18 +2213,42 @@ export async function saveSupabaseFeePayments(payments: FeePayment[]): Promise<b
 }
 
 export async function deleteSupabaseFeePayment(payment: { id?: string; receiptNumber?: string }): Promise<boolean> {
+  const targetId = payment.id && payment.id.trim() ? payment.id.trim() : null;
+  const targetRec = payment.receiptNumber && payment.receiptNumber.trim() ? payment.receiptNumber.trim() : null;
+
+  if (targetId) recordDeletedFeePaymentId(targetId);
+  if (targetRec) recordDeletedFeePaymentId(targetRec);
+
+  // Clean local caches first
+  try {
+    const raw = localStorage.getItem('ea_fee_payments') || localStorage.getItem('mock_supabase_ea_fee_payments');
+    if (raw) {
+      const arr: FeePayment[] = JSON.parse(raw);
+      const filtered = arr.filter(item => {
+        if (targetId && item.id && item.id.trim() === targetId) return false;
+        if (targetRec && item.receiptNumber && item.receiptNumber.trim().toUpperCase() === targetRec.toUpperCase()) return false;
+        return true;
+      });
+      localStorage.setItem('ea_fee_payments', JSON.stringify(filtered));
+      localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(filtered));
+    }
+  } catch (e) {
+    console.warn('Cache purge error:', e);
+  }
+
   const client = getSupabaseClient();
   if (!client) return true;
   try {
-    const targetId = payment.id && payment.id.trim() ? payment.id.trim() : null;
-    const targetRec = payment.receiptNumber && payment.receiptNumber.trim() ? payment.receiptNumber.trim() : null;
     if (!targetId && !targetRec) return true;
 
     if (targetId) {
-      await client.from('ea_fee_payments').delete().eq('id', targetId);
+      const { error } = await client.from('ea_fee_payments').delete().eq('id', targetId);
+      if (error) console.warn('Supabase delete by id error:', error);
     }
     if (targetRec) {
-      await client.from('ea_fee_payments').delete().eq('receipt_number', targetRec);
+      const { error: err1 } = await client.from('ea_fee_payments').delete().eq('receipt_number', targetRec);
+      if (err1) console.warn('Supabase delete by receipt_number error:', err1);
+      await client.from('ea_fee_payments').delete().ilike('receipt_number', targetRec);
     }
     return true;
   } catch (e) {
@@ -1729,17 +2258,40 @@ export async function deleteSupabaseFeePayment(payment: { id?: string; receiptNu
 }
 
 export async function deleteSupabaseFeePaymentsBatch(payments: { id?: string; receiptNumber?: string }[]): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client || !payments || payments.length === 0) return true;
-  try {
-    const ids = payments.map(p => p.id?.trim()).filter(Boolean) as string[];
-    const recs = payments.map(p => p.receiptNumber?.trim()).filter(Boolean) as string[];
+  if (!payments || payments.length === 0) return true;
+  const ids = payments.map(p => p.id?.trim()).filter(Boolean) as string[];
+  const recs = payments.map(p => p.receiptNumber?.trim()).filter(Boolean) as string[];
 
+  ids.forEach(id => recordDeletedFeePaymentId(id));
+  recs.forEach(rec => recordDeletedFeePaymentId(rec));
+
+  // Clean local caches
+  try {
+    const raw = localStorage.getItem('ea_fee_payments') || localStorage.getItem('mock_supabase_ea_fee_payments');
+    if (raw) {
+      const arr: FeePayment[] = JSON.parse(raw);
+      const filtered = arr.filter(item => {
+        if (item.id && ids.includes(item.id.trim())) return false;
+        if (item.receiptNumber && recs.some(r => r.toUpperCase() === item.receiptNumber.trim().toUpperCase())) return false;
+        return true;
+      });
+      localStorage.setItem('ea_fee_payments', JSON.stringify(filtered));
+      localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(filtered));
+    }
+  } catch (e) {
+    console.warn('Cache purge error in batch:', e);
+  }
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+  try {
     if (ids.length > 0) {
-      await client.from('ea_fee_payments').delete().in('id', ids);
+      const { error } = await client.from('ea_fee_payments').delete().in('id', ids);
+      if (error) console.warn('Supabase batch delete ids error:', error);
     }
     if (recs.length > 0) {
-      await client.from('ea_fee_payments').delete().in('receipt_number', recs);
+      const { error } = await client.from('ea_fee_payments').delete().in('receipt_number', recs);
+      if (error) console.warn('Supabase batch delete recs error:', error);
     }
     return true;
   } catch (e) {
@@ -2461,4 +3013,490 @@ export async function saveSupabaseJHSMockExams(records: JHSMockExamRecord[]): Pr
     console.warn('saveSupabaseJHSMockExams exception:', err);
     return true;
   }
+}
+
+// ==========================================
+// 15. BOOKS STOCK & CUSTOMISED EXERCISE BOOKS
+// ==========================================
+
+// Helper to track deleted book stock IDs in localStorage
+export function getDeletedBookStockIds(): string[] {
+  try {
+    const saved = localStorage.getItem('ea_deleted_book_stock_ids');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed.map((s) => String(s).trim());
+    }
+  } catch (e) {}
+  return [];
+}
+
+export function recordDeletedBookStockId(id: string): void {
+  if (!id) return;
+  const cleanId = String(id).trim();
+  if (!cleanId) return;
+  try {
+    const current = getDeletedBookStockIds();
+    const exists = current.some((c) => c.toLowerCase() === cleanId.toLowerCase());
+    if (!exists) {
+      localStorage.setItem('ea_deleted_book_stock_ids', JSON.stringify([...current, cleanId]));
+    }
+  } catch (e) {}
+}
+
+export function getDeletedBookSaleIds(): string[] {
+  try {
+    const saved = localStorage.getItem('ea_deleted_book_sales_ids');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed.map((s) => String(s).trim());
+    }
+  } catch (e) {}
+  return [];
+}
+
+export function recordDeletedBookSaleId(id: string): void {
+  if (!id) return;
+  const cleanId = String(id).trim();
+  if (!cleanId) return;
+  try {
+    const current = getDeletedBookSaleIds();
+    const exists = current.some((c) => c.toLowerCase() === cleanId.toLowerCase());
+    if (!exists) {
+      localStorage.setItem('ea_deleted_book_sales_ids', JSON.stringify([...current, cleanId]));
+    }
+  } catch (e) {}
+}
+
+export async function fetchSupabaseBookStock(): Promise<BookStockItem[]> {
+  const deletedIdsList = getDeletedBookStockIds();
+  const deletedIdsLower = new Set(deletedIdsList.map((id) => id.toLowerCase()));
+
+  const filterDeleted = (list: BookStockItem[]) => {
+    if (!Array.isArray(list)) return [];
+    if (deletedIdsLower.size === 0) return list;
+    return list.filter((i) => i && i.id && !deletedIdsLower.has(String(i.id).trim().toLowerCase()));
+  };
+
+  const isInitialized = localStorage.getItem('ea_book_stock_initialized') === 'true';
+
+  let cachedItems: BookStockItem[] | null = null;
+  try {
+    const cached = localStorage.getItem('ea_book_stock_items') || localStorage.getItem('mock_supabase_ea_book_stock');
+    if (cached !== null && cached !== undefined) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) {
+        cachedItems = filterDeleted(parsed);
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading book stock from localStorage:', e);
+  }
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const fetchPromise = client.from('ea_book_stock').select('*').order('created_at', { ascending: false });
+      const timeoutPromise = new Promise<{ data: any; error: any }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: { message: 'Query timeout' } }), 4000)
+      );
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+
+      if (!error && Array.isArray(data)) {
+        const mapped: BookStockItem[] = data.map((d: any) => ({
+          id: String(d.id || '').trim(),
+          title: d.title || 'Untitled',
+          category: d.category || 'Textbook',
+          publication: d.publication || 'General',
+          subjectType: d.subject_type || 'General',
+          targetClass: d.target_class || 'All Classes',
+          unitPrice: Number(d.unit_price) || 0,
+          costPrice: d.cost_price !== undefined ? Number(d.cost_price) : undefined,
+          quantityInStock: Number(d.quantity_in_stock) || 0,
+          quantitySold: Number(d.quantity_sold) || 0,
+          quantityRemaining: Number(d.quantity_remaining) || 0,
+          lowStockThreshold: Number(d.low_stock_threshold) || 20,
+          shelfLocation: d.shelf_location || '',
+          notes: d.notes || '',
+          createdAt: d.created_at || new Date().toISOString(),
+          updatedAt: d.updated_at || new Date().toISOString()
+        }));
+
+        if (deletedIdsLower.size > 0) {
+          const recordsToPurge = mapped.filter((b) => b.id && deletedIdsLower.has(b.id.toLowerCase()));
+          if (recordsToPurge.length > 0) {
+            const purgeIds = recordsToPurge.map((b) => b.id);
+            client.from('ea_book_stock').delete().in('id', purgeIds).then(() => {});
+          }
+        }
+
+        const clean = filterDeleted(mapped);
+        localStorage.setItem('ea_book_stock_items', JSON.stringify(clean));
+        localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(clean));
+        localStorage.setItem('ea_book_stock_initialized', 'true');
+        localStorage.setItem('ea_book_stock_seeded', 'true');
+        return clean;
+      }
+    } catch (err) {
+      console.warn('fetchSupabaseBookStock exception:', err);
+    }
+  }
+
+  if (cachedItems !== null) {
+    return cachedItems;
+  }
+
+  // If already initialized, respect empty state and do not restore defaults
+  if (isInitialized) {
+    return [];
+  }
+
+  // Fallback to defaults only on initial setup if never initialized
+  try {
+    const initial = filterDeleted(DEFAULT_BOOK_STOCK_ITEMS);
+    localStorage.setItem('ea_book_stock_items', JSON.stringify(initial));
+    localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(initial));
+    localStorage.setItem('ea_book_stock_initialized', 'true');
+    localStorage.setItem('ea_book_stock_seeded', 'true');
+    return initial;
+  } catch (e) {}
+  return [];
+}
+
+export async function saveSupabaseBookStock(items: BookStockItem[], deletedIds?: string[]): Promise<boolean> {
+  const activeDeletedList = getDeletedBookStockIds();
+  const activeDeletedLower = new Set(activeDeletedList.map((id) => id.toLowerCase()));
+
+  const cleanItems = (items || []).filter(
+    (b) => b && b.id && !activeDeletedLower.has(String(b.id).trim().toLowerCase())
+  );
+
+  try {
+    localStorage.setItem('ea_book_stock_items', JSON.stringify(cleanItems));
+    localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(cleanItems));
+    localStorage.setItem('ea_book_stock_initialized', 'true');
+    localStorage.setItem('ea_book_stock_seeded', 'true');
+    window.dispatchEvent(new Event('ea_book_stock_updated'));
+  } catch (e) {}
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+
+  try {
+    const allDeletedToPurge = Array.from(new Set([...(deletedIds || []), ...activeDeletedList]));
+    if (allDeletedToPurge.length > 0) {
+      try {
+        const purgePromise = client.from('ea_book_stock').delete().in('id', allDeletedToPurge);
+        const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 3500));
+        await Promise.race([purgePromise, timeoutPromise]);
+      } catch (delErr) {
+        console.warn('Error purging deleted book stock items from Supabase:', delErr);
+      }
+    }
+
+    if (cleanItems.length === 0) {
+      return true;
+    }
+
+    const payloads = cleanItems.map((b) => ({
+      id: String(b.id).trim(),
+      title: b.title,
+      category: b.category,
+      publication: b.publication,
+      subject_type: b.subjectType,
+      target_class: b.targetClass || 'All Classes',
+      unit_price: b.unitPrice,
+      cost_price: b.costPrice || 0,
+      quantity_in_stock: b.quantityInStock,
+      quantity_sold: b.quantitySold,
+      quantity_remaining: b.quantityRemaining,
+      low_stock_threshold: b.lowStockThreshold || 20,
+      shelf_location: b.shelfLocation || '',
+      notes: b.notes || '',
+      created_at: b.createdAt || new Date().toISOString(),
+      updated_at: b.updatedAt || new Date().toISOString()
+    }));
+
+    const upsertPromise = safeUpsert('ea_book_stock', payloads, client, 'id');
+    const timeoutPromise = new Promise<{ error: any }>((resolve) =>
+      setTimeout(() => resolve({ error: { message: 'Upsert timeout' } }), 4000)
+    );
+    const { error } = await Promise.race([upsertPromise, timeoutPromise]);
+    if (error) {
+      console.warn('saveSupabaseBookStock error:', error);
+    }
+    return true;
+  } catch (err) {
+    console.warn('saveSupabaseBookStock exception:', err);
+    return true;
+  }
+}
+
+export async function deleteSupabaseBookStockItem(id: string): Promise<boolean> {
+  if (!id) return true;
+  const cleanId = String(id).trim();
+  if (!cleanId) return true;
+  const cleanIdLower = cleanId.toLowerCase();
+
+  // 1. Immediately record in persistent deleted IDs
+  recordDeletedBookStockId(cleanId);
+
+  // 2. Immediately update local storage caches so it's gone from local state instantly
+  try {
+    const cached = localStorage.getItem('ea_book_stock_items') || localStorage.getItem('mock_supabase_ea_book_stock');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) {
+        const filtered = parsed.filter(
+          (item: BookStockItem) => item && item.id && String(item.id).trim().toLowerCase() !== cleanIdLower
+        );
+        localStorage.setItem('ea_book_stock_items', JSON.stringify(filtered));
+        localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(filtered));
+      }
+    }
+    localStorage.setItem('ea_book_stock_initialized', 'true');
+    localStorage.setItem('ea_book_stock_seeded', 'true');
+  } catch (e) {
+    console.warn('deleteSupabaseBookStockItem localStorage error:', e);
+  }
+
+  // 3. Immediately dispatch storage / update event for live UI reactivity
+  try {
+    window.dispatchEvent(new Event('ea_book_stock_updated'));
+  } catch (e) {}
+
+  // 4. Directly sync deletion to Supabase database (with fast non-blocking guard)
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const deletePromise = Promise.all([
+        client.from('ea_book_stock').delete().eq('id', cleanId),
+        client.from('ea_book_stock').delete().ilike('id', cleanId)
+      ]);
+      const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 600));
+      await Promise.race([deletePromise, timeoutPromise]);
+    } catch (e) {
+      console.warn('deleteSupabaseBookStockItem remote delete exception:', e);
+    }
+  }
+
+  return true;
+}
+
+// ==========================================
+// 16. BOOKS SALES & BUYER RECEIPTS
+// ==========================================
+
+export async function fetchSupabaseBookSales(): Promise<BookSaleRecord[]> {
+  const deletedIdsList = getDeletedBookSaleIds();
+  const deletedIdsLower = new Set(deletedIdsList.map((id) => id.toLowerCase()));
+
+  const filterDeleted = (list: BookSaleRecord[]) => {
+    if (!Array.isArray(list)) return [];
+    if (deletedIdsLower.size === 0) return list;
+    return list.filter((s) => s && s.id && !deletedIdsLower.has(String(s.id).trim().toLowerCase()));
+  };
+
+  const isInitialized = localStorage.getItem('ea_book_sales_initialized') === 'true';
+
+  let cachedItems: BookSaleRecord[] | null = null;
+  try {
+    const cached = localStorage.getItem('ea_book_sales_records') || localStorage.getItem('mock_supabase_ea_book_sales');
+    if (cached !== null && cached !== undefined) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) {
+        cachedItems = filterDeleted(parsed);
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading book sales from localStorage:', e);
+  }
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const fetchPromise = client.from('ea_book_sales').select('*').order('created_at', { ascending: false });
+      const timeoutPromise = new Promise<{ data: any; error: any }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: { message: 'Query timeout' } }), 4000)
+      );
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+
+      if (!error && Array.isArray(data)) {
+        const mapped: BookSaleRecord[] = data.map((d: any) => ({
+          id: String(d.id || '').trim(),
+          receiptNumber: d.receipt_number,
+          buyerName: d.buyer_name,
+          buyerType: d.buyer_type || 'Parent',
+          studentId: d.student_id || '',
+          className: d.class_name || '',
+          contactNumber: d.contact_number || '',
+          items: Array.isArray(d.items) ? d.items : [],
+          subtotal: Number(d.subtotal) || 0,
+          discount: Number(d.discount) || 0,
+          totalAmount: Number(d.total_amount) || 0,
+          paymentMethod: d.payment_method || 'Cash',
+          paymentReference: d.payment_reference || '',
+          saleDate: d.sale_date,
+          saleTime: d.sale_time || '',
+          recordedBy: d.recorded_by || 'Administrator',
+          remarks: d.remarks || '',
+          createdAt: d.created_at || new Date().toISOString(),
+          updatedAt: d.updated_at || new Date().toISOString()
+        }));
+
+        if (deletedIdsLower.size > 0) {
+          const recordsToPurge = mapped.filter((b) => b.id && deletedIdsLower.has(b.id.toLowerCase()));
+          if (recordsToPurge.length > 0) {
+            const purgeIds = recordsToPurge.map((b) => b.id);
+            client.from('ea_book_sales').delete().in('id', purgeIds).then(() => {});
+          }
+        }
+
+        const clean = filterDeleted(mapped);
+        localStorage.setItem('ea_book_sales_records', JSON.stringify(clean));
+        localStorage.setItem('mock_supabase_ea_book_sales', JSON.stringify(clean));
+        localStorage.setItem('ea_book_sales_initialized', 'true');
+        localStorage.setItem('ea_book_sales_seeded', 'true');
+        return clean;
+      }
+    } catch (err) {
+      console.warn('fetchSupabaseBookSales exception:', err);
+    }
+  }
+
+  if (cachedItems !== null) {
+    return cachedItems;
+  }
+
+  if (isInitialized) {
+    return [];
+  }
+
+  // Fallback to defaults only on initial setup
+  try {
+    const initial = filterDeleted(DEFAULT_BOOK_SALES);
+    localStorage.setItem('ea_book_sales_records', JSON.stringify(initial));
+    localStorage.setItem('mock_supabase_ea_book_sales', JSON.stringify(initial));
+    localStorage.setItem('ea_book_sales_initialized', 'true');
+    localStorage.setItem('ea_book_sales_seeded', 'true');
+    return initial;
+  } catch (e) {}
+  return [];
+}
+
+export async function saveSupabaseBookSales(sales: BookSaleRecord[], deletedIds?: string[]): Promise<boolean> {
+  const activeDeletedList = getDeletedBookSaleIds();
+  const activeDeletedLower = new Set(activeDeletedList.map((id) => id.toLowerCase()));
+
+  const cleanSales = (sales || []).filter(
+    (s) => s && s.id && !activeDeletedLower.has(String(s.id).trim().toLowerCase())
+  );
+
+  try {
+    localStorage.setItem('ea_book_sales_records', JSON.stringify(cleanSales));
+    localStorage.setItem('mock_supabase_ea_book_sales', JSON.stringify(cleanSales));
+    localStorage.setItem('ea_book_sales_initialized', 'true');
+    localStorage.setItem('ea_book_sales_seeded', 'true');
+    window.dispatchEvent(new Event('ea_book_sales_updated'));
+  } catch (e) {}
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+
+  try {
+    const allDeletedToPurge = Array.from(new Set([...(deletedIds || []), ...activeDeletedList]));
+    if (allDeletedToPurge.length > 0) {
+      try {
+        const purgePromise = client.from('ea_book_sales').delete().in('id', allDeletedToPurge);
+        const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 3500));
+        await Promise.race([purgePromise, timeoutPromise]);
+      } catch (delErr) {
+        console.warn('Error purging deleted sales from Supabase:', delErr);
+      }
+    }
+
+    if (cleanSales.length === 0) {
+      return true;
+    }
+
+    const payloads = cleanSales.map((s) => ({
+      id: String(s.id).trim(),
+      receipt_number: s.receiptNumber,
+      buyer_name: s.buyerName,
+      buyer_type: s.buyerType || 'Parent',
+      student_id: s.studentId || '',
+      class_name: s.className || '',
+      contact_number: s.contactNumber || '',
+      items: s.items || [],
+      subtotal: s.subtotal,
+      discount: s.discount,
+      total_amount: s.totalAmount,
+      payment_method: s.paymentMethod,
+      payment_reference: s.paymentReference || '',
+      sale_date: s.saleDate,
+      sale_time: s.saleTime || '',
+      recorded_by: s.recordedBy || 'Administrator',
+      remarks: s.remarks || '',
+      created_at: s.createdAt || new Date().toISOString(),
+      updated_at: s.updatedAt || new Date().toISOString()
+    }));
+
+    const upsertPromise = safeUpsert('ea_book_sales', payloads, client, 'id');
+    const timeoutPromise = new Promise<{ error: any }>((resolve) =>
+      setTimeout(() => resolve({ error: { message: 'Upsert timeout' } }), 4000)
+    );
+    const { error } = await Promise.race([upsertPromise, timeoutPromise]);
+    if (error) {
+      console.warn('saveSupabaseBookSales error:', error);
+    }
+    return true;
+  } catch (err) {
+    console.warn('saveSupabaseBookSales exception:', err);
+    return true;
+  }
+}
+
+export async function deleteSupabaseBookSale(id: string): Promise<boolean> {
+  if (!id) return true;
+  const cleanId = String(id).trim();
+  if (!cleanId) return true;
+  const cleanIdLower = cleanId.toLowerCase();
+
+  recordDeletedBookSaleId(cleanId);
+
+  try {
+    const cached = localStorage.getItem('ea_book_sales_records') || localStorage.getItem('mock_supabase_ea_book_sales');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) {
+        const filtered = parsed.filter(
+          (item: BookSaleRecord) => item && item.id && String(item.id).trim().toLowerCase() !== cleanIdLower
+        );
+        localStorage.setItem('ea_book_sales_records', JSON.stringify(filtered));
+        localStorage.setItem('mock_supabase_ea_book_sales', JSON.stringify(filtered));
+      }
+    }
+    localStorage.setItem('ea_book_sales_initialized', 'true');
+    localStorage.setItem('ea_book_sales_seeded', 'true');
+  } catch (e) {}
+
+  try {
+    window.dispatchEvent(new Event('ea_book_sales_updated'));
+  } catch (e) {}
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const deletePromise = Promise.all([
+        client.from('ea_book_sales').delete().eq('id', cleanId),
+        client.from('ea_book_sales').delete().ilike('id', cleanId)
+      ]);
+      const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 600));
+      await Promise.race([deletePromise, timeoutPromise]);
+    } catch (e) {
+      console.warn('deleteSupabaseBookSale exception:', e);
+    }
+  }
+
+  return true;
 }

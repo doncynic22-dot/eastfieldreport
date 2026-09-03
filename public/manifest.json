@@ -1,0 +1,16 @@
+{
+  "short_name": "EastfieldSMS",
+  "name": "Eastfield Academy School Management System",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "theme_color": "#432874",
+  "display": "standalone",
+  "orientation": "portrait"
+}

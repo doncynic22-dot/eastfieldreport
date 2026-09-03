@@ -291,126 +291,159 @@
      and displays crisp white or accent text for perfect legibility.
      ----------------------------------------------------------------------- */
   header,
-  header *,
+  header *:not(select):not(option):not(optgroup),
   footer,
-  footer *,
+  footer *:not(select):not(option):not(optgroup),
   .bg-mauve-900:not(.print-container *),
-  .bg-mauve-900:not(.print-container *) *,
+  .bg-mauve-900:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-mauve-800:not(.print-container *),
-  .bg-mauve-800:not(.print-container *) *,
+  .bg-mauve-800:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-mauve-700:not(.print-container *),
-  .bg-mauve-700:not(.print-container *) *,
+  .bg-mauve-700:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-mauve-600:not(.print-container *),
-  .bg-mauve-600:not(.print-container *) *,
+  .bg-mauve-600:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-mauve-500:not(.print-container *),
-  .bg-mauve-500:not(.print-container *) *,
+  .bg-mauve-500:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-\[\#1C053E\]:not(.print-container *),
-  .bg-\[\#1C053E\]:not(.print-container *) *,
+  .bg-\[\#1C053E\]:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-\[\#1E0650\]:not(.print-container *),
-  .bg-\[\#1E0650\]:not(.print-container *) *,
+  .bg-\[\#1E0650\]:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-\[\#2B0D5D\]:not(.print-container *),
-  .bg-\[\#2B0D5D\]:not(.print-container *) *,
+  .bg-\[\#2B0D5D\]:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-\[\#160330\]:not(.print-container *),
-  .bg-\[\#160330\]:not(.print-container *) *,
+  .bg-\[\#160330\]:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-\[\#5021AD\]:not(.print-container *),
-  .bg-\[\#5021AD\]:not(.print-container *) *,
+  .bg-\[\#5021AD\]:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-\[\#3E168D\]:not(.print-container *),
-  .bg-\[\#3E168D\]:not(.print-container *) *,
+  .bg-\[\#3E168D\]:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-purple-900:not(.print-container *),
-  .bg-purple-900:not(.print-container *) *,
+  .bg-purple-900:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-purple-800:not(.print-container *),
-  .bg-purple-800:not(.print-container *) *,
+  .bg-purple-800:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-purple-700:not(.print-container *),
-  .bg-purple-700:not(.print-container *) *,
+  .bg-purple-700:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-purple-600:not(.print-container *),
-  .bg-purple-600:not(.print-container *) *,
+  .bg-purple-600:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-purple-500:not(.print-container *),
-  .bg-purple-500:not(.print-container *) *,
+  .bg-purple-500:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-indigo-900:not(.print-container *),
-  .bg-indigo-900:not(.print-container *) *,
+  .bg-indigo-900:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-indigo-800:not(.print-container *),
-  .bg-indigo-800:not(.print-container *) *,
+  .bg-indigo-800:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-indigo-700:not(.print-container *),
-  .bg-indigo-700:not(.print-container *) *,
+  .bg-indigo-700:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-indigo-600:not(.print-container *),
-  .bg-indigo-600:not(.print-container *) *,
+  .bg-indigo-600:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-indigo-500:not(.print-container *),
-  .bg-indigo-500:not(.print-container *) *,
+  .bg-indigo-500:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-emerald-900:not(.print-container *),
-  .bg-emerald-900:not(.print-container *) *,
+  .bg-emerald-900:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-emerald-800:not(.print-container *),
-  .bg-emerald-800:not(.print-container *) *,
+  .bg-emerald-800:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-emerald-700:not(.print-container *),
-  .bg-emerald-700:not(.print-container *) *,
+  .bg-emerald-700:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-emerald-600:not(.print-container *),
-  .bg-emerald-600:not(.print-container *) *,
+  .bg-emerald-600:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-emerald-500:not(.print-container *),
-  .bg-emerald-500:not(.print-container *) *,
+  .bg-emerald-500:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-green-900:not(.print-container *),
-  .bg-green-900:not(.print-container *) *,
+  .bg-green-900:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-green-800:not(.print-container *),
-  .bg-green-800:not(.print-container *) *,
+  .bg-green-800:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-green-700:not(.print-container *),
-  .bg-green-700:not(.print-container *) *,
+  .bg-green-700:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-green-600:not(.print-container *),
-  .bg-green-600:not(.print-container *) *,
+  .bg-green-600:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-green-500:not(.print-container *),
-  .bg-green-500:not(.print-container *) *,
+  .bg-green-500:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-rose-900:not(.print-container *),
-  .bg-rose-900:not(.print-container *) *,
+  .bg-rose-900:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-rose-800:not(.print-container *),
-  .bg-rose-800:not(.print-container *) *,
+  .bg-rose-800:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-rose-700:not(.print-container *),
-  .bg-rose-700:not(.print-container *) *,
+  .bg-rose-700:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-rose-600:not(.print-container *),
-  .bg-rose-600:not(.print-container *) *,
+  .bg-rose-600:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-rose-500:not(.print-container *),
-  .bg-rose-500:not(.print-container *) *,
+  .bg-rose-500:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-red-900:not(.print-container *),
-  .bg-red-900:not(.print-container *) *,
+  .bg-red-900:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-red-800:not(.print-container *),
-  .bg-red-800:not(.print-container *) *,
+  .bg-red-800:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-red-700:not(.print-container *),
-  .bg-red-700:not(.print-container *) *,
+  .bg-red-700:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-red-600:not(.print-container *),
-  .bg-red-600:not(.print-container *) *,
+  .bg-red-600:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-red-500:not(.print-container *),
-  .bg-red-500:not(.print-container *) *,
+  .bg-red-500:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-blue-900:not(.print-container *),
-  .bg-blue-900:not(.print-container *) *,
+  .bg-blue-900:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-blue-800:not(.print-container *),
-  .bg-blue-800:not(.print-container *) *,
+  .bg-blue-800:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-blue-700:not(.print-container *),
-  .bg-blue-700:not(.print-container *) *,
+  .bg-blue-700:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-blue-600:not(.print-container *),
-  .bg-blue-600:not(.print-container *) *,
+  .bg-blue-600:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-blue-500:not(.print-container *),
-  .bg-blue-500:not(.print-container *) *,
+  .bg-blue-500:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-amber-800:not(.print-container *),
-  .bg-amber-800:not(.print-container *) *,
+  .bg-amber-800:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-amber-700:not(.print-container *),
-  .bg-amber-700:not(.print-container *) *,
+  .bg-amber-700:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-amber-600:not(.print-container *),
-  .bg-amber-600:not(.print-container *) *,
+  .bg-amber-600:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-amber-500:not(.print-container *),
-  .bg-amber-500:not(.print-container *) *,
+  .bg-amber-500:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-gray-900:not(.print-container *),
-  .bg-gray-900:not(.print-container *) *,
+  .bg-gray-900:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-gray-800:not(.print-container *),
-  .bg-gray-800:not(.print-container *) *,
+  .bg-gray-800:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-gray-700:not(.print-container *),
-  .bg-gray-700:not(.print-container *) *,
+  .bg-gray-700:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-slate-900:not(.print-container *),
-  .bg-slate-900:not(.print-container *) *,
+  .bg-slate-900:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-slate-800:not(.print-container *),
-  .bg-slate-800:not(.print-container *) *,
+  .bg-slate-800:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-slate-700:not(.print-container *),
-  .bg-slate-700:not(.print-container *) *,
+  .bg-slate-700:not(.print-container *) *:not(select):not(option):not(optgroup),
   .bg-black:not(.print-container *),
-  .bg-black:not(.print-container *) *,
+  .bg-black:not(.print-container *) *:not(select):not(option):not(optgroup),
   [class*="bg-gradient"]:not(.print-container *),
-  [class*="bg-gradient"]:not(.print-container *) * {
+  [class*="bg-gradient"]:not(.print-container *) *:not(select):not(option):not(optgroup) {
     color: #FFFFFF !important;
+  }
+
+  /* CRITICAL: Protect select dropdowns and options from inheriting white text in dark containers */
+  select,
+  select *,
+  select:not(.print-container *),
+  select:not(.print-container *) *,
+  option,
+  option *,
+  option:not(.print-container *),
+  option:not(.print-container *) *,
+  optgroup,
+  optgroup * {
+    color: #0F172A !important;
+    background-color: #FFFFFF !important;
+  }
+
+  select {
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23334155' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.6rem center;
+    background-repeat: no-repeat;
+    background-size: 1.25em 1.25em;
+    padding-right: 2.2rem !important;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+  }
+
+  option, optgroup {
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
   }
 
   /* Allow accent gold / emerald / lavender / sky / rose text inside dark headers/banners to shine */
@@ -522,12 +555,62 @@
 
   /* Clean white inputs with violet focus and border */
   input:not(.print-container *),
-  select:not(.print-container *),
-  textarea:not(.print-container *),
-  option:not(.print-container *) {
+  textarea:not(.print-container *) {
     background-color: #FFFFFF !important;
     color: #1A043B !important;
     border-color: rgba(80, 33, 173, 0.25) !important;
+  }
+
+  /* =========================================================================
+     GLOBAL DROPDOWN (<select> & <option>) RELIABLE VISIBILITY & ACCESSIBILITY
+     Ensures dropdown menus open reliably and show options with dark text on white
+     across all browsers, iframes, mobile devices, and OS color schemes.
+     ========================================================================= */
+  select:not(.sr-only),
+  select:not(.sr-only):not(.print-container *) {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    cursor: pointer !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    font-weight: 600 !important;
+    pointer-events: auto !important;
+  }
+
+  select:not(.sr-only):not([class*="border-none"]):not([class*="border-0"]):not(.bg-transparent) {
+    border: 1.5px solid rgba(80, 33, 173, 0.35);
+    border-radius: 0.5rem;
+  }
+
+  select:not(.sr-only):focus,
+  select:not(.sr-only):not(.print-container *):focus {
+    border-color: #4F1FA3;
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(79, 31, 163, 0.25);
+  }
+
+  select option,
+  select:not(.print-container *) option,
+  option,
+  option:not(.print-container *) {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    font-size: 13.5px !important;
+    font-weight: 600 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
+  select option:checked,
+  option:checked {
+    background-color: #EDE9FE !important;
+    color: #4C1D95 !important;
+    font-weight: 700 !important;
+  }
+
+  option:disabled {
+    color: #94A3B8 !important;
+    background-color: #F8FAFC !important;
   }
 
   input::placeholder,
@@ -923,5 +1006,22 @@
   .printable-noticeboard .p-4,
   .printable-noticeboard .p-2.5 {
     padding: 2px 3px !important;
+  }
+
+  /* Printable Book & Customised Exercise Book Sales Receipt */
+  #printable-book-receipt,
+  .printable-book-receipt {
+    display: block !important;
+    position: relative !important;
+    width: 100% !important;
+    max-width: 480px !important;
+    margin: 0 auto !important;
+    padding: 12px 16px !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: 1px dashed #4b5563 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }

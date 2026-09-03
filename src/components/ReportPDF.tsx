@@ -527,28 +527,27 @@ export default function ReportPDF({
     }
   }, []);
 
-  // 1. Calculate Grade Details
-  const matchedTermGrades = grades.filter((g) => g.studentId === student.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear));
-  const studentGrades = matchedTermGrades.length > 0 ? matchedTermGrades : grades.filter((g) => g.studentId === student.id);
+  // 1. Calculate Grade Details strictly for active term and school year
+  const studentGrades = grades.filter((g) => g.studentId === student.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear));
   const totalSubjectsCount = studentGrades.length;
 
   const totalSum = studentGrades.reduce((sum, g) => sum + g.totalScore, 0);
   const studentAverage = totalSubjectsCount > 0 ? (totalSum / totalSubjectsCount) : 0;
 
-  // 2. Class Rank Calculation (dynamic!)
+  // 2. Class Rank Calculation (dynamic for current term & school year!)
   const rankList = allClassStudents.map((s) => {
-    const termGrades = allGrades.filter((g) => g.studentId === s.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear));
-    const sGrades = termGrades.length > 0 ? termGrades : allGrades.filter((g) => g.studentId === s.id);
+    const sGrades = allGrades.filter((g) => g.studentId === s.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear));
     const sCount = sGrades.length;
     const sSum = sGrades.reduce((sum, g) => sum + g.totalScore, 0);
     const sAvg = sCount > 0 ? (sSum / sCount) : 0;
-    return { studentId: s.id, average: sAvg };
+    return { studentId: s.id, average: sAvg, totalSum: sSum };
   });
 
+  const hasAnyScoresInClass = rankList.some(r => r.totalSum > 0);
   // Sort descending by average
   rankList.sort((a, b) => b.average - a.average);
   const studentRankIndex = rankList.findIndex((item) => item.studentId === student.id);
-  const studentRank = studentRankIndex !== -1 ? studentRankIndex + 1 : 0;
+  const studentRank = (hasAnyScoresInClass && studentRankIndex !== -1 && totalSum > 0) ? studentRankIndex + 1 : 0;
 
   // 3. Automated Grade Letter assignment helper based on current configuration scale
   const getGradeDetails = (score: number) => {
@@ -720,7 +719,7 @@ export default function ReportPDF({
                 </div>
                 <div className="flex justify-between items-center text-gray-600 text-[11px]">
                   <span>Guardian Name: <strong>{student.guardianName || 'N/A'}</strong></span>
-                  <span>Average Score: <strong>{studentAverage.toFixed(1)}%</strong></span>
+                  <span>Average Score: <strong>{totalSum > 0 ? `${studentAverage.toFixed(1)}%` : '—'}</strong></span>
                 </div>
               </div>
 
@@ -1762,11 +1761,11 @@ export default function ReportPDF({
                         return allRows.map((row, index) => {
                           const g = row.grade;
                           const remarkVal = (g?.nurseryRemark || g?.remarks || '').toString().trim().toUpperCase();
-                          let selectedKey: 'MO' | 'O' | 'S' | 'NA' = 'MO';
+                          let selectedKey: 'MO' | 'O' | 'S' | 'NA' | null = null;
 
                           if (['MO', 'O', 'S', 'NA'].includes(remarkVal)) {
                             selectedKey = remarkVal as any;
-                          } else if (g) {
+                          } else if (g && (g.classScore > 0 || g.examScore > 0 || g.totalScore > 0)) {
                             if (g.totalScore >= 80) selectedKey = 'MO';
                             else if (g.totalScore >= 65) selectedKey = 'O';
                             else if (g.totalScore >= 45) selectedKey = 'S';
@@ -1774,7 +1773,7 @@ export default function ReportPDF({
                           }
 
                           const renderRadioDot = (key: 'MO' | 'O' | 'S' | 'NA') => {
-                            const isSelected = selectedKey === key;
+                            const isSelected = selectedKey !== null && selectedKey === key;
                             const dotVisual = isSelected ? (
                               <div className="w-3.5 h-3.5 rounded-full bg-[#3B4CA3] border-2 border-[#3B4CA3] mx-auto flex items-center justify-center shadow-xs print:bg-[#3B4CA3] print:border-[#3B4CA3]">
                                 <div className="w-1.5 h-1.5 rounded-full bg-white print:bg-white"></div>
@@ -1875,12 +1874,12 @@ export default function ReportPDF({
                         <tbody>
                           <tr className="font-bold text-slate-800 text-[10px] leading-normal">
                             <td className="p-1.5 border-r border-[#7285DE] bg-white text-left font-serif text-[9px] leading-tight space-y-0.5">
-                              <div>Present: <span className="font-bold">{attendance?.daysPresent ?? 60} / {attendance?.totalDays ?? 60}</span></div>
-                              <div>Absent: <span className="font-bold">{(attendance?.totalDays ?? 60) - (attendance?.daysPresent ?? 60)} days</span></div>
-                              <div>RATE: <span className="font-bold">{Math.round(((attendance?.daysPresent ?? 60) / (attendance?.totalDays ?? 60)) * 100)}%</span></div>
+                              <div>Present: <span className="font-bold">{attendance ? `${attendance.daysPresent} / ${attendance.totalDays}` : '— / —'}</span></div>
+                              <div>Absent: <span className="font-bold">{attendance ? `${attendance.totalDays - attendance.daysPresent} days` : '—'}</span></div>
+                              <div>RATE: <span className="font-bold">{attendance && attendance.totalDays > 0 ? `${Math.round((attendance.daysPresent / attendance.totalDays) * 100)}%` : '—'}</span></div>
                             </td>
                             <td className="p-1.5 border-r border-[#7285DE] bg-white italic font-serif text-[9px] text-slate-800">
-                              "{studentAverage >= 80 ? 'Very helpful, active, and respectful.' : 'Attentive, active, and respectful.'}"
+                              "{totalSum > 0 ? (studentAverage >= 80 ? 'Very helpful, active, and respectful.' : 'Attentive, active, and respectful.') : 'Attentive, active, and respectful.'}"
                             </td>
                             <td className="p-1.5 bg-white italic font-serif text-[9px] text-slate-800">
                               "{attendance?.remarks ? attendance.remarks : 'Very obedient, well-behaved and polite.'}"
@@ -2218,7 +2217,7 @@ export default function ReportPDF({
 
               {/* Attendance Bar */}
               <div className="py-1.5 print:py-0.5 text-center font-serif text-[11px] font-extrabold text-slate-900 uppercase tracking-wider">
-                ATTENDANCE: <span className="border-b border-slate-900 px-6 font-mono font-bold text-blue-800">{attendance?.daysPresent ?? '_'}</span> OUT OF <span className="border-b border-slate-900 px-6 font-mono font-bold text-blue-800">{attendance?.totalDays ?? '_'}</span>
+                ATTENDANCE: <span className="border-b border-slate-900 px-6 font-mono font-bold text-blue-800">{attendance?.daysPresent ?? '—'}</span> OUT OF <span className="border-b border-slate-900 px-6 font-mono font-bold text-blue-800">{attendance?.totalDays ?? '—'}</span>
               </div>
 
               {/* Combined Image 2 Custom Card (Bills + General Comments) */}
@@ -2380,13 +2379,19 @@ export default function ReportPDF({
                 <div className={`p-3 rounded border border-mauve-500/20 bg-white shadow-sm flex flex-col items-center justify-center font-bold ${getAverageColor(studentAverage)}`}>
                   <span className="text-[9.5px] font-mono uppercase tracking-wider text-mauve-900 font-bold">Terminal Average</span>
                   <span className="text-lg font-display font-black mt-0.5">
-                    {studentAverage.toFixed(1)}%
+                    {totalSum > 0 ? `${studentAverage.toFixed(1)}%` : '—'}
                   </span>
                 </div>
                 <div className="p-3 rounded border border-mauve-500/20 bg-white shadow-sm flex flex-col items-center justify-center">
                   <span className="text-[9.5px] font-mono uppercase tracking-wider text-mauve-900 font-bold">Class Rank</span>
                   <span className="text-lg font-display font-black text-mauve-950 mt-0.5">
-                    {studentRank} <span className="text-xs text-mauve-700 font-semibold">of {customClassRoll}</span>
+                    {studentRank > 0 ? (
+                      <>
+                        {studentRank} <span className="text-xs text-mauve-700 font-semibold">of {customClassRoll}</span>
+                      </>
+                    ) : (
+                      '—'
+                    )}
                   </span>
                 </div>
               </div>

@@ -722,14 +722,14 @@ export default function ReportCardSMSAlertModule({
             </thead>
             <tbody className="divide-y divide-gray-200">
               {filteredStudents.length > 0 ? (
-                filteredStudents.map(item => {
+                filteredStudents.map((item, idx) => {
                   const isChecked = selectedStudentIds.has(item.student.id);
                   const isQuickLoading = quickSendLoadingId === item.student.id;
                   const isQuickResult = quickSendResult?.id === item.student.id;
 
                   return (
                     <tr
-                      key={item.student.id}
+                      key={`${item.student.id}-${idx}`}
                       className={`hover:bg-gray-50 transition ${isChecked ? 'bg-amber-50/40' : ''}`}
                     >
                       <td className="p-3 text-center">

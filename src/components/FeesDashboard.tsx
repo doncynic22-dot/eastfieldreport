@@ -7,7 +7,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Student, ReportConfig, FeePayment, FeeTypeCategory, PaymentStatus, StudentBill } from '../types';
 import { INITIAL_FEE_PAYMENTS } from '../data/mockData';
 import { isDemoFeePayment } from './FeesCollectionModule';
-import { fetchSupabaseFeePayments } from '../lib/supabase';
+import { fetchSupabaseFeePayments, deleteSupabaseFeePayment, saveSupabaseFeePayments } from '../lib/supabase';
 import {
   DollarSign,
   Search,
@@ -28,7 +28,8 @@ import {
   School,
   ArrowUpRight,
   ShieldCheck,
-  User
+  User,
+  Trash2
 } from 'lucide-react';
 
 interface FeesDashboardProps {
@@ -95,6 +96,37 @@ export default function FeesDashboard({
 
   // RECEIPT MODAL STATE
   const [activeReceiptModal, setActiveReceiptModal] = useState<FeePayment | null>(null);
+  const [receiptToDelete, setReceiptToDelete] = useState<FeePayment | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  const confirmDeleteSingleReceipt = async () => {
+    if (!receiptToDelete) return;
+    const p = receiptToDelete;
+    setIsDeleting(true);
+    try {
+      const updated = feePayments.filter((item) => {
+        if (item.id && p.id && item.id.trim() === p.id.trim()) return false;
+        if (item.receiptNumber && p.receiptNumber && item.receiptNumber.trim().toUpperCase() === p.receiptNumber.trim().toUpperCase()) return false;
+        return true;
+      });
+      setFeePayments(updated);
+      localStorage.setItem('ea_fee_payments', JSON.stringify(updated));
+      localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(updated));
+      window.dispatchEvent(new Event('storage'));
+
+      if (activeReceiptModal && (activeReceiptModal.id === p.id || activeReceiptModal.receiptNumber === p.receiptNumber)) {
+        setActiveReceiptModal(null);
+      }
+
+      await deleteSupabaseFeePayment({ id: p.id, receiptNumber: p.receiptNumber });
+      await saveSupabaseFeePayments(updated);
+    } catch (e) {
+      console.error('Failed to delete fee payment from dashboard', e);
+    } finally {
+      setIsDeleting(false);
+      setReceiptToDelete(null);
+    }
+  };
 
   // Derive unique classes from data
   const availableClasses = useMemo(() => {
@@ -584,11 +616,11 @@ export default function FeesDashboard({
             <select
               value={filterClass}
               onChange={(e) => setFilterClass(e.target.value)}
-              className="w-full p-3 rounded-xl border border-white/30 bg-[#1A0438] text-white text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-400"
+              className="w-full p-3 rounded-xl border-2 border-purple-300 bg-white text-mauve-950 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-400 shadow-sm cursor-pointer"
             >
-              <option value="ALL" className="bg-[#1A0438] text-white">All Classes / Forms</option>
+              <option value="ALL">All Classes / Forms</option>
               {availableClasses.map((cls) => (
-                <option key={cls} value={cls} className="bg-[#1A0438] text-white font-bold">
+                <option key={cls} value={cls}>
                   {cls}
                 </option>
               ))}
@@ -600,11 +632,11 @@ export default function FeesDashboard({
             <select
               value={filterFeeType}
               onChange={(e) => setFilterFeeType(e.target.value)}
-              className="w-full p-3 rounded-xl border border-white/30 bg-[#1A0438] text-white text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-400"
+              className="w-full p-3 rounded-xl border-2 border-purple-300 bg-white text-mauve-950 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-400 shadow-sm cursor-pointer"
             >
-              <option value="ALL" className="bg-[#1A0438] text-white">All Fee Types</option>
+              <option value="ALL">All Fee Types</option>
               {availableFeeTypes.map((ft) => (
-                <option key={ft} value={ft} className="bg-[#1A0438] text-white font-bold">
+                <option key={ft} value={ft}>
                   {ft}
                 </option>
               ))}
@@ -616,12 +648,12 @@ export default function FeesDashboard({
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="w-full p-3 rounded-xl border border-white/30 bg-[#1A0438] text-white text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-400"
+              className="w-full p-3 rounded-xl border-2 border-purple-300 bg-white text-mauve-950 text-xs sm:text-sm font-bold outline-none focus:ring-2 focus:ring-purple-400 shadow-sm cursor-pointer"
             >
-              <option value="ALL" className="bg-[#1A0438] text-white">All Statuses</option>
-              <option value="Paid" className="bg-[#1A0438] text-white">Paid in Full</option>
-              <option value="Partial" className="bg-[#1A0438] text-white">Partial Payment</option>
-              <option value="Pending" className="bg-[#1A0438] text-white">Pending / Unpaid</option>
+              <option value="ALL">All Statuses</option>
+              <option value="Paid">Paid in Full</option>
+              <option value="Partial">Partial Payment</option>
+              <option value="Pending">Pending / Unpaid</option>
             </select>
           </div>
         </div>
@@ -645,11 +677,11 @@ export default function FeesDashboard({
             </thead>
             <tbody className="divide-y divide-white/10 text-xs">
               {filteredPayments.length > 0 ? (
-                filteredPayments.map((p) => {
+                filteredPayments.map((p, idx) => {
                   const isPaid = p.status === 'Paid';
                   const isPartial = p.status === 'Partial';
                   return (
-                    <tr key={p.id} className="hover:bg-white/5 transition">
+                    <tr key={`${p.id}-${idx}`} className="hover:bg-white/5 transition">
                       <td className="py-3.5 px-3 font-mono font-extrabold text-purple-300 whitespace-nowrap">
                         {p.receiptNumber}
                       </td>
@@ -695,14 +727,23 @@ export default function FeesDashboard({
                         {p.paymentDate}
                       </td>
                       <td className="py-3.5 px-3 text-center">
-                        <button
-                          onClick={() => setActiveReceiptModal(p)}
-                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs rounded-lg transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer border border-purple-400/30"
-                          title="Open official student fee receipt"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>Print</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => setActiveReceiptModal(p)}
+                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs rounded-lg transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer border border-purple-400/30"
+                            title="Open official student fee receipt"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Print</span>
+                          </button>
+                          <button
+                            onClick={() => setReceiptToDelete(p)}
+                            className="p-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-extrabold text-xs rounded-lg transition inline-flex items-center justify-center shadow-sm cursor-pointer border border-rose-400/30"
+                            title="Delete receipt record"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -719,6 +760,77 @@ export default function FeesDashboard({
         </div>
       </div>
 
+      {/* SINGLE RECEIPT DELETE CONFIRMATION MODAL */}
+      {receiptToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn no-print">
+          <div className="bg-[#1A0438] text-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-rose-500/40 p-6 space-y-4 animate-scaleUp">
+            <div className="flex items-center gap-3 text-rose-300">
+              <div className="p-2.5 rounded-xl bg-rose-500/20 border border-rose-400/30">
+                <Trash2 className="w-6 h-6 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-extrabold text-white">Delete Fee Receipt?</h3>
+                <p className="text-xs text-rose-200">Permanent ledger & database deletion</p>
+              </div>
+            </div>
+
+            {/* RECEIPT SUMMARY CARD */}
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-2 text-xs">
+              <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                <span className="text-gray-300 font-medium">Receipt No:</span>
+                <span className="font-mono font-extrabold text-amber-300 text-sm">
+                  {receiptToDelete.receiptNumber}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 font-medium">Student:</span>
+                <span className="font-extrabold text-white">
+                  {receiptToDelete.studentName} ({receiptToDelete.className})
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 font-medium">Fee Type:</span>
+                <span className="font-bold text-purple-200">{receiptToDelete.feeType}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 font-medium">Amount Paid:</span>
+                <span className="font-mono font-extrabold text-emerald-400 text-sm">
+                  GH₵ {receiptToDelete.amountPaid.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 font-medium">Payment Date:</span>
+                <span className="font-mono text-gray-200">{receiptToDelete.paymentDate}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-300 leading-relaxed">
+              Are you sure you want to delete this recorded fee payment? The student balance and class ledger will recalculate immediately.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setReceiptToDelete(null)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={confirmDeleteSingleReceipt}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs transition shadow-lg cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isDeleting ? 'Deleting...' : 'Yes, Delete Receipt'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* OFFICIAL SCHOOL FEES RECEIPT MODAL */}
       {activeReceiptModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
@@ -733,6 +845,14 @@ export default function FeesDashboard({
               </div>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setReceiptToDelete(activeReceiptModal)}
+                  className="px-3 py-2 bg-rose-600/80 hover:bg-rose-600 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 shadow-md cursor-pointer uppercase tracking-wider border border-rose-400/30"
+                  title="Delete this receipt record"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete Receipt</span>
+                </button>
+                <button
                   onClick={() => window.print()}
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-lg transition flex items-center gap-1.5 shadow-md cursor-pointer uppercase tracking-wider"
                 >
@@ -741,7 +861,7 @@ export default function FeesDashboard({
                 </button>
                 <button
                   onClick={() => setActiveReceiptModal(null)}
-                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition"
+                  className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>

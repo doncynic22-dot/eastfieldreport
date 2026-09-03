@@ -78,15 +78,24 @@ export function findMatchingGrade(
 ): Grade | undefined {
   if (!studentGrades || studentGrades.length === 0 || !subject) return undefined;
 
-  // First try matching both term and year with subject alias
-  const exactTermMatch = studentGrades.find(g => {
-    const isTermMatch = !term || !g.term || g.term === term;
-    const isYearMatch = !year || !g.year || g.year === year;
-    return isTermMatch && isYearMatch && matchesSubject(g.subjectId, subject);
-  });
+  // 1. Strict match on both term and year with subject alias
+  if (term && year) {
+    return studentGrades.find(g => {
+      const isTermMatch = g.term === term;
+      const isYearMatch = g.year === year;
+      return isTermMatch && isYearMatch && matchesSubject(g.subjectId, subject);
+    });
+  }
 
-  if (exactTermMatch) return exactTermMatch;
+  // 2. Strict match if only term or only year is specified
+  if (term || year) {
+    return studentGrades.find(g => {
+      const isTermMatch = !term || g.term === term;
+      const isYearMatch = !year || g.year === year;
+      return isTermMatch && isYearMatch && matchesSubject(g.subjectId, subject);
+    });
+  }
 
-  // Fallback to subject match only
+  // 3. Fallback to subject match only when neither term nor year was requested
   return studentGrades.find(g => matchesSubject(g.subjectId, subject));
 }

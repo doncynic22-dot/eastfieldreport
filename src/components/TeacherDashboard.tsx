@@ -787,11 +787,9 @@ export default function TeacherDashboard({
         nurseryRemark: loadedNurseryRemark
       };
 
-      // Load attendance
+      // Load attendance strictly for active term and school year
       const matchedAtt = attendance.find(
         a => a.studentId === student.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear)
-      ) || attendance.find(
-        a => a.studentId === student.id
       );
 
       initialAttendance[student.id] = {
@@ -2034,7 +2032,7 @@ export default function TeacherDashboard({
                           </td>
                         </tr>
                       ) : (
-                        activeClassStudents.map((student) => {
+                        activeClassStudents.map((student, idx) => {
                           const inputs = gradeInputs[student.id] || { classScore: '', examScore: '' };
                           const classVal = inputs.classScore ? Number(inputs.classScore) : 0;
                           const examVal = inputs.examScore ? Number(inputs.examScore) : 0;
@@ -2046,7 +2044,7 @@ export default function TeacherDashboard({
                           if (isNurseryOnly) {
                             const curRem = inputs.nurseryRemark || (totalVal >= 80 ? 'MO' : totalVal >= 65 ? 'O' : totalVal >= 45 ? 'S' : hasInput ? 'NA' : undefined);
                             return (
-                              <tr key={student.id} className="hover:bg-mauve-50/20">
+                              <tr key={`${student.id}-${idx}`} className="hover:bg-mauve-50/20">
                                 <td className="p-3 pl-4">
                                   <span className="block font-bold text-gray-900 text-xs">{student.name}</span>
                                   <span className="font-mono text-[10px] text-mauve-500">{student.rollNumber}</span>
@@ -2109,7 +2107,7 @@ export default function TeacherDashboard({
                           }
 
                           return (
-                            <tr key={student.id} className="hover:bg-mauve-50/20">
+                            <tr key={`${student.id}-${idx}`} className="hover:bg-mauve-50/20">
                               <td className="p-3 pl-4">
                                 <span className="block font-bold text-gray-900 text-xs">{student.name}</span>
                                 <span className="font-mono text-[10px] text-mauve-500">{student.rollNumber}</span>

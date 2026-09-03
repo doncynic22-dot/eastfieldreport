@@ -3,21 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill, User } from '../types';
-import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History, Contact, PhoneCall, Briefcase, BadgeCheck, UserCheck, MapPin, IdCard, Zap, Eye } from 'lucide-react';
+import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History, Contact, PhoneCall, Briefcase, BadgeCheck, UserCheck, MapPin, IdCard, Zap, Eye, Database, RefreshCw, Library } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import FeesCollectionModule from './FeesCollectionModule';
 import FeesDashboard from './FeesDashboard';
 import SchoolInventoryModule from './SchoolInventoryModule';
+import BookInventoryModule from './BookInventoryModule';
 import JHS3MockExamModule from './JHS3MockExamModule';
 import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryModule';
 import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, fetchSupabaseBookStock } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
-import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion } from '../services/promotionService';
+import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
 import { INITIAL_SUBJECTS } from '../data/mockData';
 import { matchesSubject } from '../utils/subjectUtils';
@@ -48,7 +49,7 @@ interface AdminDashboardProps {
 }
 
 
-type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'bulk-sms' | 'report-sms-alerts' | 'transcripts' | 'jhs3-mock' | 'terminal-history' | 'students' | 'teachers' | 'teacher-profiles' | 'class-assignments' | 'inventory' | 'config';
+type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'bulk-sms' | 'report-sms-alerts' | 'transcripts' | 'jhs3-mock' | 'terminal-history' | 'students' | 'teachers' | 'teacher-profiles' | 'class-assignments' | 'inventory' | 'book-inventory' | 'config';
 
 export default function AdminDashboard({
   students,
@@ -76,25 +77,92 @@ export default function AdminDashboard({
 }: AdminDashboardProps) {
   const [activeTab, setActiveTab] = useState<AdminTab>('analytics');
 
+  // Book Inventory & Textbook Stock Quick Summary for Admin Overview
+  const [bookStockSummary, setBookStockSummary] = useState<{
+    totalTitles: number;
+    totalStock: number;
+    totalSold: number;
+    totalRemaining: number;
+    lowStockCount: number;
+    totalSalesValue: number;
+  }>({
+    totalTitles: 0,
+    totalStock: 0,
+    totalSold: 0,
+    totalRemaining: 0,
+    lowStockCount: 0,
+    totalSalesValue: 0
+  });
+
+  useEffect(() => {
+    const updateBookSummary = async () => {
+      try {
+        const stocks = await fetchSupabaseBookStock();
+        if (Array.isArray(stocks)) {
+          const totalTitles = stocks.length;
+          const totalStock = stocks.reduce((sum, b) => sum + (Number(b.quantityInStock) || 0), 0);
+          const totalSold = stocks.reduce((sum, b) => sum + (Number(b.quantitySold) || 0), 0);
+          const totalRemaining = stocks.reduce((sum, b) => sum + (Number(b.quantityRemaining) || 0), 0);
+          const lowStockCount = stocks.filter((b) => (Number(b.quantityRemaining) || 0) <= (Number(b.lowStockThreshold) || 20)).length;
+          const totalSalesValue = stocks.reduce((sum, b) => sum + ((Number(b.quantitySold) || 0) * (Number(b.unitPrice) || 0)), 0);
+          setBookStockSummary({
+            totalTitles,
+            totalStock,
+            totalSold,
+            totalRemaining,
+            lowStockCount,
+            totalSalesValue
+          });
+        }
+      } catch (e) {
+        console.warn('Error fetching book stock summary for admin overview:', e);
+      }
+    };
+
+    updateBookSummary();
+    window.addEventListener('ea_book_stock_updated', updateBookSummary);
+    window.addEventListener('ea_book_sales_updated', updateBookSummary);
+    return () => {
+      window.removeEventListener('ea_book_stock_updated', updateBookSummary);
+      window.removeEventListener('ea_book_sales_updated', updateBookSummary);
+    };
+  }, []);
+
   // Config Update State
   const [configUpdateSuccess, setConfigUpdateSuccess] = useState<string | null>(null);
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [formConfig, setFormConfig] = useState<ReportConfig>(config);
+  const [isFormConfigDirty, setIsFormConfigDirty] = useState(false);
+
+  // Synchronize form draft when external config updates (only if user hasn't typed uncommitted changes)
+  useEffect(() => {
+    if (!isFormConfigDirty) {
+      setFormConfig(config);
+    }
+  }, [config, isFormConfigDirty]);
 
   const handleUpdateSystemConfig = async () => {
     setIsSavingConfig(true);
     try {
-      localStorage.setItem('ea_config', JSON.stringify(config));
-      localStorage.setItem('mock_supabase_ea_config', JSON.stringify(config));
+      const nowIso = new Date().toISOString();
+      const updatedConfig: ReportConfig = {
+        ...formConfig,
+        updatedAt: nowIso
+      };
+      setConfig(updatedConfig);
+      setIsFormConfigDirty(false);
+      localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+      localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updatedConfig));
       if (getSupabaseCredentials().isConfigured) {
-        await saveSupabaseConfig(config);
-        await onPushToSupabase?.(undefined, config);
+        await saveSupabaseConfig(updatedConfig);
+        await onPushToSupabase?.(undefined, updatedConfig);
       }
-      const isThirdTerm = config.term?.toLowerCase().includes('3') || config.term?.toLowerCase().includes('third');
+      const isThirdTerm = updatedConfig.term?.toLowerCase().includes('3') || updatedConfig.term?.toLowerCase().includes('third');
       const termNotice = isThirdTerm
         ? 'Promotional status is active on Third Term report templates.'
         : 'Promotional status is hidden (only appears on Third Term templates).';
 
-      setConfigUpdateSuccess(`System Settings & Academic Term updated successfully to "${config.term}"! ${termNotice}`);
+      setConfigUpdateSuccess(`System Settings updated successfully! Academic Year: "${updatedConfig.schoolYear}", Term: "${updatedConfig.term}". ${termNotice}`);
       setTimeout(() => {
         setConfigUpdateSuccess(null);
       }, 7000);
@@ -165,6 +233,33 @@ export default function AdminDashboard({
   const [showBatchEmailModal, setShowBatchEmailModal] = useState(false);
   const [batchCopiedMsg, setBatchCopiedMsg] = useState(false);
 
+  // Interactive Transcript Selector dropdown states
+  const [isClassDropdownOpen, setIsClassDropdownOpen] = useState(false);
+  const [isStudentDropdownOpen, setIsStudentDropdownOpen] = useState(false);
+  const [studentDropdownSearch, setStudentDropdownSearch] = useState('');
+  const [classDropdownSearch, setClassDropdownSearch] = useState('');
+  const classDropdownRef = React.useRef<HTMLDivElement>(null);
+  const studentDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Close dropdowns on click outside (support both desktop mousedown and mobile touchstart)
+  useEffect(() => {
+    const handleOutsideClick = (e: Event) => {
+      const targetNode = e.target as Node;
+      if (classDropdownRef.current && !classDropdownRef.current.contains(targetNode)) {
+        setIsClassDropdownOpen(false);
+      }
+      if (studentDropdownRef.current && !studentDropdownRef.current.contains(targetNode)) {
+        setIsStudentDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, []);
+
   // Automated Bulk Email Dispatcher states
   const [batchNote, setBatchNote] = useState('');
   const [isBulkDispatching, setIsBulkDispatching] = useState(false);
@@ -209,36 +304,248 @@ export default function AdminDashboard({
   const [promotionSuccessMsg, setPromotionSuccessMsg] = useState('');
   const [promotionSearchQuery, setPromotionSearchQuery] = useState('');
 
+  // Grade Data Recovery and Local Backup states
+  const [backupRestoreMsg, setBackupRestoreMsg] = useState('');
+  const [backupRestoreError, setBackupRestoreError] = useState('');
+  const [isExportingData, setIsExportingData] = useState(false);
+  const [isRecoveringCloud, setIsRecoveringCloud] = useState(false);
+
+  const handleExportFullSystemBackup = () => {
+    setIsExportingData(true);
+    try {
+      const backupData = {
+        exportedAt: new Date().toISOString(),
+        schoolName: config.schoolName,
+        students,
+        teachers,
+        grades,
+        attendance,
+        bills,
+        config
+      };
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `eastfield_academy_assessment_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setBackupRestoreMsg('✅ Full system assessment & database backup exported successfully!');
+      setTimeout(() => setBackupRestoreMsg(''), 6000);
+    } catch (e: any) {
+      setBackupRestoreError('Failed to export backup: ' + (e.message || String(e)));
+    } finally {
+      setIsExportingData(false);
+    }
+  };
+
+  const handleImportSystemBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (!parsed || typeof parsed !== 'object') {
+          throw new Error('Invalid JSON file format.');
+        }
+        let restoredCount = 0;
+        if (Array.isArray(parsed.grades) && parsed.grades.length > 0) {
+          // Merge with existing grades safely
+          const gradeMap = new Map<string, Grade>();
+          grades.forEach(g => {
+            const key = `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
+            gradeMap.set(key, g);
+          });
+          parsed.grades.forEach((g: Grade) => {
+            const key = `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
+            gradeMap.set(key, g);
+            restoredCount++;
+          });
+          const mergedGrades = Array.from(gradeMap.values());
+          setGrades(mergedGrades);
+          localStorage.setItem('ea_grades', JSON.stringify(mergedGrades));
+          localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(mergedGrades));
+          if (getSupabaseCredentials().isConfigured) {
+            await saveSupabaseGrades(mergedGrades);
+          }
+        }
+        if (Array.isArray(parsed.attendance) && parsed.attendance.length > 0) {
+          const attMap = new Map<string, Attendance>();
+          attendance.forEach(a => {
+            const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+            attMap.set(key, a);
+          });
+          parsed.attendance.forEach((a: Attendance) => {
+            const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+            attMap.set(key, a);
+          });
+          const mergedAtt = Array.from(attMap.values());
+          setAttendance(mergedAtt);
+          localStorage.setItem('ea_attendance', JSON.stringify(mergedAtt));
+          localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(mergedAtt));
+          if (getSupabaseCredentials().isConfigured) {
+            await saveSupabaseAttendance(mergedAtt);
+          }
+        }
+        setBackupRestoreMsg(`🎉 Successfully restored & merged ${restoredCount} assessment marks and attendance records!`);
+        setTimeout(() => setBackupRestoreMsg(''), 8000);
+      } catch (err: any) {
+        setBackupRestoreError('Error importing backup file: ' + (err.message || 'Corrupted file'));
+        setTimeout(() => setBackupRestoreError(''), 7000);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleDeepCloudGradeRecovery = async () => {
+    setIsRecoveringCloud(true);
+    setBackupRestoreMsg('');
+    setBackupRestoreError('');
+    try {
+      const client = getSupabaseClient();
+      if (!client) {
+        throw new Error('Supabase Cloud is not configured on this device.');
+      }
+      const { data, error } = await client.from('ea_grades').select('*');
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        setBackupRestoreMsg('No remote records found in Supabase table "ea_grades".');
+        return;
+      }
+      // Process remote grades
+      const gradeMap = new Map<string, Grade>();
+      grades.forEach(g => {
+        const key = `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
+        gradeMap.set(key, g);
+      });
+      let addedOrUpdated = 0;
+      data.forEach(item => {
+        const rawNurseryRem = (item.nursery_remark || item.nurseryRemark || '').toString().trim().toUpperCase();
+        const remUpper = (item.remarks || '').toString().trim().toUpperCase();
+        const totalScoreNum = item.total_score !== undefined && item.total_score !== null ? Number(item.total_score) : ((Number(item.class_score) || 0) + (Number(item.exam_score) || 0));
+
+        let resolvedNurseryRemark: 'MO' | 'O' | 'S' | 'NA' | undefined = undefined;
+        if (['MO', 'O', 'S', 'NA'].includes(rawNurseryRem)) {
+          resolvedNurseryRemark = rawNurseryRem as 'MO' | 'O' | 'S' | 'NA';
+        } else if (['MO', 'O', 'S', 'NA'].includes(remUpper)) {
+          resolvedNurseryRemark = remUpper as 'MO' | 'O' | 'S' | 'NA';
+        }
+
+        const gRec: Grade = {
+          studentId: item.student_id,
+          subjectId: item.subject_id || '',
+          classScore: item.class_score !== undefined && item.class_score !== null ? Number(item.class_score) : 0,
+          examScore: item.exam_score !== undefined && item.exam_score !== null ? Number(item.exam_score) : 0,
+          totalScore: totalScoreNum,
+          gradeLetter: item.grade_letter || 'F',
+          remarks: item.remarks || resolvedNurseryRemark || '',
+          nurseryRemark: resolvedNurseryRemark,
+          term: item.term || 'Term 1',
+          year: item.year || '2025/2026',
+          teacherId: item.teacher_id || '',
+          updatedAt: item.updated_at || new Date().toISOString(),
+        };
+        const key = `${gRec.studentId}_${gRec.subjectId}_${gRec.term || 'Term 1'}_${gRec.year || '2025/2026'}`;
+        gradeMap.set(key, gRec);
+        addedOrUpdated++;
+      });
+      const merged = Array.from(gradeMap.values());
+      setGrades(merged);
+      localStorage.setItem('ea_grades', JSON.stringify(merged));
+      localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(merged));
+      setBackupRestoreMsg(`✨ Successfully recovered and synced ${addedOrUpdated} marks from Supabase Cloud!`);
+      setTimeout(() => setBackupRestoreMsg(''), 8000);
+    } catch (err: any) {
+      setBackupRestoreError('Cloud Grade Recovery Error: ' + (err.message || String(err)));
+      setTimeout(() => setBackupRestoreError(''), 8000);
+    } finally {
+      setIsRecoveringCloud(false);
+    }
+  };
+
   const handleExecutePromotion = (targetYear?: string) => {
     const activeYear = targetYear || config.schoolYear;
     const preSnapshot = JSON.parse(JSON.stringify(students));
     const result = promoteStudents(students, activeYear);
     
+    // Map previous student IDs to new student IDs for seamless relational integrity
+    const idMap = new Map<string, string>();
+    result.records.forEach(r => {
+      if (r.oldStudentId && r.newStudentId && r.oldStudentId !== r.newStudentId) {
+        idMap.set(r.oldStudentId, r.newStudentId);
+      }
+    });
+
+    if (idMap.size > 0 && setGrades) {
+      setGrades(prev => {
+        const updated = prev.map(g => {
+          const newId = idMap.get(g.studentId);
+          return newId ? { ...g, studentId: newId } : g;
+        });
+        localStorage.setItem('ea_grades', JSON.stringify(updated));
+        localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(updated));
+        return updated;
+      });
+    }
+
+    if (idMap.size > 0 && setAttendance) {
+      setAttendance(prev => {
+        const updated = prev.map(a => {
+          const newId = idMap.get(a.studentId);
+          return newId ? { ...a, studentId: newId } : a;
+        });
+        localStorage.setItem('ea_attendance', JSON.stringify(updated));
+        return updated;
+      });
+    }
+
+    if (idMap.size > 0 && bills && onUpdateBill) {
+      bills.forEach(b => {
+        const newId = idMap.get(b.studentId);
+        if (newId) {
+          onUpdateBill({ ...b, studentId: newId });
+        }
+      });
+    }
+
     setStudents(result.promotedStudents);
     
     const updatedConfig: ReportConfig = {
       ...config,
       lastPromotedYear: activeYear,
+      promotionUndoneYear: undefined,
       lastPromotionDate: new Date().toISOString(),
-      prePromotionSnapshot: preSnapshot
+      prePromotionSnapshot: preSnapshot,
+      updatedAt: new Date().toISOString()
     };
     setConfig(updatedConfig);
+    setFormConfig(updatedConfig);
     
     localStorage.setItem('ea_students', JSON.stringify(result.promotedStudents));
     localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+    localStorage.setItem('mock_supabase_ea_students', JSON.stringify(result.promotedStudents));
+    localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updatedConfig));
     localStorage.setItem('ea_pre_promotion_students', JSON.stringify(preSnapshot));
 
-    if (getSupabaseCredentials().isConfigured) {
+    const creds = getSupabaseCredentials();
+    if (creds.isConfigured) {
+      saveSupabaseStudents(result.promotedStudents).catch(err => console.warn('Supabase student promotion sync error', err));
+      saveSupabaseConfig(updatedConfig).catch(err => console.warn('Supabase config promotion sync error', err));
       onPushToSupabase?.(result.promotedStudents, updatedConfig);
     }
 
-    setPromotionSuccessMsg(`🎓 Promotion complete! Migrated ${result.promotedCount} pupils (${result.graduatedCount} JHS graduates) for ${activeYear}.`);
+    setPromotionSuccessMsg(`🎓 Promotion complete! Migrated all ${result.promotedCount} pupils to their next class and updated student IDs for ${activeYear}.`);
     setTimeout(() => setPromotionSuccessMsg(''), 10000);
     setShowPromotionModal(false);
   };
 
   const handleUndoPromotion = () => {
-    if (!confirm('Are you sure you want to REVERSE / UNDO student promotion? This will restore all pupils back to their previous grade levels before promotion.')) {
+    if (!confirm('Are you sure you want to REVERSE / UNDO student promotion? This will restore all pupils back to their previous grade levels and IDs before promotion.')) {
       return;
     }
 
@@ -256,26 +563,158 @@ export default function AdminDashboard({
 
     const { restoredStudents, revertedCount } = undoPromotion(students, snapshot);
 
+    // Map reverted student IDs back
+    const revertIdMap = new Map<string, string>();
+    students.forEach((s) => {
+      const restored = restoredStudents.find(r => r.name.toLowerCase().trim() === s.name.toLowerCase().trim());
+      if (restored && s.id !== restored.id) {
+        revertIdMap.set(s.id, restored.id);
+      }
+    });
+
+    if (revertIdMap.size > 0 && setGrades) {
+      setGrades(prev => {
+        const updated = prev.map(g => {
+          const oldId = revertIdMap.get(g.studentId);
+          return oldId ? { ...g, studentId: oldId } : g;
+        });
+        localStorage.setItem('ea_grades', JSON.stringify(updated));
+        localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(updated));
+        return updated;
+      });
+    }
+
+    if (revertIdMap.size > 0 && setAttendance) {
+      setAttendance(prev => {
+        const updated = prev.map(a => {
+          const oldId = revertIdMap.get(a.studentId);
+          return oldId ? { ...a, studentId: oldId } : a;
+        });
+        localStorage.setItem('ea_attendance', JSON.stringify(updated));
+        return updated;
+      });
+    }
+
     setStudents(restoredStudents);
 
     const updatedConfig: ReportConfig = {
       ...config,
-      lastPromotedYear: undefined,
-      prePromotionSnapshot: undefined
+      lastPromotedYear: `undone_${config.schoolYear}`,
+      promotionUndoneYear: config.schoolYear,
+      prePromotionSnapshot: undefined,
+      updatedAt: new Date().toISOString()
     };
     setConfig(updatedConfig);
+    setFormConfig(updatedConfig);
 
     localStorage.setItem('ea_students', JSON.stringify(restoredStudents));
     localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+    localStorage.setItem('mock_supabase_ea_students', JSON.stringify(restoredStudents));
+    localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updatedConfig));
     localStorage.removeItem('ea_pre_promotion_students');
 
-    if (getSupabaseCredentials().isConfigured) {
+    const creds = getSupabaseCredentials();
+    if (creds.isConfigured) {
+      saveSupabaseStudents(restoredStudents).catch(err => console.warn('Supabase student undo sync error', err));
+      saveSupabaseConfig(updatedConfig).catch(err => console.warn('Supabase config undo sync error', err));
       onPushToSupabase?.(restoredStudents, updatedConfig);
     }
 
-    setPromotionSuccessMsg(`↺ Promotion successfully reversed! Restored ${revertedCount} pupils to their pre-promotion class levels.`);
+    setPromotionSuccessMsg(`🔄 Promotion reversed! Restored ${revertedCount} pupils back to previous classes & IDs.`);
+    setTimeout(() => setPromotionSuccessMsg(''), 8000);
+    setShowPromotionModal(false);
+  };
+
+  const handleRestoreFromTerminalReport = () => {
+    if (!confirm('Are you sure you want to restore previous registered students based on previous term (Term 3) terminal reports? All 170 registered pupils will be verified, enrolled, and assigned.')) {
+      return;
+    }
+
+    const { restoredStudents, restoredCount } = restoreStudentsFromTerminalReport(students, grades);
+    setStudents(restoredStudents);
+
+    const updatedConfig: ReportConfig = {
+      ...config,
+      lastPromotedYear: `undone_${config.schoolYear}`,
+      promotionUndoneYear: config.schoolYear,
+      prePromotionSnapshot: undefined,
+      updatedAt: new Date().toISOString()
+    };
+    setConfig(updatedConfig);
+    setFormConfig(updatedConfig);
+
+    localStorage.setItem('ea_students', JSON.stringify(restoredStudents));
+    localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+    localStorage.setItem('mock_supabase_ea_students', JSON.stringify(restoredStudents));
+    localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updatedConfig));
+    localStorage.removeItem('ea_pre_promotion_students');
+
+    const creds = getSupabaseCredentials();
+    if (creds.isConfigured) {
+      saveSupabaseStudents(restoredStudents).catch(err => console.warn('Supabase student restore sync error', err));
+      saveSupabaseConfig(updatedConfig).catch(err => console.warn('Supabase config restore sync error', err));
+      onPushToSupabase?.(restoredStudents, updatedConfig);
+    }
+
+    setPromotionSuccessMsg(`📋 Restored and verified ${restoredStudents.length} registered pupils (${restoredCount} updated) from previous term terminal reports!`);
     setTimeout(() => setPromotionSuccessMsg(''), 10000);
     setShowPromotionModal(false);
+  };
+
+  const handleRestoreAdmittedClasses = () => {
+    if (!confirm('Are you sure you want to restore all pupils back to their original admitted class levels?')) {
+      return;
+    }
+
+    const baseRestored = restoreAllStudentsToAdmittedLevels(students);
+    const { restoredStudents } = restoreStudentsFromTerminalReport(baseRestored, grades);
+    const revertedCount = restoredStudents.filter((s, idx) => s.className !== students[idx]?.className || s.level !== students[idx]?.level).length;
+    setStudents(restoredStudents);
+
+    const updatedConfig: ReportConfig = {
+      ...config,
+      lastPromotedYear: `undone_${config.schoolYear}`,
+      promotionUndoneYear: config.schoolYear,
+      prePromotionSnapshot: undefined,
+      updatedAt: new Date().toISOString()
+    };
+    setConfig(updatedConfig);
+    setFormConfig(updatedConfig);
+
+    localStorage.setItem('ea_students', JSON.stringify(restoredStudents));
+    localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+    localStorage.setItem('mock_supabase_ea_students', JSON.stringify(restoredStudents));
+    localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updatedConfig));
+    localStorage.removeItem('ea_pre_promotion_students');
+
+    const creds = getSupabaseCredentials();
+    if (creds.isConfigured) {
+      saveSupabaseStudents(restoredStudents).catch(err => console.warn('Supabase student restore sync error', err));
+      saveSupabaseConfig(updatedConfig).catch(err => console.warn('Supabase config restore sync error', err));
+      onPushToSupabase?.(restoredStudents, updatedConfig);
+    }
+
+    setPromotionSuccessMsg(`↺ Restored all pupils to their original admitted class levels (${revertedCount > 0 ? revertedCount : restoredStudents.length} pupils updated).`);
+    setTimeout(() => setPromotionSuccessMsg(''), 10000);
+    setShowPromotionModal(false);
+  };
+
+  const handleAssignClassesFromIds = () => {
+    const corrected = assignStudentsToCorrectClassesFromId(students);
+    const updatedCount = corrected.filter((s, idx) => s.className !== students[idx]?.className || s.level !== students[idx]?.level).length;
+    setStudents(corrected);
+
+    localStorage.setItem('ea_students', JSON.stringify(corrected));
+    localStorage.setItem('mock_supabase_ea_students', JSON.stringify(corrected));
+
+    const creds = getSupabaseCredentials();
+    if (creds.isConfigured) {
+      saveSupabaseStudents(corrected).catch(err => console.warn('Supabase student sync error', err));
+      onPushToSupabase?.(corrected, config);
+    }
+
+    setPromotionSuccessMsg(`✨ ID Alignment Complete: Scanned roll numbers (e.g. EA/J1/... -> JHS 1) and aligned all ${corrected.length} pupils (${updatedCount} updated) to their proper class!`);
+    setTimeout(() => setPromotionSuccessMsg(''), 10000);
   };
 
   // Deletion confirmation states
@@ -412,6 +851,11 @@ export default function AdminDashboard({
           ...prev,
           schoolLogoUrl: publicUrl
         }));
+        setFormConfig(prev => ({
+          ...prev,
+          schoolLogoUrl: publicUrl
+        }));
+        setIsFormConfigDirty(true);
         return; // Success, bypass base64 fallback
       } catch (err: any) {
         console.warn('Could not upload to Supabase Storage, falling back to base64:', err.message || err);
@@ -426,6 +870,11 @@ export default function AdminDashboard({
           ...prev,
           schoolLogoUrl: resizedBase64
         }));
+        setFormConfig(prev => ({
+          ...prev,
+          schoolLogoUrl: resizedBase64
+        }));
+        setIsFormConfigDirty(true);
       } else {
         setLogoUploadError('Failed to read and process image.');
       }
@@ -456,6 +905,12 @@ export default function AdminDashboard({
       delete copy.schoolLogoUrl;
       return copy;
     });
+    setFormConfig(prev => {
+      const copy = { ...prev };
+      delete copy.schoolLogoUrl;
+      return copy;
+    });
+    setIsFormConfigDirty(true);
     setLogoUploadError('');
   };
 
@@ -478,6 +933,11 @@ export default function AdminDashboard({
           ...prev,
           principalSignatureUrl: resizedBase64
         }));
+        setFormConfig(prev => ({
+          ...prev,
+          principalSignatureUrl: resizedBase64
+        }));
+        setIsFormConfigDirty(true);
       } else {
         setSignatureUploadError('Failed to read and process signature image.');
       }
@@ -498,6 +958,12 @@ export default function AdminDashboard({
       delete copy.principalSignatureUrl;
       return copy;
     });
+    setFormConfig(prev => {
+      const copy = { ...prev };
+      delete copy.principalSignatureUrl;
+      return copy;
+    });
+    setIsFormConfigDirty(true);
     setSignatureUploadError('');
   };
 
@@ -511,7 +977,9 @@ export default function AdminDashboard({
   const jhsStudentsCount = students.filter((s) => s.level === 'JHS').length;
 
   // Class Lists for dropdown queries
-  const allClassNames = [...classes.NURSERY, ...kgClasses, ...classes.PRIMARY, ...classes.JHS];
+  const standardClasses = [...classes.NURSERY, ...kgClasses, ...classes.PRIMARY, ...classes.JHS];
+  const customStudentClasses = Array.from(new Set(students.map((s) => s.className).filter(Boolean)));
+  const allClassNames = Array.from(new Set([...standardClasses, ...customStudentClasses]));
 
   // Calculate Overall Averages
   const levelAverages = (level: AcademicLevel) => {
@@ -556,18 +1024,28 @@ export default function AdminDashboard({
       return;
     }
 
+    // Auto-resolve class from Roll Number / ID if formatted (e.g. EA/J1/2026/005 -> JHS 1)
+    const resolved = resolveClassAndLevelFromStudentId(studentForm.rollNumber, studentForm.level);
+    const finalClassName = studentForm.className || resolved.className;
+    const finalLevel = studentForm.level || resolved.level;
+
     let updatedStudentsList: Student[];
     if (editingStudent) {
       // Edit Student
-      updatedStudentsList = students.map(s => s.id === editingStudent.id ? { ...s, ...studentForm } : s);
+      updatedStudentsList = students.map(s => s.id === editingStudent.id ? {
+        ...s,
+        ...studentForm,
+        className: finalClassName,
+        level: finalLevel
+      } : s);
     } else {
       // Add Student
       const newStudent: Student = {
         id: `st-${Date.now()}`,
         name: studentForm.name,
         rollNumber: studentForm.rollNumber,
-        level: studentForm.level,
-        className: studentForm.className,
+        level: finalLevel,
+        className: finalClassName,
         guardianName: studentForm.guardianName,
         guardianEmail: studentForm.guardianEmail,
         guardianPhone: studentForm.guardianPhone,
@@ -614,24 +1092,41 @@ export default function AdminDashboard({
   };
 
   const handleDeleteStudent = async (id: string) => {
-    setStudents(prev => prev.filter(s => s.id !== id));
+    const studentToDelete = students.find(s => s.id === id);
+    const rollNumber = studentToDelete?.rollNumber;
+    const studentName = studentToDelete?.name;
+
+    const remainingStudents = students.filter(s => s.id !== id);
+    setStudents(remainingStudents);
     if (selectedStudentId === id) setSelectedStudentId('');
-    
-    // Explicitly delete from Supabase if configured
-    const creds = getSupabaseCredentials();
-    if (creds.isConfigured) {
-      await deleteSupabaseStudent(id);
+
+    // Clean up grades and attendance for this student in local state
+    if (setGrades) {
+      setGrades(prev => prev.filter(g => g.studentId !== id && (!rollNumber || g.studentId !== rollNumber)));
+    }
+    if (setAttendance) {
+      setAttendance(prev => prev.filter(a => a.studentId !== id && (!rollNumber || a.studentId !== rollNumber)));
+    }
+
+    // Call deleteSupabaseStudent unconditionally (records tombstone, purges caches, and deletes remote DB)
+    await deleteSupabaseStudent(id, rollNumber, studentName);
+
+    // Sync remaining students globally
+    if (onPushToSupabase) {
+      onPushToSupabase(remainingStudents, config);
     }
   };
 
   const handleDeleteTeacher = async (id: string) => {
-    setTeachers(prev => prev.filter(t => t.id !== id));
-    
-    // Explicitly delete from Supabase if configured
-    const creds = getSupabaseCredentials();
-    if (creds.isConfigured) {
-      await deleteSupabaseTeacher(id);
-    }
+    const teacherToDelete = teachers.find(t => t.id === id);
+    const email = teacherToDelete?.email;
+    const name = teacherToDelete?.name;
+
+    const remainingTeachers = teachers.filter(t => t.id !== id);
+    setTeachers(remainingTeachers);
+
+    // Call deleteSupabaseTeacher unconditionally
+    await deleteSupabaseTeacher(id, email, name);
   };
 
   // Adjust class list in form dynamically based on chosen level
@@ -876,6 +1371,8 @@ export default function AdminDashboard({
   // When class changes in transcript selector, auto-select first student in that class
   const handleClassChangeInTranscriptSelector = (cls: string) => {
     setSelectedClass(cls);
+    setIsClassDropdownOpen(false);
+    setClassDropdownSearch('');
     const firstStudent = students.find((s) => s.className === cls);
     if (firstStudent) {
       setSelectedStudentId(firstStudent.id);
@@ -883,6 +1380,69 @@ export default function AdminDashboard({
       setSelectedStudentId('');
     }
   };
+
+  const currentStudentIndex = studentsInSelectedClass.findIndex(s => s.id === selectedStudentId);
+  const handlePrevStudent = () => {
+    if (studentsInSelectedClass.length === 0) return;
+    const prevIdx = currentStudentIndex > 0 ? currentStudentIndex - 1 : studentsInSelectedClass.length - 1;
+    setSelectedStudentId(studentsInSelectedClass[prevIdx].id);
+  };
+  const handleNextStudent = () => {
+    if (studentsInSelectedClass.length === 0) return;
+    const nextIdx = currentStudentIndex < studentsInSelectedClass.length - 1 ? currentStudentIndex + 1 : 0;
+    setSelectedStudentId(studentsInSelectedClass[nextIdx].id);
+  };
+
+  const filteredStudentsForDropdown = studentsInSelectedClass.filter(s => {
+    if (!studentDropdownSearch.trim()) return true;
+    const term = studentDropdownSearch.toLowerCase();
+    return s.name.toLowerCase().includes(term) || s.rollNumber.toLowerCase().includes(term);
+  });
+
+  const filteredClassesForDropdown = allClassNames.filter(cls => {
+    if (!classDropdownSearch.trim()) return true;
+    return cls.toLowerCase().includes(classDropdownSearch.toLowerCase());
+  });
+
+  // Auto-sync selectedClass & selectedStudentId to ensure a pupil is always selected and visible in transcript view
+  useEffect(() => {
+    if (students.length > 0) {
+      const inCurrentClass = students.filter((s) => s.className === selectedClass);
+      if (inCurrentClass.length > 0) {
+        if (!selectedStudentId || !inCurrentClass.some((s) => s.id === selectedStudentId)) {
+          setSelectedStudentId(inCurrentClass[0].id);
+        }
+      } else {
+        // If current selectedClass has no students, automatically switch to first class that has students
+        const classWithStudents = allClassNames.find((cls) => students.some((s) => s.className === cls)) || students[0]?.className;
+        if (classWithStudents && classWithStudents !== selectedClass) {
+          setSelectedClass(classWithStudents);
+          const firstInClass = students.find((s) => s.className === classWithStudents);
+          if (firstInClass) {
+            setSelectedStudentId(firstInClass.id);
+          }
+        }
+      }
+    }
+  }, [students, selectedClass, selectedStudentId, allClassNames]);
+
+  // Auto-heal students who are marked as "Graduated" / "Graduated JHS"
+  useEffect(() => {
+    if (students.length > 0) {
+      const hasGraduated = students.some((s) => (s.className || '').toLowerCase().includes('graduated'));
+      if (hasGraduated) {
+        const restored = restoreAllStudentsToAdmittedLevels(students);
+        setStudents(restored);
+        localStorage.setItem('ea_students', JSON.stringify(restored));
+        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(restored));
+        const creds = getSupabaseCredentials();
+        if (creds.isConfigured) {
+          saveSupabaseStudents(restored).catch((err) => console.warn('Sync restored students error', err));
+          onPushToSupabase?.(restored, config);
+        }
+      }
+    }
+  }, [students, config, onPushToSupabase]);
 
   // Helper to compute student statistics for email report cards
   const getStudentStatsForEmail = (studentId: string) => {
@@ -1074,6 +1634,8 @@ export default function AdminDashboard({
               Reopening Date: <strong>{formatReopeningDate(config.reopeningDate)}</strong>.
               {config.lastPromotedYear === config.schoolYear ? (
                 <span className="text-green-300 font-bold ml-1"> ✓ All enrolled pupils promoted for {config.schoolYear}.</span>
+              ) : config.promotionUndoneYear === config.schoolYear || config.lastPromotedYear === `undone_${config.schoolYear}` ? (
+                <span className="text-amber-300 font-bold ml-1"> ↺ Promotion for {config.schoolYear} is currently reversed / undone.</span>
               ) : (
                 <span className="text-amber-200 font-medium ml-1"> Automatically migrates pupils to next class upon First Term reopening.</span>
               )}
@@ -1089,26 +1651,153 @@ export default function AdminDashboard({
             <span>Review & Execute Promotion</span>
           </button>
 
-          {(config.lastPromotedYear === config.schoolYear || config.prePromotionSnapshot || localStorage.getItem('ea_pre_promotion_students')) && (
-            <button
-              onClick={handleUndoPromotion}
-              className="px-3 py-2 bg-rose-600/90 hover:bg-rose-600 text-white font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 shrink-0 shadow-sm cursor-pointer border border-rose-400/40 flex-1 sm:flex-none"
-              title="Undo / Reverse promotion and restore pupils to pre-promotion classes"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-yellow-300" />
-              <span>Undo Promotion</span>
-            </button>
-          )}
+          <button
+            onClick={handleUndoPromotion}
+            className="px-3 py-2 bg-rose-600/90 hover:bg-rose-600 text-white font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 shrink-0 shadow-sm cursor-pointer border border-rose-400/40 flex-1 sm:flex-none"
+            title="Undo / Reverse promotion and restore pupils to pre-promotion classes"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-yellow-300" />
+            <span>Undo Promotion</span>
+          </button>
+
+          <button
+            onClick={handleRestoreFromTerminalReport}
+            className="px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 shrink-0 shadow-sm cursor-pointer border border-emerald-400/40 flex-1 sm:flex-none"
+            title="Restore previous registered students from previous term (Term 3) terminal reports"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-emerald-200" />
+            <span>Restore from Terminal Report</span>
+          </button>
+
+          <button
+            onClick={handleRestoreAdmittedClasses}
+            className="px-3 py-2 bg-indigo-700 hover:bg-indigo-600 text-white font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 shrink-0 shadow-sm cursor-pointer border border-indigo-400/40 flex-1 sm:flex-none"
+            title="Restore all pupils to their original admitted class levels"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-indigo-200" />
+            <span>Restore Admitted Classes</span>
+          </button>
         </div>
       </div>
 
-      {/* 2. TAB TOGGLES (ARRANGED VERTICALLY WITH 2 PER ROW ON MOBILE SCREENS) */}
-      <div className="pb-3 border-b border-mauve-500/10 no-print">
+      {/* QUICK ACCESS BANNER FOR TEXTBOOK STOCK DASHBOARD */}
+      <div className="bg-gradient-to-r from-purple-950 via-[#180433] to-indigo-950 text-white p-3 sm:p-4 rounded-2xl shadow-lg border-2 border-purple-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 my-2 no-print">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-amber-400 text-slate-950 rounded-xl border border-amber-300 shrink-0 shadow-md">
+            <Library className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="font-black text-sm sm:text-base text-white tracking-wide">
+                Textbook Stock Dashboard
+              </h4>
+              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-sm">
+                Active Module
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
+                Stock & POS Ledger
+              </span>
+            </div>
+            <p className="text-xs text-purple-200 mt-0.5">
+              {bookStockSummary.totalTitles > 0 ? (
+                <span>
+                  <strong className="text-amber-300">{bookStockSummary.totalTitles}</strong> registered titles •{' '}
+                  <strong className="text-emerald-300">{bookStockSummary.totalRemaining.toLocaleString()}</strong> copies in stock •{' '}
+                  <strong className="text-blue-300">{bookStockSummary.totalSold.toLocaleString()}</strong> sold (GH₵ {bookStockSummary.totalSalesValue.toLocaleString()}) • Total Sales vs Remaining Stock charts.
+                </span>
+              ) : (
+                <span>Manage Ghana syllabus textbooks, customised exercise books, daily cash/MoMo sales receipts, and stock visualizers.</span>
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('book-inventory')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer flex-1 sm:flex-none uppercase tracking-wider ${
+              activeTab === 'book-inventory'
+                ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300'
+                : 'bg-amber-400 hover:bg-amber-300 text-slate-950 hover:shadow-amber-900/30'
+            }`}
+            id="btn-quick-open-textbook-stock"
+          >
+            <Library className="w-4 h-4 text-slate-950" />
+            <span>{activeTab === 'book-inventory' ? 'Viewing Textbook Stock' : 'Open Textbook Stock Dashboard →'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2. TAB TOGGLES & ADMIN MODULE DROPDOWN NAVIGATION */}
+      <div className="pb-3 border-b border-mauve-500/10 no-print space-y-3">
+        {/* Quick Drop-Down Navigation Menu across all tabs under Admin */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-gradient-to-r from-[#1f073d] via-[#2a0a52] to-[#1a0438] p-3 rounded-2xl border-2 border-amber-400/60 shadow-md">
+          <div className="flex items-center gap-2.5">
+            <span className="p-2 rounded-xl bg-amber-400 text-slate-950 font-black shadow-sm shrink-0">
+              <Sliders className="w-4 h-4" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs sm:text-sm font-black text-white uppercase tracking-wider">
+                  Admin Modules Drop Down Menu
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 uppercase">
+                  All 14 Tabs
+                </span>
+              </div>
+              <span className="text-[11px] text-amber-200/90 font-medium block">
+                Quickly jump to any administrative section or dashboard
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto sm:min-w-[340px] md:min-w-[420px]">
+            <label htmlFor="admin-tabs-dropdown-selector" className="text-[11px] uppercase font-bold text-amber-300 whitespace-nowrap shrink-0 hidden md:inline">
+              Select Tab:
+            </label>
+            <select
+              id="admin-tabs-dropdown-selector"
+              aria-label="Admin Tabs Drop Down Menu"
+              value={activeTab}
+              onChange={(e) => setActiveTab(e.target.value as AdminTab)}
+              className="w-full px-3.5 py-2.5 rounded-xl bg-white border-2 border-amber-400 text-slate-950 font-black text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 shadow-md cursor-pointer"
+            >
+              <optgroup label="📊 Core Dashboards">
+                <option value="analytics">📊 Overview Metrics</option>
+                <option value="book-inventory">📚 Textbook Stock Dashboard (Featured)</option>
+                <option value="fees-dashboard">📈 Fees Dashboard</option>
+              </optgroup>
+              <optgroup label="💰 Finance & School Assets">
+                <option value="fees">💳 Fees Collection & Receipts</option>
+                <option value="inventory">📦 School Inventory & Assets</option>
+              </optgroup>
+              <optgroup label="📱 SMS Broadcasts">
+                <option value="bulk-sms">💬 Bulk Parent SMS Broadcast</option>
+                <option value="report-sms-alerts">⚡ Report Card SMS Alerts</option>
+              </optgroup>
+              <optgroup label="🎓 Transcripts & Mock Exams">
+                <option value="transcripts">📄 Student Transcripts & Reports</option>
+                <option value="jhs3-mock">🏆 JHS 3 Mock Exam Portal</option>
+                <option value="terminal-history">📜 JHS Assessment History</option>
+              </optgroup>
+              <optgroup label="👥 Admissions, Staff & Settings">
+                <option value="students">🎓 Admissions & Student Roster</option>
+                <option value="teachers">👨‍🏫 Staff Directory & Accounts</option>
+                <option value="class-assignments">🏫 Assign Class Teachers</option>
+                <option value="config">⚙️ System & Report Settings</option>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+
+        {/* Tab Buttons Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-2">
           {[
             { id: 'analytics', label: 'Overview Metrics', icon: Users },
+            { id: 'book-inventory', label: 'Textbook Stock Dashboard', icon: Library, isFeatured: true },
             { id: 'fees-dashboard', label: 'Fees Dashboard', icon: BarChart3 },
             { id: 'fees', label: 'Fees Collection', icon: CreditCard },
+            { id: 'inventory', label: 'School Inventory', icon: Boxes },
             { id: 'bulk-sms', label: 'Bulk Parent SMS', icon: MessageSquare },
             { id: 'report-sms-alerts', label: 'Report SMS Alerts', icon: Zap },
             { id: 'transcripts', label: 'Transcripts', icon: FileSpreadsheet },
@@ -1117,11 +1806,11 @@ export default function AdminDashboard({
             { id: 'students', label: 'Admissions', icon: GraduationCap },
             { id: 'teachers', label: 'Staff Directory', icon: BookOpen },
             { id: 'class-assignments', label: 'Assign Class Teacher', icon: School },
-            { id: 'inventory', label: 'School Inventory', icon: Boxes },
             { id: 'config', label: 'Settings', icon: Settings }
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
+            const isFeatured = (tab as any).isFeatured;
             return (
               <button
                 key={tab.id}
@@ -1129,12 +1818,19 @@ export default function AdminDashboard({
                 className={`flex items-center justify-start gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2.5 rounded-xl text-[11px] sm:text-xs uppercase tracking-wider transition-all duration-150 cursor-pointer border w-full text-left min-h-[44px] ${
                   isActive
                     ? 'bg-amber-400 text-slate-950 shadow-md border-2 border-amber-500 ring-2 ring-amber-300 font-black'
+                    : isFeatured
+                    ? 'bg-gradient-to-r from-purple-950 via-[#21053d] to-indigo-950 text-amber-300 hover:text-slate-950 hover:bg-amber-300 border-2 border-purple-500/80 font-black ring-1 ring-purple-400/40 shadow-sm'
                     : 'bg-mauve-900 text-white/90 hover:bg-amber-300 hover:text-slate-950 border-mauve-700/80 font-bold'
                 }`}
                 id={`admin-tab-${tab.id}`}
               >
-                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-slate-950' : 'text-amber-300/80'}`} />
+                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-slate-950' : isFeatured ? 'text-amber-400' : 'text-amber-300/80'}`} />
                 <span className="truncate">{tab.label}</span>
+                {isFeatured && !isActive && (
+                  <span className="ml-auto px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[8px] font-black uppercase shrink-0 hidden sm:inline-block">
+                    HOT
+                  </span>
+                )}
               </button>
             );
           })}
@@ -1168,6 +1864,66 @@ export default function AdminDashboard({
                 </div>
               );
             })}
+          </div>
+
+          {/* TEXTBOOK STOCK DASHBOARD OVERVIEW & QUICK ACCESS BANNER */}
+          <div className="bg-gradient-to-r from-purple-950 via-[#190436] to-slate-950 p-5 rounded-2xl border-2 border-purple-500/40 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-amber-400/20 text-amber-300 border border-amber-400/40 flex items-center justify-center shrink-0 shadow-lg shadow-amber-900/30">
+                  <Library className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
+                      Textbook Stock & Book Sales Dashboard
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
+                      Integrated POS Ledger & Recharts
+                    </span>
+                  </div>
+                  <p className="text-xs text-purple-200 mt-0.5 max-w-2xl">
+                    Full management for Ghana syllabus textbooks, customized exercise books, daily cash/MoMo receipts, and comparative Total Sales vs. Remaining Stock bar charts.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('book-inventory')}
+                  className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl transition flex items-center gap-2 shadow-lg shadow-amber-950/40 cursor-pointer uppercase tracking-wider"
+                  id="overview-btn-open-textbook-dashboard"
+                >
+                  <Library className="w-4 h-4 text-slate-950" />
+                  <span>Open Textbook Stock Dashboard →</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Metrics Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-purple-800/40">
+              <div className="bg-purple-900/40 border border-purple-500/30 p-3 rounded-xl">
+                <span className="text-[10px] uppercase font-bold text-purple-300 block">Registered Titles</span>
+                <span className="text-lg font-black text-white mt-0.5 block">{bookStockSummary.totalTitles} Titles</span>
+                <span className="text-[10px] text-purple-300/70">Textbooks & Exercise Books</span>
+              </div>
+              <div className="bg-emerald-950/40 border border-emerald-500/30 p-3 rounded-xl">
+                <span className="text-[10px] uppercase font-bold text-emerald-300 block">Copies in Stock</span>
+                <span className="text-lg font-black text-emerald-200 mt-0.5 block">{bookStockSummary.totalRemaining.toLocaleString()} Copies</span>
+                <span className="text-[10px] text-emerald-300/70">Ready for issuance</span>
+              </div>
+              <div className="bg-blue-950/40 border border-blue-500/30 p-3 rounded-xl">
+                <span className="text-[10px] uppercase font-bold text-blue-300 block">Total Sold</span>
+                <span className="text-lg font-black text-blue-200 mt-0.5 block">{bookStockSummary.totalSold.toLocaleString()} Copies</span>
+                <span className="text-[10px] text-blue-300/70">Recorded sales</span>
+              </div>
+              <div className="bg-amber-950/40 border border-amber-500/30 p-3 rounded-xl">
+                <span className="text-[10px] uppercase font-bold text-amber-300 block">Total Sales Value</span>
+                <span className="text-lg font-black text-amber-200 mt-0.5 block">GH₵ {bookStockSummary.totalSalesValue.toLocaleString()}</span>
+                <span className="text-[10px] text-amber-300/70">{bookStockSummary.lowStockCount > 0 ? `⚠️ ${bookStockSummary.lowStockCount} low stock items` : '✓ Stock levels healthy'}</span>
+              </div>
+            </div>
           </div>
 
           {/* Performance breakdown by levels */}
@@ -1263,12 +2019,88 @@ export default function AdminDashboard({
             </h4>
 
             {/* Select Class */}
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-mauve-900 block">1. Select Grade Class</label>
+            <div className="space-y-1 relative" ref={classDropdownRef}>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] uppercase font-bold text-mauve-900 block">1. Select Grade Class</label>
+                <span className="text-[10px] font-mono font-bold text-mauve-600">
+                  {studentsInSelectedClass.length} {studentsInSelectedClass.length === 1 ? 'Pupil' : 'Pupils'}
+                </span>
+              </div>
+              
+              {/* Custom Clickable Trigger Button */}
+              <button
+                type="button"
+                id="transcript-class-selector-btn"
+                onClick={() => {
+                  setIsClassDropdownOpen(!isClassDropdownOpen);
+                  setIsStudentDropdownOpen(false);
+                }}
+                className="w-full text-xs p-2.5 rounded-lg border border-mauve-500/25 focus:outline-none focus:ring-2 focus:ring-mauve-900 bg-white hover:bg-mauve-50/50 text-mauve-950 font-bold flex items-center justify-between transition cursor-pointer shadow-2xs"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <School className="w-3.5 h-3.5 text-mauve-700 shrink-0" />
+                  <span className="truncate">{selectedClass}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0 text-mauve-600">
+                  <span className="text-[10px] bg-mauve-100 px-1.5 py-0.5 rounded font-mono font-bold text-mauve-900">
+                    {studentsInSelectedClass.length}
+                  </span>
+                  {isClassDropdownOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </div>
+              </button>
+
+              {/* Class In-DOM Dropdown Menu */}
+              {isClassDropdownOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-[70] bg-white rounded-xl shadow-2xl border-2 border-mauve-400 overflow-hidden animate-fadeIn text-xs">
+                  <div className="p-2 border-b border-mauve-100 bg-mauve-50/60">
+                    <div className="relative">
+                      <Search className="w-3 h-3 text-mauve-400 absolute left-2 top-2" />
+                      <input
+                        type="text"
+                        placeholder="Search class..."
+                        value={classDropdownSearch}
+                        onChange={(e) => setClassDropdownSearch(e.target.value)}
+                        className="w-full pl-6 pr-2 py-1 text-xs rounded border border-mauve-200 bg-white text-mauve-900 focus:outline-none focus:ring-1 focus:ring-mauve-900"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-52 overflow-y-auto divide-y divide-mauve-100">
+                    {filteredClassesForDropdown.map((cls) => {
+                      const count = students.filter(s => s.className === cls).length;
+                      const isSelected = cls === selectedClass;
+                      return (
+                        <button
+                          key={cls}
+                          type="button"
+                          onClick={() => handleClassChangeInTranscriptSelector(cls)}
+                          className={`w-full text-left px-3 py-2 flex items-center justify-between transition cursor-pointer hover:bg-mauve-100/70 ${
+                            isSelected ? 'bg-mauve-900 text-white hover:bg-mauve-900' : 'text-mauve-950'
+                          }`}
+                        >
+                          <span className="font-bold">{cls}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                            isSelected ? 'bg-mauve-800 text-white' : 'bg-mauve-100 text-mauve-800'
+                          }`}>
+                            {count} {count === 1 ? 'pupil' : 'pupils'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Hidden native select for accessibility / automation */}
               <select
+                aria-label="Select Grade Class"
                 value={selectedClass}
                 onChange={(e) => handleClassChangeInTranscriptSelector(e.target.value)}
-                className="w-full text-xs p-2 rounded border border-mauve-500/20 focus:outline-none focus:ring-1 focus:ring-mauve-900 bg-white text-mauve-900 font-medium"
+                className="sr-only"
               >
                 {allClassNames.map((cls) => (
                   <option key={cls} value={cls}>{cls}</option>
@@ -1277,16 +2109,138 @@ export default function AdminDashboard({
             </div>
 
             {/* Select Student */}
-            <div className="space-y-1">
-              <label className="text-[10px] uppercase font-bold text-mauve-900 block">2. Choose Student</label>
+            <div className="space-y-1 relative" ref={studentDropdownRef}>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] uppercase font-bold text-mauve-900 block">2. Choose Student</label>
+                {studentsInSelectedClass.length > 0 && (
+                  <span className="text-[10px] font-mono text-mauve-600 font-bold">
+                    {currentStudentIndex >= 0 ? `${currentStudentIndex + 1} of ${studentsInSelectedClass.length}` : `${studentsInSelectedClass.length} Total`}
+                  </span>
+                )}
+              </div>
+
+              {/* Student Trigger with Quick Prev / Next buttons */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  id="transcript-prev-student-btn"
+                  onClick={handlePrevStudent}
+                  disabled={studentsInSelectedClass.length <= 1}
+                  title="Previous Pupil"
+                  className="p-2.5 rounded-lg border border-mauve-500/25 bg-white hover:bg-mauve-100 text-mauve-900 disabled:opacity-30 disabled:cursor-not-allowed transition shrink-0 cursor-pointer shadow-2xs"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  id="transcript-student-selector-btn"
+                  onClick={() => {
+                    setIsStudentDropdownOpen(!isStudentDropdownOpen);
+                    setIsClassDropdownOpen(false);
+                    setStudentDropdownSearch('');
+                  }}
+                  className="flex-1 text-xs p-2 rounded-lg border border-mauve-500/25 focus:outline-none focus:ring-2 focus:ring-mauve-900 bg-white hover:bg-mauve-50/50 text-mauve-950 font-bold flex items-center justify-between transition cursor-pointer shadow-2xs min-w-0"
+                >
+                  <div className="flex items-center gap-2 truncate min-w-0">
+                    <UserCheck className="w-3.5 h-3.5 text-mauve-700 shrink-0" />
+                    <div className="truncate text-left">
+                      {selectedStudent ? (
+                        <>
+                          <div className="truncate text-xs font-black text-mauve-950">{selectedStudent.name}</div>
+                          <div className="text-[10px] text-mauve-600 font-mono">{selectedStudent.rollNumber}</div>
+                        </>
+                      ) : (
+                        <span className="text-gray-500 font-medium">-- Choose Pupil --</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-mauve-600 ml-1.5">
+                    {isStudentDropdownOpen ? (
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    )}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  id="transcript-next-student-btn"
+                  onClick={handleNextStudent}
+                  disabled={studentsInSelectedClass.length <= 1}
+                  title="Next Pupil"
+                  className="p-2.5 rounded-lg border border-mauve-500/25 bg-white hover:bg-mauve-100 text-mauve-900 disabled:opacity-30 disabled:cursor-not-allowed transition shrink-0 cursor-pointer shadow-2xs"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Student In-DOM Dropdown Menu */}
+              {isStudentDropdownOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-[70] bg-white rounded-xl shadow-2xl border-2 border-mauve-400 overflow-hidden animate-fadeIn text-xs">
+                  <div className="p-2 border-b border-mauve-100 bg-mauve-50/60">
+                    <div className="relative">
+                      <Search className="w-3 h-3 text-mauve-400 absolute left-2 top-2" />
+                      <input
+                        type="text"
+                        placeholder="Search name or ID..."
+                        value={studentDropdownSearch}
+                        onChange={(e) => setStudentDropdownSearch(e.target.value)}
+                        className="w-full pl-6 pr-2 py-1 text-xs rounded border border-mauve-200 bg-white text-mauve-900 focus:outline-none focus:ring-1 focus:ring-mauve-900"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto divide-y divide-mauve-100">
+                    {filteredStudentsForDropdown.length > 0 ? (
+                      filteredStudentsForDropdown.map((s) => {
+                        const isSelected = s.id === selectedStudentId;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedStudentId(s.id);
+                              setIsStudentDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 flex items-center justify-between transition cursor-pointer hover:bg-mauve-100/70 ${
+                              isSelected ? 'bg-mauve-900 text-white hover:bg-mauve-900' : 'text-mauve-950'
+                            }`}
+                          >
+                            <div className="truncate pr-2">
+                              <div className="font-bold truncate">{s.name}</div>
+                              <div className={`text-[10px] font-mono ${isSelected ? 'text-mauve-200' : 'text-mauve-600'}`}>
+                                {s.rollNumber}
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <Check className="w-4 h-4 text-white shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="p-3 text-center text-gray-500 italic">
+                        {studentsInSelectedClass.length === 0
+                          ? `No pupils enrolled in ${selectedClass}`
+                          : 'No pupils matched your search'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Hidden native select for accessibility / automation */}
               <select
+                aria-label="Choose Student"
                 value={selectedStudentId}
                 onChange={(e) => setSelectedStudentId(e.target.value)}
-                className="w-full text-xs p-2 rounded border border-mauve-500/20 focus:outline-none focus:ring-1 focus:ring-mauve-900 bg-white text-mauve-900 font-medium"
+                className="sr-only"
               >
                 <option value="">-- Choose Pupil --</option>
-                {studentsInSelectedClass.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.rollNumber})</option>
+                {studentsInSelectedClass.map((s, idx) => (
+                  <option key={`${s.id}-${idx}`} value={s.id}>{s.name} ({s.rollNumber})</option>
                 ))}
               </select>
             </div>
@@ -1342,13 +2296,10 @@ export default function AdminDashboard({
                 onUpdateBill={onUpdateBill}
                 setConfig={setConfig}
                 grades={
-                  grades.filter((g) => g.studentId === selectedStudent.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear)).length > 0
-                    ? grades.filter((g) => g.studentId === selectedStudent.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear))
-                    : grades.filter((g) => g.studentId === selectedStudent.id)
+                  grades.filter((g) => g.studentId === selectedStudent.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear))
                 }
                 attendance={
-                  attendance.find((a) => a.studentId === selectedStudent.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear)) ||
-                  attendance.find((a) => a.studentId === selectedStudent.id)
+                  attendance.find((a) => a.studentId === selectedStudent.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear))
                 }
                 subjects={subjects}
                 config={config}
@@ -1493,6 +2444,27 @@ export default function AdminDashboard({
             <h3 className="font-display font-bold text-mauve-900 text-base uppercase tracking-wide">Student Admissions Registry</h3>
             <div className="flex flex-wrap items-center gap-2">
               <button
+                onClick={handleAssignClassesFromIds}
+                className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
+                title="Scan and assign all students to their correct class based on their Student ID (e.g. EA/J1/2026/005 -> JHS 1)"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" /> Assign by Student ID
+              </button>
+              <button
+                onClick={handleRestoreFromTerminalReport}
+                className="bg-teal-700 hover:bg-teal-800 text-white font-bold px-3 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
+                title="Restore and verify registered pupils from previous term (Term 3) terminal reports"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Restore from Terminal Report
+              </button>
+              <button
+                onClick={handleRestoreAdmittedClasses}
+                className="bg-indigo-600/90 hover:bg-indigo-600 text-white font-bold px-3 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
+                title="Restore all pupils back to their original admitted class levels"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Restore Admitted Classes
+              </button>
+              <button
                 onClick={() => handleOpenBulkPrintModal(studentClassFilter !== 'ALL' ? studentClassFilter : 'ALL')}
                 className="bg-mauve-900 hover:bg-mauve-800 text-white font-bold px-3.5 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
                 title="Bulk print academic report cards for selected class"
@@ -1546,7 +2518,7 @@ export default function AdminDashboard({
               <select
                 value={studentLevelFilter}
                 onChange={(e) => setStudentLevelFilter(e.target.value)}
-                className="w-full text-xs p-1.5 rounded border border-mauve-500/15 focus:outline-none focus:ring-1 focus:ring-mauve-900 text-mauve-900 bg-white"
+                className="w-full text-xs px-3 py-2 rounded-xl border-2 border-mauve-300 focus:outline-none focus:ring-2 focus:ring-mauve-900 text-mauve-950 font-bold bg-white shadow-xs cursor-pointer min-h-[38px]"
               >
                 <option value="ALL">All Academy Levels</option>
                 <option value="NURSERY">Nursery Division</option>
@@ -1560,7 +2532,7 @@ export default function AdminDashboard({
               <select
                 value={studentClassFilter}
                 onChange={(e) => setStudentClassFilter(e.target.value)}
-                className="w-full text-xs p-1.5 rounded border border-mauve-500/15 focus:outline-none focus:ring-1 focus:ring-mauve-900 text-mauve-900 bg-white"
+                className="w-full text-xs px-3 py-2 rounded-xl border-2 border-mauve-300 focus:outline-none focus:ring-2 focus:ring-mauve-900 text-mauve-950 font-bold bg-white shadow-xs cursor-pointer min-h-[38px]"
               >
                 <option value="ALL">All Class Groups</option>
                 {allClassNames.map((cls) => (
@@ -1577,7 +2549,7 @@ export default function AdminDashboard({
                   setStudentSortField(f);
                   setStudentSortOrder(o);
                 }}
-                className="w-full text-xs p-1.5 rounded border border-mauve-500/15 focus:outline-none focus:ring-1 focus:ring-mauve-900 text-mauve-900 bg-white font-medium"
+                className="w-full text-xs px-3 py-2 rounded-xl border-2 border-mauve-300 focus:outline-none focus:ring-2 focus:ring-mauve-900 text-mauve-950 font-bold bg-white shadow-xs cursor-pointer min-h-[38px]"
               >
                 <option value="rollNumber-asc">Sort: Student ID (Ascending ↑)</option>
                 <option value="rollNumber-desc">Sort: Student ID (Descending ↓)</option>
@@ -1643,8 +2615,8 @@ export default function AdminDashboard({
                       <td colSpan={6} className="p-6 text-center text-mauve-800 font-bold">No student matching selected filters.</td>
                     </tr>
                   ) : (
-                    filteredStudents.map((s) => (
-                      <tr key={s.id} className="hover:bg-mauve-50/10">
+                    filteredStudents.map((s, idx) => (
+                      <tr key={`${s.id}-${idx}`} className="hover:bg-mauve-50/10">
                         <td className="p-3 pl-4">
                           <button
                             type="button"
@@ -1884,17 +2856,33 @@ export default function AdminDashboard({
                     <label className="text-xs font-semibold text-mauve-700 block flex justify-between items-center">
                       <span>Roll / Register ID</span>
                       {!editingStudent && (
-                        <span className="text-[10px] text-emerald-600 font-medium">Auto-generated</span>
+                        <span className="text-[10px] text-emerald-600 font-medium">Auto-generated &bull; Class-aware</span>
                       )}
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder="e.g. EA/P4/052"
+                      placeholder="e.g. EA/J1/2026/005 or EA/P4/2026/001"
                       value={studentForm.rollNumber}
-                      onChange={(e) => setStudentForm({ ...studentForm, rollNumber: e.target.value })}
-                      className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val.includes('/') || val.includes('-') || val.length >= 4) {
+                          const resolved = resolveClassAndLevelFromStudentId(val, studentForm.level);
+                          setStudentForm(prev => ({
+                            ...prev,
+                            rollNumber: val,
+                            level: resolved.level,
+                            className: resolved.className
+                          }));
+                        } else {
+                          setStudentForm(prev => ({ ...prev, rollNumber: val }));
+                        }
+                      }}
+                      className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white font-mono"
                     />
+                    <p className="text-[10px] text-mauve-500">
+                      Standard format: <code className="font-semibold text-mauve-800">EA/[Class]/[Year]/[Seq]</code> (e.g. EA/J1/2026/005 &rarr; JHS 1, promoted to JHS 2).
+                    </p>
                   </div>
 
                   {/* Level & Class Group */}
@@ -3212,7 +4200,7 @@ export default function AdminDashboard({
                               return t;
                             }));
                           }}
-                          className="w-full px-2.5 py-1.5 bg-white border border-mauve-300 rounded-lg text-xs font-medium text-mauve-900 focus:ring-2 focus:ring-mauve-500 focus:outline-none cursor-pointer"
+                          className="w-full px-3 py-2 bg-white border-2 border-mauve-300 rounded-xl text-xs font-bold text-mauve-950 focus:ring-2 focus:ring-mauve-500 focus:outline-none cursor-pointer shadow-xs min-h-[38px]"
                         >
                           <option value="">-- Unassigned (None) --</option>
                           {teachers
@@ -3248,10 +4236,14 @@ export default function AdminDashboard({
               type="button"
               onClick={handleUpdateSystemConfig}
               disabled={isSavingConfig}
-              className="px-5 py-2.5 bg-mauve-900 hover:bg-mauve-800 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-sm flex items-center gap-2 shrink-0 active:scale-95"
+              className={`px-5 py-2.5 font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-sm flex items-center gap-2 shrink-0 active:scale-95 ${
+                isFormConfigDirty
+                  ? 'bg-emerald-700 hover:bg-emerald-800 text-white ring-2 ring-emerald-500/50 animate-pulse'
+                  : 'bg-mauve-900 hover:bg-mauve-800 text-white'
+              }`}
             >
               <Save className="w-4 h-4" />
-              <span>{isSavingConfig ? 'Saving Changes...' : 'Update Changes'}</span>
+              <span>{isSavingConfig ? 'Saving Changes...' : isFormConfigDirty ? 'Save Changes *' : 'Update Changes'}</span>
             </button>
           </div>
 
@@ -3263,29 +4255,46 @@ export default function AdminDashboard({
                 <label className="text-xs font-semibold text-mauve-700 block">Academy Name</label>
                 <input
                   type="text"
-                  value={config.schoolName}
-                  onChange={(e) => setConfig(prev => ({ ...prev, schoolName: e.target.value }))}
+                  value={formConfig.schoolName}
+                  onChange={(e) => {
+                    setIsFormConfigDirty(true);
+                    setFormConfig(prev => ({ ...prev, schoolName: e.target.value }));
+                  }}
                   className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-mauve-700 block">School Year Cycle</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-mauve-700 block">School Year Cycle</label>
+                    {isFormConfigDirty && (
+                      <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                        Unsaved
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
-                    value={config.schoolYear}
-                    onChange={(e) => setConfig(prev => ({ ...prev, schoolYear: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
+                    value={formConfig.schoolYear}
+                    onChange={(e) => {
+                      setIsFormConfigDirty(true);
+                      setFormConfig(prev => ({ ...prev, schoolYear: e.target.value }));
+                    }}
+                    placeholder="e.g. 2025/2026"
+                    className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white font-medium"
                   />
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-mauve-700 block">Current Academic Term</label>
                   <select
-                    value={config.term}
-                    onChange={(e) => setConfig(prev => ({ ...prev, term: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
+                    value={formConfig.term}
+                    onChange={(e) => {
+                      setIsFormConfigDirty(true);
+                      setFormConfig(prev => ({ ...prev, term: e.target.value }));
+                    }}
+                    className="w-full p-2.5 rounded-xl border-2 border-mauve-300 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-950 font-bold bg-white cursor-pointer shadow-xs min-h-[42px]"
                   >
                     <option value="Term 1">Term One (First Term)</option>
                     <option value="Term 2">Term Two (Mid-Year)</option>
@@ -3298,8 +4307,11 @@ export default function AdminDashboard({
                 <label className="text-xs font-semibold text-mauve-700 block">Head Principal Stamp Name</label>
                 <input
                   type="text"
-                  value={config.principalName}
-                  onChange={(e) => setConfig(prev => ({ ...prev, principalName: e.target.value }))}
+                  value={formConfig.principalName}
+                  onChange={(e) => {
+                    setIsFormConfigDirty(true);
+                    setFormConfig(prev => ({ ...prev, principalName: e.target.value }));
+                  }}
                   className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
                 />
               </div>
@@ -3315,16 +4327,10 @@ export default function AdminDashboard({
                     <label className="font-semibold text-blue-900 block">First Term Reopening Date</label>
                     <input
                       type="date"
-                      value={config.reopeningDate || '2026-09-15'}
+                      value={formConfig.reopeningDate || '2026-09-15'}
                       onChange={(e) => {
-                        const val = e.target.value;
-                        setConfig(prev => {
-                          const updated = { ...prev, reopeningDate: val };
-                          localStorage.setItem('ea_config', JSON.stringify(updated));
-                          localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updated));
-                          saveSupabaseConfig(updated).catch(err => console.warn('Supabase config sync error', err));
-                          return updated;
-                        });
+                        setIsFormConfigDirty(true);
+                        setFormConfig(prev => ({ ...prev, reopeningDate: e.target.value }));
                       }}
                       className="w-full p-2 rounded-lg border border-blue-200 focus:ring-2 focus:ring-blue-500 outline-none text-mauve-900 bg-white"
                     />
@@ -3335,8 +4341,11 @@ export default function AdminDashboard({
                     <label className="font-semibold text-blue-900 flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={config.autoPromoteOnReopening !== false}
-                        onChange={(e) => setConfig(prev => ({ ...prev, autoPromoteOnReopening: e.target.checked }))}
+                        checked={formConfig.autoPromoteOnReopening !== false}
+                        onChange={(e) => {
+                          setIsFormConfigDirty(true);
+                          setFormConfig(prev => ({ ...prev, autoPromoteOnReopening: e.target.checked }));
+                        }}
                         className="w-4 h-4 rounded text-blue-700 focus:ring-blue-500"
                       />
                       <span>Auto-Promote on Reopening</span>
@@ -3356,9 +4365,12 @@ export default function AdminDashboard({
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-mauve-700 block">Active Report Card Template Layout</label>
                 <select
-                  value={config.selectedTemplate || 'dynamic'}
-                  onChange={(e) => setConfig(prev => ({ ...prev, selectedTemplate: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
+                  value={formConfig.selectedTemplate || 'dynamic'}
+                  onChange={(e) => {
+                    setIsFormConfigDirty(true);
+                    setFormConfig(prev => ({ ...prev, selectedTemplate: e.target.value }));
+                  }}
+                  className="w-full p-2.5 rounded-xl border-2 border-mauve-300 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-950 font-bold bg-white cursor-pointer shadow-xs min-h-[42px]"
                 >
                   <option value="dynamic">Dynamic (Auto-Detect based on Student Level)</option>
                   <option value="compact">Nursery & KG High-Fidelity (Lavender Curves & Bee Mascot)</option>
@@ -3380,14 +4392,17 @@ export default function AdminDashboard({
                     <input
                       type="text"
                       maxLength={4}
-                      value={config.schoolLogoText || ''}
-                      onChange={(e) => setConfig(prev => ({ ...prev, schoolLogoText: e.target.value }))}
+                      value={formConfig.schoolLogoText || ''}
+                      onChange={(e) => {
+                        setIsFormConfigDirty(true);
+                        setFormConfig(prev => ({ ...prev, schoolLogoText: e.target.value }));
+                      }}
                       placeholder="e.g. EA"
                       className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white font-display font-extrabold text-sm"
                     />
                     <div className="flex items-center gap-2 pt-1">
                       <div className="w-10 h-10 rounded bg-mauve-900 text-white font-display font-extrabold text-xs flex items-center justify-center shadow shrink-0">
-                        {config.schoolLogoText || '??'}
+                        {formConfig.schoolLogoText || '??'}
                       </div>
                       <span className="text-[10px] text-mauve-800 font-medium leading-tight">Default text avatar preview</span>
                     </div>
@@ -3397,11 +4412,11 @@ export default function AdminDashboard({
                   <div className="sm:col-span-8 space-y-3">
                     <label className="text-xs font-semibold text-mauve-700 block">Custom Logo Image</label>
                     
-                    {config.schoolLogoUrl ? (
+                    {formConfig.schoolLogoUrl ? (
                       <div className="border border-mauve-200 rounded-xl p-4 bg-mauve-50/20 space-y-3">
                         <div className="flex items-center gap-3">
                           <img 
-                            src={config.schoolLogoUrl} 
+                            src={formConfig.schoolLogoUrl} 
                             alt="School Logo Preview" 
                             className="w-16 h-16 object-contain bg-white rounded-lg border border-mauve-100 p-1.5 shadow-md shrink-0"
                             referrerPolicy="no-referrer"
@@ -3409,7 +4424,7 @@ export default function AdminDashboard({
                           <div className="space-y-0.5">
                             <span className="text-xs font-bold text-mauve-900 block">Custom Logo Active</span>
                             <span className="text-[10px] text-mauve-800 font-medium block leading-tight">Appears on all PDF Transcripts</span>
-                            {config.schoolLogoUrl.startsWith('data:') ? (
+                            {formConfig.schoolLogoUrl.startsWith('data:') ? (
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 uppercase" title="Stored directly inside database config payload. Synchronizes globally.">
                                 Database-Synced Base64
                               </span>
@@ -3514,8 +4529,11 @@ export default function AdminDashboard({
                     <label className="font-semibold text-mauve-800 block">School Motto</label>
                     <input
                       type="text"
-                      value={config.schoolMotto || ''}
-                      onChange={(e) => setConfig(prev => ({ ...prev, schoolMotto: e.target.value }))}
+                      value={formConfig.schoolMotto || ''}
+                      onChange={(e) => {
+                        setIsFormConfigDirty(true);
+                        setFormConfig(prev => ({ ...prev, schoolMotto: e.target.value }));
+                      }}
                       placeholder="e.g. Knowledge, Character & Excellence"
                       className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
                     />
@@ -3527,8 +4545,11 @@ export default function AdminDashboard({
                     <label className="font-semibold text-mauve-800 block">Transcript Watermark Text</label>
                     <input
                       type="text"
-                      value={config.watermarkText || ''}
-                      onChange={(e) => setConfig(prev => ({ ...prev, watermarkText: e.target.value }))}
+                      value={formConfig.watermarkText || ''}
+                      onChange={(e) => {
+                        setIsFormConfigDirty(true);
+                        setFormConfig(prev => ({ ...prev, watermarkText: e.target.value }));
+                      }}
                       placeholder="e.g. EASTFIELD ACADEMY"
                       className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white font-mono"
                     />
@@ -3540,8 +4561,11 @@ export default function AdminDashboard({
                     <label className="font-semibold text-mauve-800 block">Custom Administrative Notice / Remarks</label>
                     <textarea
                       rows={2}
-                      value={config.customNoticeNote || ''}
-                      onChange={(e) => setConfig(prev => ({ ...prev, customNoticeNote: e.target.value }))}
+                      value={formConfig.customNoticeNote || ''}
+                      onChange={(e) => {
+                        setIsFormConfigDirty(true);
+                        setFormConfig(prev => ({ ...prev, customNoticeNote: e.target.value }));
+                      }}
                       placeholder="e.g. Next term fees are due on reopening date. All students are requested to be in full ceremonial uniform."
                       className="w-full p-2.5 rounded-xl border border-mauve-200 focus:ring-2 focus:ring-mauve-500 outline-none text-mauve-900 bg-white"
                     />
@@ -3552,7 +4576,7 @@ export default function AdminDashboard({
                   <div className="md:col-span-2 p-3.5 bg-mauve-50/40 border border-mauve-200/80 rounded-xl space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-mauve-900 block">Head Principal Digital Authentication Signature</span>
-                      {config.principalSignatureUrl && (
+                      {formConfig.principalSignatureUrl && (
                         <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                           Signature Synced
                         </span>
@@ -3560,10 +4584,10 @@ export default function AdminDashboard({
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-center gap-4">
-                      {config.principalSignatureUrl ? (
+                      {formConfig.principalSignatureUrl ? (
                         <div className="flex items-center gap-3 bg-white p-2.5 rounded-lg border border-mauve-200 shrink-0">
                           <img
-                            src={config.principalSignatureUrl}
+                            src={formConfig.principalSignatureUrl}
                             alt="Principal Signature"
                             className="h-10 object-contain max-w-[140px]"
                             referrerPolicy="no-referrer"
@@ -3607,8 +4631,11 @@ export default function AdminDashboard({
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        checked={config.showPositionInClass !== false}
-                        onChange={(e) => setConfig(prev => ({ ...prev, showPositionInClass: e.target.checked }))}
+                        checked={formConfig.showPositionInClass !== false}
+                        onChange={(e) => {
+                          setIsFormConfigDirty(true);
+                          setFormConfig(prev => ({ ...prev, showPositionInClass: e.target.checked }));
+                        }}
                         className="w-4 h-4 rounded text-mauve-900 focus:ring-mauve-500"
                       />
                       <span className="font-medium text-mauve-900">Show Class Rank / Position</span>
@@ -3617,8 +4644,11 @@ export default function AdminDashboard({
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        checked={config.showConductColumn !== false}
-                        onChange={(e) => setConfig(prev => ({ ...prev, showConductColumn: e.target.checked }))}
+                        checked={formConfig.showConductColumn !== false}
+                        onChange={(e) => {
+                          setIsFormConfigDirty(true);
+                          setFormConfig(prev => ({ ...prev, showConductColumn: e.target.checked }));
+                        }}
                         className="w-4 h-4 rounded text-mauve-900 focus:ring-mauve-500"
                       />
                       <span className="font-medium text-mauve-900">Show Behavioral Conduct</span>
@@ -3627,8 +4657,11 @@ export default function AdminDashboard({
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
-                        checked={config.showAttendanceSection !== false}
-                        onChange={(e) => setConfig(prev => ({ ...prev, showAttendanceSection: e.target.checked }))}
+                        checked={formConfig.showAttendanceSection !== false}
+                        onChange={(e) => {
+                          setIsFormConfigDirty(true);
+                          setFormConfig(prev => ({ ...prev, showAttendanceSection: e.target.checked }));
+                        }}
                         className="w-4 h-4 rounded text-mauve-900 focus:ring-mauve-500"
                       />
                       <span className="font-medium text-mauve-900">Show Attendance Section</span>
@@ -3652,8 +4685,11 @@ export default function AdminDashboard({
                       type="number"
                       max={100}
                       min={0}
-                      value={config.classScoreWeight}
-                      onChange={(e) => setConfig(prev => ({ ...prev, classScoreWeight: Number(e.target.value) }))}
+                      value={formConfig.classScoreWeight}
+                      onChange={(e) => {
+                        setIsFormConfigDirty(true);
+                        setFormConfig(prev => ({ ...prev, classScoreWeight: Number(e.target.value) }));
+                      }}
                       className="w-full p-2 rounded-lg border border-mauve-200 text-center font-mono font-bold text-mauve-900 bg-white"
                     />
                   </div>
@@ -3664,8 +4700,11 @@ export default function AdminDashboard({
                       type="number"
                       max={100}
                       min={0}
-                      value={config.examScoreWeight}
-                      onChange={(e) => setConfig(prev => ({ ...prev, examScoreWeight: Number(e.target.value) }))}
+                      value={formConfig.examScoreWeight}
+                      onChange={(e) => {
+                        setIsFormConfigDirty(true);
+                        setFormConfig(prev => ({ ...prev, examScoreWeight: Number(e.target.value) }));
+                      }}
                       className="w-full p-2 rounded-lg border border-mauve-200 text-center font-mono font-bold text-mauve-900 bg-white"
                     />
                   </div>
@@ -3673,7 +4712,7 @@ export default function AdminDashboard({
 
                 <div className="pt-2 border-t border-mauve-100 flex justify-between font-semibold text-mauve-900">
                   <span>Combined Total Balance:</span>
-                  <span>{config.classScoreWeight + config.examScoreWeight}%</span>
+                  <span>{formConfig.classScoreWeight + formConfig.examScoreWeight}%</span>
                 </div>
               </div>
             </div>
@@ -3692,7 +4731,7 @@ export default function AdminDashboard({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-mauve-50 text-xs text-gray-800">
-                  {config.gradingScale.map((rule, index) => (
+                  {formConfig.gradingScale.map((rule, index) => (
                     <tr key={index}>
                       <td className="p-3 pl-4 font-mono">{rule.minScore}%</td>
                       <td className="p-3 font-mono">{rule.maxScore}%</td>
@@ -3720,10 +4759,14 @@ export default function AdminDashboard({
               type="button"
               onClick={handleUpdateSystemConfig}
               disabled={isSavingConfig}
-              className="px-6 py-3 bg-mauve-900 hover:bg-mauve-800 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95"
+              className={`px-6 py-3 font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95 ${
+                isFormConfigDirty
+                  ? 'bg-emerald-700 hover:bg-emerald-800 text-white ring-2 ring-emerald-500/50 animate-pulse'
+                  : 'bg-mauve-900 hover:bg-mauve-800 text-white'
+              }`}
             >
               <Save className="w-4 h-4" />
-              <span>{isSavingConfig ? 'Saving Changes...' : 'Update Changes'}</span>
+              <span>{isSavingConfig ? 'Saving Changes...' : isFormConfigDirty ? 'Save Changes *' : 'Update Changes'}</span>
             </button>
           </div>
           <div className="pt-6 border-t border-mauve-200 space-y-4">
@@ -3792,6 +4835,105 @@ export default function AdminDashboard({
               )}
             </form>
           </div>
+
+          {/* ASSESSMENT DATA RECOVERY & BACKUP MANAGER */}
+          <div className="pt-6 border-t border-mauve-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-purple-100 text-purple-900 rounded-xl">
+                  <Database className="w-5 h-5 text-purple-800" />
+                </div>
+                <div>
+                  <h4 className="font-display font-bold text-mauve-900 text-sm uppercase tracking-wider">
+                    Assessment Data Recovery & Emergency Backup
+                  </h4>
+                  <p className="text-xs text-gray-500">
+                    Recover lost marks, restore from offline files, or export full system snapshots.
+                  </p>
+                </div>
+              </div>
+              <span className="text-[11px] font-mono font-bold bg-mauve-100 text-mauve-900 px-2.5 py-1 rounded-lg">
+                Total Loaded Marks: {grades.length}
+              </span>
+            </div>
+
+            {backupRestoreMsg && (
+              <div className="p-3.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>{backupRestoreMsg}</span>
+              </div>
+            )}
+
+            {backupRestoreError && (
+              <div className="p-3.5 bg-rose-50 text-rose-800 border border-rose-300 rounded-xl text-xs font-bold flex items-center gap-2 animate-fadeIn">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{backupRestoreError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Option 1: Deep Cloud Sync & Grade Pull */}
+              <div className="p-4 bg-white rounded-xl border border-purple-200 space-y-2.5 shadow-2xs">
+                <div className="flex items-center gap-2 text-purple-900 font-bold text-xs">
+                  <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+                  <span>Deep Cloud Recovery</span>
+                </div>
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                  Fetches all historical grade rows directly from Supabase Cloud table <code className="bg-purple-50 px-1 py-0.2 rounded font-mono font-bold">ea_grades</code> and re-indexes them without overwriting.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleDeepCloudGradeRecovery}
+                  disabled={isRecoveringCloud}
+                  className="w-full py-2.5 bg-purple-900 hover:bg-purple-800 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRecoveringCloud ? 'animate-spin' : ''}`} />
+                  <span>{isRecoveringCloud ? 'Recovering Cloud Marks...' : 'Recover All Cloud Marks'}</span>
+                </button>
+              </div>
+
+              {/* Option 2: Export JSON Backup */}
+              <div className="p-4 bg-white rounded-xl border border-blue-200 space-y-2.5 shadow-2xs">
+                <div className="flex items-center gap-2 text-blue-900 font-bold text-xs">
+                  <Download className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>Export Assessment Backup</span>
+                </div>
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                  Download a complete offline JSON file containing all students, classes, assessment marks, attendance, and bills for safekeeping.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleExportFullSystemBackup}
+                  disabled={isExportingData}
+                  className="w-full py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{isExportingData ? 'Exporting...' : 'Export Backup File'}</span>
+                </button>
+              </div>
+
+              {/* Option 3: Restore / Import from Backup */}
+              <div className="p-4 bg-white rounded-xl border border-amber-200 space-y-2.5 shadow-2xs">
+                <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                  <Upload className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Import / Restore Backup</span>
+                </div>
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                  Merge grades and attendance records from a previously exported backup file or another teacher's device.
+                </p>
+                <label className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1.5 text-center">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Upload & Restore File</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    onChange={handleImportSystemBackup}
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -3804,6 +4946,15 @@ export default function AdminDashboard({
             ...classes.PRIMARY,
             ...classes.JHS
           ]}
+          onOpenBookInventory={() => setActiveTab('book-inventory')}
+        />
+      )}
+
+      {/* TEXTBOOKS & CUSTOMISED EXERCISE BOOKS STOCK & SALES LEDGER TAB VIEW */}
+      {activeTab === 'book-inventory' && (
+        <BookInventoryModule
+          students={students}
+          config={config}
         />
       )}
 
@@ -3920,11 +5071,11 @@ export default function AdminDashboard({
 
             {/* Student Dispatch Grid */}
             <div className="overflow-y-auto flex-1 space-y-2 pr-1">
-              {createBatchEmailDispatchList(studentsInSelectedClass, config, getStudentStatsForEmail, batchNote).map((item) => {
+              {createBatchEmailDispatchList(studentsInSelectedClass, config, getStudentStatsForEmail, batchNote).map((item, idx) => {
                 const status = bulkDispatchStatus[item.student.id] || (item.hasEmail ? 'PENDING' : 'SKIPPED');
 
                 return (
-                  <div key={item.student.id} className="p-3 bg-white border border-mauve-200 rounded-xl hover:border-blue-300 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                  <div key={`${item.student.id}-${idx}`} className="p-3 bg-white border border-mauve-200 rounded-xl hover:border-blue-300 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-mauve-900 text-xs">{item.student.name}</span>
@@ -4058,15 +5209,15 @@ export default function AdminDashboard({
                 <span className="text-lg font-black text-indigo-950">{students.length} Pupils</span>
               </div>
               <div className="p-3 bg-green-50/70 border border-green-150 rounded-xl text-center">
-                <span className="text-[10px] uppercase font-bold text-green-800 block">Promoting to Next Class</span>
+                <span className="text-[10px] uppercase font-bold text-green-800 block">Migrating to Next Class</span>
                 <span className="text-lg font-black text-green-950">
-                  {students.filter(s => !s.className.toLowerCase().includes('graduated')).length} Pupils
+                  {students.filter(s => !s.className.toLowerCase().includes('jhs 3')).length} Pupils
                 </span>
               </div>
-              <div className="p-3 bg-amber-50/70 border border-amber-150 rounded-xl text-center">
-                <span className="text-[10px] uppercase font-bold text-amber-800 block">Graduating JHS 3</span>
-                <span className="text-lg font-black text-amber-950">
-                  {students.filter(s => s.className.toLowerCase().includes('jhs 3')).length} Graduates
+              <div className="p-3 bg-blue-50/70 border border-blue-150 rounded-xl text-center">
+                <span className="text-[10px] uppercase font-bold text-blue-800 block">JHS 3 (Active Candidates)</span>
+                <span className="text-lg font-black text-blue-950">
+                  {students.filter(s => s.className.toLowerCase().includes('jhs 3')).length} Active
                 </span>
               </div>
               <div className="p-3 bg-mauve-50 border border-mauve-200 rounded-xl text-center">
@@ -4120,13 +5271,14 @@ export default function AdminDashboard({
                   const comp = a.rollNumber.localeCompare(b.rollNumber, undefined, { numeric: true, sensitivity: 'base' });
                   return studentSortOrder === 'asc' ? comp : -comp;
                 })
-                .map((student) => {
-                  const { nextClass, isGraduated } = getNextClassAndLevel(student.className, student.level);
-                  const isAlreadyGraduated = student.className.toLowerCase().includes('graduated');
+                .map((student, sIdx) => {
+                  const { nextClass, nextLevel } = getNextClassAndLevel(student.className, student.level);
+                  const isJHS3 = student.className.toLowerCase().includes('jhs 3');
+                  const nextRollNumber = getUpdatedRollNumber(student.rollNumber, nextClass, nextLevel, config.schoolYear);
 
                   return (
                     <div
-                      key={student.id}
+                      key={`${student.id}-${sIdx}`}
                       className="p-3 bg-white border border-mauve-200 rounded-xl hover:border-indigo-300 transition flex items-center justify-between gap-3 shadow-xs"
                     >
                       <div className="space-y-0.5">
@@ -4148,6 +5300,9 @@ export default function AdminDashboard({
                           <span className="text-xs font-semibold text-mauve-800 bg-gray-100 px-2 py-0.5 rounded">
                             {student.className}
                           </span>
+                          <span className="block text-[9px] font-mono text-mauve-700 mt-0.5">
+                            ID: {student.rollNumber}
+                          </span>
                         </div>
 
                         <ArrowUpRight className="w-4 h-4 text-indigo-600 shrink-0" />
@@ -4156,14 +5311,15 @@ export default function AdminDashboard({
                           <span className="text-[10px] text-mauve-800 font-bold block uppercase font-mono">Promoted</span>
                           <span
                             className={`text-xs font-bold px-2 py-0.5 rounded ${
-                              isGraduated
-                                ? 'bg-amber-100 text-amber-900 border border-amber-200'
-                                : isAlreadyGraduated
-                                ? 'bg-gray-100 text-gray-600'
+                              isJHS3
+                                ? 'bg-blue-100 text-blue-900 border border-blue-200'
                                 : 'bg-green-100 text-green-900 border border-green-200'
                             }`}
                           >
-                            {nextClass}
+                            {nextClass} {isJHS3 ? '(Active)' : ''}
+                          </span>
+                          <span className="block text-[9px] font-mono text-emerald-800 font-bold mt-0.5">
+                            New ID: {nextRollNumber}
                           </span>
                         </div>
                       </div>
@@ -4179,17 +5335,33 @@ export default function AdminDashboard({
               </span>
 
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
-                {(config.lastPromotedYear === config.schoolYear || config.prePromotionSnapshot || localStorage.getItem('ea_pre_promotion_students')) && (
-                  <button
-                    type="button"
-                    onClick={handleUndoPromotion}
-                    className="flex-1 sm:flex-none px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
-                    title="Reverse promotion and return pupils to pre-promotion class levels"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
-                    <span>Undo Promotion</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={handleUndoPromotion}
+                  className="flex-1 sm:flex-none px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  title="Reverse promotion and return pupils to pre-promotion class levels"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Undo Promotion</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRestoreFromTerminalReport}
+                  className="flex-1 sm:flex-none px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  title="Restore and verify registered pupils based on previous term (Term 3) terminal report records"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Restore from Terminal Report</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRestoreAdmittedClasses}
+                  className="flex-1 sm:flex-none px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  title="Restore all pupils to original admitted classes"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Restore Admitted Classes</span>
+                </button>
                 <button
                   onClick={() => setShowPromotionModal(false)}
                   className="flex-1 sm:flex-none px-4 py-2 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 font-bold rounded-xl text-xs transition cursor-pointer"
@@ -4353,11 +5525,11 @@ export default function AdminDashboard({
                       </div>
                     ) : (
                       <div className="max-h-36 overflow-y-auto p-2 bg-white rounded-xl border border-mauve-200 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 text-xs">
-                        {availableList.map((st) => {
+                        {availableList.map((st, idx) => {
                           const isSelected = selectedBulkStudentIds.includes(st.id);
                           return (
                             <label
-                              key={st.id}
+                              key={`${st.id}-${idx}`}
                               className={`flex items-center gap-2 p-1.5 rounded-lg border cursor-pointer transition select-none ${
                                 isSelected
                                   ? 'bg-mauve-50 border-mauve-300 text-mauve-900 font-semibold'
@@ -4401,19 +5573,17 @@ export default function AdminDashboard({
                 return targetStudents.map((st, idx) => {
                   const stGrades = grades.filter(
                     (g) => g.studentId === st.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear)
-                  ).length > 0
-                    ? grades.filter((g) => g.studentId === st.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear))
-                    : grades.filter((g) => g.studentId === st.id);
+                  );
 
                   const stAttendance = attendance.find(
                     (a) => a.studentId === st.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear)
-                  ) || attendance.find((a) => a.studentId === st.id);
+                  );
 
                   const stClassList = students.filter((s) => s.className === st.className);
 
                   return (
                     <div
-                      key={st.id}
+                      key={`${st.id}-${idx}`}
                       className="bulk-report-card page-break relative bg-white rounded-xl shadow-md p-2 sm:p-4 print:shadow-none print:p-0 border border-mauve-200 print:border-none"
                     >
                       {/* Screen-Only Header Ribbon */}

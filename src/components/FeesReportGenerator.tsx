@@ -364,7 +364,7 @@ export default function FeesReportGenerator({
                 <select
                   value={reportYear}
                   onChange={(e) => setReportYear(e.target.value)}
-                  className="px-3 py-2 rounded-xl bg-[#2A0E54] border border-purple-400/40 text-white font-bold text-xs focus:ring-2 focus:ring-purple-400 outline-none"
+                  className="px-3 py-2 rounded-xl bg-white border-2 border-purple-300 text-mauve-950 font-bold text-xs focus:ring-2 focus:ring-purple-400 outline-none shadow-sm cursor-pointer"
                 >
                   {[2024, 2025, 2026, 2027, 2028].map((yr) => (
                     <option key={yr} value={String(yr)}>
@@ -390,7 +390,7 @@ export default function FeesReportGenerator({
               <select
                 value={reportFeeType}
                 onChange={(e) => setReportFeeType(e.target.value)}
-                className="px-3 py-2 rounded-xl bg-[#2A0E54] border border-purple-400/40 text-white font-bold text-xs focus:ring-2 focus:ring-purple-400 outline-none"
+                className="px-3 py-2 rounded-xl bg-white border-2 border-purple-300 text-mauve-950 font-bold text-xs focus:ring-2 focus:ring-purple-400 outline-none shadow-sm cursor-pointer"
               >
                 <option value="ALL">All Types of Fees (Comprehensive)</option>
                 {availableFeeTypes.map((t) => (
@@ -637,10 +637,10 @@ export default function FeesReportGenerator({
               </thead>
               <tbody className="divide-y divide-white/10 text-xs">
                 {reportFilteredPayments.length > 0 ? (
-                  reportFilteredPayments.map((p) => {
+                  reportFilteredPayments.map((p, idx) => {
                     const arrears = Math.max(0, p.totalFeeAmount - p.amountPaid);
                     return (
-                      <tr key={p.id || p.receiptNumber} className="hover:bg-white/5 transition">
+                      <tr key={`${p.id || p.receiptNumber}-${idx}`} className="hover:bg-white/5 transition">
                         <td className="py-3 px-3 font-mono font-extrabold text-purple-300">
                           {p.receiptNumber}
                         </td>
@@ -880,10 +880,10 @@ export default function FeesReportGenerator({
                       </thead>
                       <tbody>
                         {reportFilteredPayments.length > 0 ? (
-                          reportFilteredPayments.map((p) => {
+                          reportFilteredPayments.map((p, idx) => {
                             const arr = Math.max(0, p.totalFeeAmount - p.amountPaid);
                             return (
-                              <tr key={p.id || p.receiptNumber}>
+                              <tr key={`${p.id || p.receiptNumber}-${idx}`}>
                                 <td className="p-2 border border-gray-300 font-mono font-bold text-purple-900">
                                   {p.receiptNumber}
                                 </td>
@@ -1115,10 +1115,10 @@ export default function FeesReportGenerator({
                   </thead>
                   <tbody>
                     {reportFilteredPayments.length > 0 ? (
-                      reportFilteredPayments.map((p) => {
+                      reportFilteredPayments.map((p, idx) => {
                         const arr = Math.max(0, p.totalFeeAmount - p.amountPaid);
                         return (
-                          <tr key={p.id || p.receiptNumber}>
+                          <tr key={`${p.id || p.receiptNumber}-${idx}`}>
                             <td className="p-2 border border-gray-300 font-mono font-bold text-purple-900">
                               {p.receiptNumber}
                             </td>

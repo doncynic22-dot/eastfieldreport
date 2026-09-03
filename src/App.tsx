@@ -39,9 +39,11 @@ import {
   saveSupabaseBills,
   saveSupabaseFeePayments,
   SUPABASE_SQL_SCHEMA,
-  SUPABASE_SQL_REPAIR
+  SUPABASE_SQL_REPAIR,
+  isStudentDeleted,
+  getDeletedStudentIds
 } from './lib/supabase';
-import { isAutoPromotionDue, promoteStudents } from './services/promotionService';
+import { isAutoPromotionDue, promoteStudents, restoreAllStudentsToAdmittedLevels, deduplicateStudents, restoreStudentsFromTerminalReport } from './services/promotionService';
 import { getCanonicalSubjectId } from './utils/subjectUtils';
 
 
@@ -280,30 +282,56 @@ export default function App() {
       const teacherIds = new Set(activeTeachers.map(t => t.id));
 
       if (studentsFetchSuccess && sStudents !== null) {
-        const cleanStudents = sStudents.filter(
+        let cleanStudents = sStudents.filter(
           s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
         );
 
+        // Auto-heal if any students were corrupted into "Graduated"
+        const hasGraduated = cleanStudents.some(s => (s.className || '').toLowerCase().includes('graduated'));
+        if (hasGraduated) {
+          cleanStudents = cleanStudents.map(s =>
+            (s.className || '').toLowerCase().includes('graduated')
+              ? { ...s, className: 'JHS 3', level: 'JHS' }
+              : s
+          );
+        }
+
         if (cleanStudents.length === 0 && localStudents.length > 0) {
-          const cleanLocalStudents = localStudents.filter(
+          let cleanLocalStudents = localStudents.filter(
             s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
           );
+          cleanLocalStudents = deduplicateStudents(cleanLocalStudents);
           try {
             await saveSupabaseStudents(cleanLocalStudents);
             setStudents(cleanLocalStudents);
+            localStorage.setItem('ea_students', JSON.stringify(cleanLocalStudents));
+            localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanLocalStudents));
           } catch (seedErr) {
             console.error("Failed seeding students to Supabase:", seedErr);
             setStudents(cleanLocalStudents);
           }
         } else {
+          if (cleanStudents.length === 0) {
+            cleanStudents = [...INITIAL_STUDENTS];
+          }
+          const { restoredStudents } = restoreStudentsFromTerminalReport(cleanStudents, localGrades);
+          cleanStudents = restoredStudents;
           setStudents(cleanStudents);
           localStorage.setItem('ea_students', JSON.stringify(cleanStudents));
+          localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanStudents));
         }
       } else {
-        const cleanLocalStudents = localStudents.filter(
+        let cleanLocalStudents = localStudents.filter(
           s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
         );
+        if (cleanLocalStudents.length === 0) {
+          cleanLocalStudents = [...INITIAL_STUDENTS];
+        }
+        const { restoredStudents } = restoreStudentsFromTerminalReport(cleanLocalStudents, localGrades);
+        cleanLocalStudents = restoredStudents;
         setStudents(cleanLocalStudents);
+        localStorage.setItem('ea_students', JSON.stringify(cleanLocalStudents));
+        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanLocalStudents));
       }
 
       // 4. Fetch & Sync Grades
@@ -545,37 +573,50 @@ export default function App() {
       s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
     );
 
-    // Auto-restore any initial students (like Aboagye Messiah) missing from cache
-    const existingStudentIds = new Set(cleanStudents.map(s => s.id));
-    INITIAL_STUDENTS.forEach(initSt => {
-      if (!existingStudentIds.has(initSt.id)) {
-        cleanStudents.push(initSt);
-      }
-    });
+    // CRITICAL: Filter out any deleted students
+    cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s));
+
+    if (cleanStudents.length === 0 && getDeletedStudentIds().length === 0) {
+      cleanStudents = INITIAL_STUDENTS.filter(s => !isStudentDeleted(s));
+    } else {
+      cleanStudents = deduplicateStudents(cleanStudents);
+    }
+
+    // Ensure students are restored with correct classes from terminal reports without repopulating deleted pupils
+    const { restoredStudents } = restoreStudentsFromTerminalReport(cleanStudents, []);
+    cleanStudents = restoredStudents.filter(s => !isStudentDeleted(s));
 
     setStudents(cleanStudents);
     localStorage.setItem('ea_students', JSON.stringify(cleanStudents));
+    localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanStudents));
 
     let finalGrades: Grade[] = [];
     if (cachedGrades !== null) {
       try {
         finalGrades = JSON.parse(cachedGrades) as Grade[];
       } catch (e) {
-        finalGrades = INITIAL_GRADES;
+        finalGrades = [];
       }
     } else {
-      finalGrades = INITIAL_GRADES;
+      finalGrades = INITIAL_GRADES.filter(g => {
+        const studentExists = cleanStudents.some(s => s.id === g.studentId || s.rollNumber === g.studentId);
+        return studentExists && !isStudentDeleted({ id: g.studentId });
+      });
     }
 
-    // Auto-restore any initial grades (like Aboagye Messiah's grades) missing from cache
+    // Auto-restore any initial grades only for existing, non-deleted students
     const existingGradeKeys = new Set(finalGrades.map(g => `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`));
     INITIAL_GRADES.forEach(initG => {
-      const key = `${initG.studentId}_${initG.subjectId}_${initG.term || 'Term 1'}_${initG.year || '2025/2026'}`;
-      if (!existingGradeKeys.has(key)) {
-        finalGrades.push(initG);
+      const studentExists = cleanStudents.some(s => s.id === initG.studentId || s.rollNumber === initG.studentId);
+      if (studentExists && !isStudentDeleted({ id: initG.studentId })) {
+        const key = `${initG.studentId}_${initG.subjectId}_${initG.term || 'Term 1'}_${initG.year || '2025/2026'}`;
+        if (!existingGradeKeys.has(key)) {
+          finalGrades.push(initG);
+        }
       }
     });
 
+    finalGrades = finalGrades.filter(g => !isStudentDeleted({ id: g.studentId }));
     setGrades(finalGrades);
     localStorage.setItem('ea_grades', JSON.stringify(finalGrades));
 
@@ -584,20 +625,27 @@ export default function App() {
       try {
         finalAttendance = JSON.parse(cachedAttendance) as Attendance[];
       } catch (e) {
-        finalAttendance = INITIAL_ATTENDANCE;
+        finalAttendance = [];
       }
     } else {
-      finalAttendance = INITIAL_ATTENDANCE;
+      finalAttendance = INITIAL_ATTENDANCE.filter(a => {
+        const studentExists = cleanStudents.some(s => s.id === a.studentId || s.rollNumber === a.studentId);
+        return studentExists && !isStudentDeleted({ id: a.studentId });
+      });
     }
 
     const existingAttKeys = new Set(finalAttendance.map(a => `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`));
     INITIAL_ATTENDANCE.forEach(initA => {
-      const key = `${initA.studentId}_${initA.term || 'Term 1'}_${initA.year || '2025/2026'}`;
-      if (!existingAttKeys.has(key)) {
-        finalAttendance.push(initA);
+      const studentExists = cleanStudents.some(s => s.id === initA.studentId || s.rollNumber === initA.studentId);
+      if (studentExists && !isStudentDeleted({ id: initA.studentId })) {
+        const key = `${initA.studentId}_${initA.term || 'Term 1'}_${initA.year || '2025/2026'}`;
+        if (!existingAttKeys.has(key)) {
+          finalAttendance.push(initA);
+        }
       }
     });
 
+    finalAttendance = finalAttendance.filter(a => !isStudentDeleted({ id: a.studentId }));
     setAttendance(finalAttendance);
     localStorage.setItem('ea_attendance', JSON.stringify(finalAttendance));
 
@@ -646,6 +694,22 @@ export default function App() {
     initSupabase();
   }, []);
 
+  // 1.5 Self-healing deduplication to purge any legacy duplicate students from local storage
+  useEffect(() => {
+    if (!isInitialized || students.length === 0) return;
+    const clean = deduplicateStudents(students);
+    if (clean.length !== students.length) {
+      console.warn(`[Eastfield Academy] Deduplicated ${students.length - clean.length} colliding student records.`);
+      setStudents(clean);
+      localStorage.setItem('ea_students', JSON.stringify(clean));
+      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(clean));
+      const creds = getSupabaseCredentials();
+      if (creds.isConfigured) {
+        saveSupabaseStudents(clean).catch(err => console.warn('Supabase student deduplication sync error', err));
+      }
+    }
+  }, [students, isInitialized]);
+
   // 2. SAVE STATE MUTATIONS BACK TO LOCAL STORAGE AND SUPABASE (AUTO-SYNC)
   // Auto-promote students at the reopening date of First Term
   useEffect(() => {
@@ -653,11 +717,49 @@ export default function App() {
     if (config.autoPromoteOnReopening !== false && isAutoPromotionDue(config)) {
       const preSnapshot = JSON.parse(JSON.stringify(students));
       const result = promoteStudents(students, config.schoolYear);
+      
+      const idMap = new Map<string, string>();
+      result.records.forEach(r => {
+        if (r.oldStudentId && r.newStudentId && r.oldStudentId !== r.newStudentId) {
+          idMap.set(r.oldStudentId, r.newStudentId);
+        }
+      });
+
+      if (idMap.size > 0) {
+        setGrades(prev => {
+          const updated = prev.map(g => {
+            const newId = idMap.get(g.studentId);
+            return newId ? { ...g, studentId: newId } : g;
+          });
+          localStorage.setItem('ea_grades', JSON.stringify(updated));
+          localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(updated));
+          return updated;
+        });
+        setAttendance(prev => {
+          const updated = prev.map(a => {
+            const newId = idMap.get(a.studentId);
+            return newId ? { ...a, studentId: newId } : a;
+          });
+          localStorage.setItem('ea_attendance', JSON.stringify(updated));
+          return updated;
+        });
+        setBills(prev => {
+          const updated = prev.map(b => {
+            const newId = idMap.get(b.studentId);
+            return newId ? { ...b, studentId: newId } : b;
+          });
+          localStorage.setItem('ea_bills', JSON.stringify(updated));
+          return updated;
+        });
+      }
+
       const updatedConfig: ReportConfig = {
         ...config,
         lastPromotedYear: config.schoolYear,
+        promotionUndoneYear: undefined,
         lastPromotionDate: new Date().toISOString(),
-        prePromotionSnapshot: preSnapshot
+        prePromotionSnapshot: preSnapshot,
+        updatedAt: new Date().toISOString()
       };
 
       setStudents(result.promotedStudents);
@@ -665,12 +767,14 @@ export default function App() {
 
       localStorage.setItem('ea_students', JSON.stringify(result.promotedStudents));
       localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(result.promotedStudents));
+      localStorage.setItem('mock_supabase_ea_config', JSON.stringify(updatedConfig));
       localStorage.setItem('ea_pre_promotion_students', JSON.stringify(preSnapshot));
 
       const creds = getSupabaseCredentials();
       if (creds.isConfigured) {
-        saveSupabaseStudents(result.promotedStudents);
-        saveSupabaseConfig(updatedConfig);
+        saveSupabaseStudents(result.promotedStudents).catch(err => console.warn('Supabase student sync error', err));
+        saveSupabaseConfig(updatedConfig).catch(err => console.warn('Supabase config sync error', err));
       }
     }
   }, [isInitialized, config, students.length]);
@@ -791,6 +895,29 @@ export default function App() {
     }
   }, [config, isInitialized]);
 
+  // Listen for local or multi-tab student deletion/update events
+  useEffect(() => {
+    const handleStudentsUpdated = () => {
+      try {
+        const raw = localStorage.getItem('ea_students');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const filtered = parsed.filter((s: Student) => !isStudentDeleted(s));
+            setStudents(filtered);
+          }
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('ea_students_updated', handleStudentsUpdated);
+    window.addEventListener('storage', handleStudentsUpdated);
+    return () => {
+      window.removeEventListener('ea_students_updated', handleStudentsUpdated);
+      window.removeEventListener('storage', handleStudentsUpdated);
+    };
+  }, []);
+
   // Background polling & tab focus refresh to receive real-time admin updates across devices (e.g. reopening date & bills)
   useEffect(() => {
     if (!isInitialized) return;
@@ -799,21 +926,55 @@ export default function App() {
 
     const pullRemoteUpdates = async () => {
       try {
-        const [remoteConfig, remoteBills, remoteGrades, remoteAttendance] = await Promise.all([
+        const [remoteConfig, remoteBills, remoteGrades, remoteAttendance, _mock, _inv, remoteStudents] = await Promise.all([
           fetchSupabaseConfig(),
           fetchSupabaseBills(),
           fetchSupabaseGrades(),
           fetchSupabaseAttendance(),
           fetchSupabaseJHSMockExams(),
-          fetchSupabaseInventory()
+          fetchSupabaseInventory(),
+          fetchSupabaseStudents()
         ]);
+
+        if (remoteStudents && Array.isArray(remoteStudents)) {
+          const cleanRemoteStudents = remoteStudents.filter(s => !isStudentDeleted(s));
+          setStudents(prev => {
+            const cleanPrev = prev.filter(s => !isStudentDeleted(s));
+            const prevIds = cleanPrev.map(s => s.id).sort().join(',');
+            const remoteIds = cleanRemoteStudents.map(s => s.id).sort().join(',');
+            if (prevIds !== remoteIds && cleanRemoteStudents.length > 0) {
+              localStorage.setItem('ea_students', JSON.stringify(cleanRemoteStudents));
+              localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanRemoteStudents));
+              return cleanRemoteStudents;
+            }
+            if (cleanPrev.length !== prev.length) {
+              localStorage.setItem('ea_students', JSON.stringify(cleanPrev));
+              localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanPrev));
+              return cleanPrev;
+            }
+            return prev;
+          });
+        }
+
         if (remoteConfig) {
           setConfig(prev => {
+            const localTime = prev.updatedAt ? new Date(prev.updatedAt).getTime() : 0;
+            const remoteTime = remoteConfig.updatedAt ? new Date(remoteConfig.updatedAt).getTime() : 0;
+
+            // If local config has a newer timestamp than remote, retain local
+            if (remoteTime && localTime && remoteTime < localTime) {
+              return prev;
+            }
+
             if (
               remoteConfig.reopeningDate !== prev.reopeningDate ||
               remoteConfig.term !== prev.term ||
               remoteConfig.schoolYear !== prev.schoolYear ||
-              remoteConfig.schoolName !== prev.schoolName
+              remoteConfig.schoolName !== prev.schoolName ||
+              remoteConfig.principalName !== prev.principalName ||
+              remoteConfig.selectedTemplate !== prev.selectedTemplate ||
+              remoteConfig.schoolLogoUrl !== prev.schoolLogoUrl ||
+              remoteConfig.principalSignatureUrl !== prev.principalSignatureUrl
             ) {
               const updated = { ...prev, ...remoteConfig };
               localStorage.setItem('ea_config', JSON.stringify(updated));
@@ -865,7 +1026,7 @@ export default function App() {
               }
             });
 
-            const merged = Array.from(gradeMap.values());
+            const merged = Array.from(gradeMap.values()).filter(g => !isStudentDeleted({ id: g.studentId }));
             if (JSON.stringify(prev) !== JSON.stringify(merged)) {
               localStorage.setItem('ea_grades', JSON.stringify(merged));
               localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(merged));
@@ -893,7 +1054,7 @@ export default function App() {
                 }
               }
             });
-            const mergedAtt = Array.from(attMap.values());
+            const mergedAtt = Array.from(attMap.values()).filter(a => !isStudentDeleted({ id: a.studentId }));
             if (JSON.stringify(prev) !== JSON.stringify(mergedAtt)) {
               localStorage.setItem('ea_attendance', JSON.stringify(mergedAtt));
               localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(mergedAtt));
