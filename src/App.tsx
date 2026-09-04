@@ -307,7 +307,7 @@ export default function App() {
 
         if (cleanStudents.length === 0 && localStudents.length > 0 && !hasBeenInitialized) {
           let cleanLocalStudents = localStudents.filter(
-            s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
+            s => !teacherIds.has(s.id)
           ).filter(s => !isStudentDeleted(s));
           cleanLocalStudents = deduplicateStudents(cleanLocalStudents);
           try {
@@ -335,7 +335,7 @@ export default function App() {
       } else {
         const hasBeenInitialized = localStorage.getItem('ea_has_initialized') === 'true' || getDeletedStudentIds().length > 0;
         let cleanLocalStudents = localStudents.filter(
-          s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
+          s => !teacherIds.has(s.id)
         ).filter(s => !isStudentDeleted(s));
         if (cleanLocalStudents.length > 0) {
           const { restoredStudents } = restoreStudentsFromTerminalReport(cleanLocalStudents, localGrades);
@@ -581,10 +581,9 @@ export default function App() {
     }
 
     // Filter out any teacher accounts that may have leaked into students
-    const teacherEmails = new Set(finalTeachers.map(t => t.email.toLowerCase()));
-    const teacherIds = new Set(finalTeachers.map(t => t.id));
+    const teacherIds = new Set(finalTeachers.map(t => t.id).filter(Boolean));
     let cleanStudents = finalStudents.filter(
-      s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
+      s => !teacherIds.has(s.id)
     );
 
     // CRITICAL: Filter out any deleted students
@@ -601,6 +600,15 @@ export default function App() {
     localStorage.setItem('ea_students', JSON.stringify(cleanStudents));
     localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanStudents));
     localStorage.setItem('ea_has_initialized', 'true');
+
+    // Warm server-side student cache for global multi-browser sync
+    if (cleanStudents.length > 0) {
+      fetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ students: cleanStudents })
+      }).catch(() => {});
+    }
 
     let finalGrades: Grade[] = [];
     if (cachedGrades !== null) {
@@ -772,11 +780,10 @@ export default function App() {
   // Ensure we never have teachers registered under students (e.g. from database triggers on signUp)
   useEffect(() => {
     if (!isInitialized) return;
-    const teacherEmails = new Set(teachers.map(t => t.email.toLowerCase()));
-    const teacherIds = new Set(teachers.map(t => t.id));
-    const hasOverlap = students.some(s => teacherIds.has(s.id) || teacherEmails.has(s.guardianEmail.toLowerCase()));
+    const teacherIds = new Set(teachers.map(t => t.id).filter(Boolean));
+    const hasOverlap = students.some(s => s.id && teacherIds.has(s.id));
     if (hasOverlap) {
-      setStudents(prev => prev.filter(s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())));
+      setStudents(prev => prev.filter(s => !teacherIds.has(s.id)));
     }
   }, [teachers, students, isInitialized]);
 
@@ -982,20 +989,39 @@ export default function App() {
         ]);
 
         if (remoteStudents && Array.isArray(remoteStudents)) {
-          const cleanRemoteStudents = remoteStudents.filter(s => !isStudentDeleted(s));
           setStudents(prev => {
-            const cleanPrev = prev.filter(s => !isStudentDeleted(s));
+            const deletedIds = new Set(getDeletedStudentIds().map(x => String(x).toLowerCase().trim()));
+            const cleanRemote = remoteStudents.filter(s => s && s.id && !deletedIds.has(s.id.toLowerCase().trim()));
+            const cleanPrev = prev.filter(s => s && s.id && !deletedIds.has(s.id.toLowerCase().trim()));
+
+            // Build student map preserving any local newly added students
+            const studentMap = new Map<string, Student>();
+            cleanRemote.forEach(s => {
+              studentMap.set(s.id, s);
+            });
+
+            // If a student exists in local state but not yet remote (e.g. newly admitted), preserve it
+            cleanPrev.forEach(s => {
+              const existing = studentMap.get(s.id);
+              if (!existing) {
+                studentMap.set(s.id, s);
+              } else {
+                const localUpdated = (s as any).updatedAt ? new Date((s as any).updatedAt).getTime() : 0;
+                const remoteUpdated = (existing as any).updatedAt ? new Date((existing as any).updatedAt).getTime() : 0;
+                if (localUpdated > remoteUpdated) {
+                  studentMap.set(s.id, s);
+                }
+              }
+            });
+
+            const merged = deduplicateStudents(Array.from(studentMap.values()));
             const prevSig = cleanPrev.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
-            const remoteSig = cleanRemoteStudents.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
-            if (prevSig !== remoteSig && cleanRemoteStudents.length > 0) {
-              localStorage.setItem('ea_students', JSON.stringify(cleanRemoteStudents));
-              localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanRemoteStudents));
-              return cleanRemoteStudents;
-            }
-            if (cleanPrev.length !== prev.length) {
-              localStorage.setItem('ea_students', JSON.stringify(cleanPrev));
-              localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanPrev));
-              return cleanPrev;
+            const mergedSig = merged.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
+
+            if (prevSig !== mergedSig) {
+              localStorage.setItem('ea_students', JSON.stringify(merged));
+              localStorage.setItem('mock_supabase_ea_students', JSON.stringify(merged));
+              return merged;
             }
             return prev;
           });

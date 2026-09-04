@@ -1407,7 +1407,7 @@ export function getDeletedStudentIds(): string[] {
 }
 
 export function recordDeletedStudentId(id: string, rollNumber?: string, studentName?: string): void {
-  if (!id && !rollNumber && !studentName) return;
+  if (!id && !rollNumber) return;
   try {
     const current = getDeletedStudentIds();
     const toAdd: string[] = [];
@@ -1417,10 +1417,6 @@ export function recordDeletedStudentId(id: string, rollNumber?: string, studentN
       toAdd.push(r);
       const cleanR = r.replace(/[^A-Za-z0-9]/g, '');
       if (cleanR) toAdd.push(cleanR);
-    }
-    if (studentName) {
-      const n = studentName.trim().toLowerCase();
-      if (n) toAdd.push(n);
     }
     const currentLower = new Set(current.map(x => String(x).toLowerCase().trim()));
     const newItems = toAdd.filter(x => !currentLower.has(x.toLowerCase().trim()));
@@ -1441,10 +1437,6 @@ export function isStudentDeleted(student?: { id?: string; rollNumber?: string; n
     const r = student.rollNumber.toLowerCase().trim();
     const cleanR = r.replace(/[^a-z0-9]/g, '');
     if (deletedSet.has(r) || (cleanR && deletedSet.has(cleanR))) return true;
-  }
-  if (student.name) {
-    const n = student.name.toLowerCase().trim();
-    if (deletedSet.has(n)) return true;
   }
   return false;
 }
@@ -1587,24 +1579,29 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
 
     const { data, error } = await client.from('ea_students').select('*');
     if (error) {
+      console.warn('[Fetch Students] Supabase query error, falling back to server/cache:', error.message || error);
       const serverResult = await fetchFromServer();
       if (serverResult && serverResult.length > 0) return serverResult;
 
-      if (isMissingTableOrConnectionError(error)) {
-        const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
-        if (cached) {
-          try {
-            const parsed = JSON.parse(cached);
-            if (Array.isArray(parsed)) return filterDeleted(parsed);
-          } catch (e) {}
-        }
-        return null;
+      const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return filterDeleted(parsed);
+        } catch (e) {}
       }
       return null;
     }
     if (!data || data.length === 0) {
       const serverResult = await fetchFromServer();
       if (serverResult && serverResult.length > 0) return serverResult;
+      const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return filterDeleted(parsed);
+        } catch (e) {}
+      }
       return [];
     }
     const mapped = data.map(item => ({
@@ -1645,14 +1642,12 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     const serverResult = await fetchFromServer();
     if (serverResult && serverResult.length > 0) return serverResult;
 
-    if (isMissingTableOrConnectionError(err)) {
-      const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) return filterDeleted(parsed);
-        } catch (e) {}
-      }
+    const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return filterDeleted(parsed);
+      } catch (e) {}
     }
     return null;
   }
@@ -1691,7 +1686,7 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
 
   // 3. Immediately dispatch to Server / CDN API
   try {
-    fetch('/api/students/admit', {
+    await fetch('/api/students/admit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ student })

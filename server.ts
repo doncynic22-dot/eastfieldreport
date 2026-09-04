@@ -377,13 +377,13 @@ async function startServer() {
 
     // Seed existing
     currentStudents.forEach(s => {
-      const key = s.id || s.rollNumber || s.name;
+      const key = s.id || (s.rollNumber ? s.rollNumber.toLowerCase().trim() : undefined);
       if (key) studentMap.set(key, s);
     });
 
     // Upsert incoming
     students.forEach(s => {
-      const key = s.id || s.rollNumber || s.name;
+      const key = s.id || (s.rollNumber ? s.rollNumber.toLowerCase().trim() : undefined);
       if (key) studentMap.set(key, s);
     });
 
@@ -400,13 +400,12 @@ async function startServer() {
   // DELETE /api/students/:id: Delete pupil from global server store
   app.delete("/api/students/:id", (req, res) => {
     const targetId = req.params.id;
-    const { rollNumber, studentName } = req.body || {};
+    const { rollNumber } = req.body || {};
 
     const currentStudents = loadServerStudents();
     const updated = currentStudents.filter(s => {
       if (s.id === targetId) return false;
-      if (rollNumber && s.rollNumber && s.rollNumber.toLowerCase() === rollNumber.toLowerCase()) return false;
-      if (studentName && s.name && s.name.toLowerCase() === studentName.toLowerCase()) return false;
+      if (rollNumber && s.rollNumber && s.rollNumber.toLowerCase().trim() === rollNumber.toLowerCase().trim()) return false;
       return true;
     });
 

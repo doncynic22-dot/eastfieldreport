@@ -1120,6 +1120,10 @@ export default function AdminDashboard({
     }
 
     setStudents(updatedStudentsList);
+    try {
+      localStorage.setItem('ea_students', JSON.stringify(updatedStudentsList));
+      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updatedStudentsList));
+    } catch (e) {}
 
     // Instant pupil admission sync across Server / CDN and Supabase
     saveSingleSupabaseStudent(savedStudent).catch(err => console.warn('Instant student admission sync error:', err));
@@ -1128,6 +1132,11 @@ export default function AdminDashboard({
     if (onPushToSupabase) {
       onPushToSupabase(updatedStudentsList, config);
     }
+
+    // Reset filters so newly admitted student is immediately visible in view
+    setStudentClassFilter(finalClassName);
+    setStudentLevelFilter(finalLevel);
+    setStudentSearch('');
 
     // Reset Form
     setStudentForm({
@@ -1414,9 +1423,11 @@ export default function AdminDashboard({
   // Filter and sort students for Directory
   const filteredStudents = students
     .filter((s) => {
-      const matchesSearch = s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
-                            s.rollNumber.toLowerCase().includes(studentSearch.toLowerCase()) ||
-                            s.guardianName.toLowerCase().includes(studentSearch.toLowerCase());
+      const searchLower = (studentSearch || '').toLowerCase();
+      const sName = (s?.name || '').toLowerCase();
+      const sRoll = (s?.rollNumber || '').toLowerCase();
+      const sGuardian = (s?.guardianName || '').toLowerCase();
+      const matchesSearch = !searchLower || sName.includes(searchLower) || sRoll.includes(searchLower) || sGuardian.includes(searchLower);
       const matchesLevel = studentLevelFilter === 'ALL' || s.level === studentLevelFilter;
       const matchesClass = studentClassFilter === 'ALL' || s.className === studentClassFilter;
       return matchesSearch && matchesLevel && matchesClass;
@@ -1424,9 +1435,9 @@ export default function AdminDashboard({
     .sort((a, b) => {
       let comparison = 0;
       if (studentSortField === 'rollNumber') {
-        comparison = a.rollNumber.localeCompare(b.rollNumber, undefined, { numeric: true, sensitivity: 'base' });
+        comparison = (a?.rollNumber || '').localeCompare(b?.rollNumber || '', undefined, { numeric: true, sensitivity: 'base' });
       } else {
-        comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        comparison = (a?.name || '').localeCompare(b?.name || '', undefined, { numeric: true, sensitivity: 'base' });
       }
       return studentSortOrder === 'asc' ? comparison : -comparison;
     });
