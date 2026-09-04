@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord, BookStockItem, BookSaleRecord } from '../types';
 import { DEFAULT_INVENTORY_DATA, DEFAULT_BOOK_STOCK_ITEMS, DEFAULT_BOOK_SALES } from '../data/mockData';
 
@@ -44,9 +44,232 @@ let supabaseClientInstance: SupabaseClient | null = null;
 let currentClientUrl = '';
 let currentClientKey = '';
 
+// =========================================================================
+// REAL-TIME SYNCHRONIZATION & AUTO-SYNC ENGINE
+// =========================================================================
+let globalRealtimeChannel: RealtimeChannel | null = null;
+const realtimeListeners: Set<(info: { table: string; eventType: string; payload?: any }) => void> = new Set();
+let isRealtimeSubscribed = false;
+let lastRealtimeEventTime: number | null = null;
+let lastRealtimeError: string | null = null;
+let crossTabBroadcastChannel: BroadcastChannel | null = null;
+
+// Initialize cross-tab BroadcastChannel for zero-latency multi-tab sync
+if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+  try {
+    crossTabBroadcastChannel = new BroadcastChannel('ea_global_sync_broadcast');
+    crossTabBroadcastChannel.onmessage = (event) => {
+      const data = event.data;
+      if (data && data.table) {
+        lastRealtimeEventTime = Date.now();
+        realtimeListeners.forEach((listener) => {
+          try {
+            listener({ table: data.table, eventType: 'CROSS_TAB_BROADCAST', payload: data });
+          } catch (e) {
+            console.warn('Realtime listener error:', e);
+          }
+        });
+      }
+    };
+  } catch (e) {
+    // BroadcastChannel unsupported or blocked
+  }
+}
+
+// Storage event listener for fallback cross-tab sync in older contexts
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key && (event.key.startsWith('ea_') || event.key.startsWith('mock_supabase_ea_'))) {
+      const cleanKey = event.key.replace(/^mock_supabase_/, '').replace(/^ea_/, '');
+      lastRealtimeEventTime = Date.now();
+      realtimeListeners.forEach((listener) => {
+        try {
+          listener({ table: cleanKey, eventType: 'STORAGE_EVENT', payload: { key: event.key } });
+        } catch (e) {}
+      });
+    }
+  });
+
+  window.addEventListener('ea_global_sync_internal', ((event: CustomEvent) => {
+    const detail = event.detail;
+    if (detail && detail.table) {
+      lastRealtimeEventTime = Date.now();
+      realtimeListeners.forEach((listener) => {
+        try {
+          listener({ table: detail.table, eventType: 'LOCAL_EVENT', payload: detail });
+        } catch (e) {}
+      });
+    }
+  }) as EventListener);
+}
+
+export function getRealtimeConnectionStatus() {
+  return {
+    isSubscribed: isRealtimeSubscribed,
+    lastEventTime: lastRealtimeEventTime,
+    error: lastRealtimeError
+  };
+}
+
+/**
+ * Instantly broadcasts a synchronization event across:
+ * 1. Supabase Realtime WebSocket broadcast channel (across internet / devices)
+ * 2. HTML5 BroadcastChannel (across all open browser tabs instantly)
+ * 3. Window CustomEvents & domain events (for in-memory views and modules)
+ */
+export function broadcastGlobalSync(table: string, details?: any) {
+  lastRealtimeEventTime = Date.now();
+
+  // 1. Send via Supabase Realtime broadcast channel if connected
+  try {
+    if (globalRealtimeChannel && isRealtimeSubscribed) {
+      globalRealtimeChannel.send({
+        type: 'broadcast',
+        event: 'ea_sync_event',
+        payload: { table, timestamp: Date.now(), details }
+      }).catch((e) => {
+        console.warn('Supabase broadcast send notice:', e);
+      });
+    }
+  } catch (e) {}
+
+  // 2. Send via Cross-tab BroadcastChannel
+  try {
+    if (crossTabBroadcastChannel) {
+      crossTabBroadcastChannel.postMessage({ table, timestamp: Date.now(), details });
+    }
+  } catch (e) {}
+
+  // 3. Dispatch local in-app CustomEvent
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ea_global_sync_internal', {
+        detail: { table, details, timestamp: Date.now() }
+      }));
+
+      // Domain-specific legacy events for sub-modules
+      if (table === 'ea_students' || table === 'students') {
+        if (details?.action === 'DELETE' && (details.id || details.rollNumber || details.studentName)) {
+          recordDeletedStudentId(details.id, details.rollNumber, details.studentName);
+        }
+        window.dispatchEvent(new Event('ea_students_updated'));
+      } else if (table === 'ea_inventory' || table === 'inventory') {
+        window.dispatchEvent(new Event('ea_inventory_updated'));
+      } else if (table === 'ea_book_stock' || table === 'book_stock') {
+        window.dispatchEvent(new Event('ea_book_stock_updated'));
+      } else if (table === 'ea_book_sales' || table === 'book_sales') {
+        window.dispatchEvent(new Event('ea_book_sales_updated'));
+      }
+    }
+  } catch (e) {}
+
+  // 4. Also forward through secondary broadcastSync engine
+  try {
+    const domainMap: Record<string, GlobalSyncDomain> = {
+      ea_students: 'students',
+      students: 'students',
+      ea_teachers: 'teachers',
+      teachers: 'teachers',
+      ea_grades: 'grades',
+      grades: 'grades',
+      ea_attendance: 'attendance',
+      attendance: 'attendance',
+      ea_config: 'config',
+      config: 'config',
+      ea_bills: 'bills',
+      bills: 'bills',
+      ea_fee_payments: 'fee_payments',
+      fee_payments: 'fee_payments',
+      ea_inventory: 'inventory',
+      inventory: 'inventory',
+      ea_book_stock: 'book_stock',
+      book_stock: 'book_stock',
+      ea_book_sales: 'book_sales',
+      book_sales: 'book_sales',
+      ea_deleted_records: 'deleted_records',
+      deleted_records: 'deleted_records'
+    };
+    const mapped = domainMap[table];
+    if (mapped) {
+      broadcastSync(mapped, details, details?.action === 'DELETE' ? 'delete' : 'update');
+    }
+  } catch (e) {}
+}
+
+/**
+ * Subscribes to Real-time auto-synchronization from Supabase Postgres CDC,
+ * Realtime broadcasts, and multi-tab sync channels.
+ */
+export function subscribeToGlobalRealtimeRaw(
+  callback: (info: { table: string; eventType: string; payload?: any }) => void
+): () => void {
+  realtimeListeners.add(callback);
+
+  const client = getSupabaseClient();
+  if (client && !globalRealtimeChannel) {
+    try {
+      globalRealtimeChannel = client
+        .channel('ea-global-sync-channel')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public' },
+          (payload) => {
+            const table = payload.table || 'all';
+            const eventType = payload.eventType || 'POSTGRES_CHANGE';
+            lastRealtimeEventTime = Date.now();
+            realtimeListeners.forEach((listener) => {
+              try {
+                listener({ table, eventType, payload });
+              } catch (e) {}
+            });
+          }
+        )
+        .on(
+          'broadcast',
+          { event: 'ea_sync_event' },
+          ({ payload }) => {
+            const table = payload?.table || 'all';
+            lastRealtimeEventTime = Date.now();
+            realtimeListeners.forEach((listener) => {
+              try {
+                listener({ table, eventType: 'REMOTE_BROADCAST', payload });
+              } catch (e) {}
+            });
+          }
+        )
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            isRealtimeSubscribed = true;
+            lastRealtimeError = null;
+            broadcastGlobalSync('system_connection', { status: 'SUBSCRIBED' });
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            isRealtimeSubscribed = false;
+            lastRealtimeError = err?.message || 'Realtime subscription interrupted';
+          } else if (status === 'CLOSED') {
+            isRealtimeSubscribed = false;
+          }
+        });
+    } catch (err: any) {
+      console.warn('Failed to initialize Supabase Realtime channel:', err);
+      lastRealtimeError = err?.message || 'Initialization error';
+    }
+  }
+
+  return () => {
+    realtimeListeners.delete(callback);
+  };
+}
+
 export function getSupabaseClient(): SupabaseClient | null {
   const { url, key, isConfigured } = getSupabaseCredentials();
   if (!isConfigured) {
+    if (globalRealtimeChannel) {
+      try {
+        supabaseClientInstance?.removeChannel(globalRealtimeChannel);
+      } catch (e) {}
+      globalRealtimeChannel = null;
+      isRealtimeSubscribed = false;
+    }
     supabaseClientInstance = null;
     currentClientUrl = '';
     currentClientKey = '';
@@ -56,9 +279,21 @@ export function getSupabaseClient(): SupabaseClient | null {
   // Re-create client if credentials changed or client is not yet created
   if (!supabaseClientInstance || supabaseClientInstance.auth === undefined || url !== currentClientUrl || key !== currentClientKey) {
     try {
+      if (globalRealtimeChannel) {
+        try {
+          supabaseClientInstance?.removeChannel(globalRealtimeChannel);
+        } catch (e) {}
+        globalRealtimeChannel = null;
+        isRealtimeSubscribed = false;
+      }
       supabaseClientInstance = createClient(url, key, {
         auth: {
           persistSession: false
+        },
+        realtime: {
+          params: {
+            eventsPerSecond: 10
+          }
         }
       });
       currentClientUrl = url;
@@ -652,41 +887,37 @@ ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP W
 -- Enable Realtime for all tables if needed (Optional)
 -- Wrap in a DO block to prevent "relation already member of publication" errors
 DO $$
+DECLARE
+  tbl text;
+  realtime_tables text[] := ARRAY[
+    'ea_config',
+    'ea_students',
+    'ea_teachers',
+    'ea_grades',
+    'ea_attendance',
+    'ea_bills',
+    'ea_fee_payments',
+    'ea_fee_structures',
+    'ea_inventory',
+    'ea_book_stock',
+    'ea_book_sales',
+    'ea_deleted_records',
+    'ea_jhs_mock_exams',
+    'ea_sync_logs'
+  ];
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables 
-    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'ea_config'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.ea_config;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables 
-    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'ea_students'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.ea_students;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables 
-    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'ea_teachers'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.ea_teachers;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables 
-    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'ea_grades'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.ea_grades;
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables 
-    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'ea_attendance'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.ea_attendance;
-  END IF;
+  FOREACH tbl IN ARRAY realtime_tables LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables 
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = tbl
+    ) THEN
+      BEGIN
+        EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I;', tbl);
+      EXCEPTION WHEN OTHERS THEN
+        NULL;
+      END;
+    END IF;
+  END LOOP;
 EXCEPTION
   WHEN OTHERS THEN
     -- Ignore if publication doesn't exist or other issues occur
@@ -1216,12 +1447,18 @@ export function isStudentDeleted(student?: { id?: string; rollNumber?: string; n
   return false;
 }
 
-export function removeDeletedStudentId(id: string): void {
-  if (!id) return;
+export function removeDeletedStudentId(id?: string, rollNumber?: string, studentName?: string): void {
+  if (!id && !rollNumber && !studentName) return;
   try {
     const current = getDeletedStudentIds();
-    const idLower = id.toLowerCase().trim();
-    const filtered = current.filter(item => item.toLowerCase().trim() !== idLower);
+    const toRemove = new Set<string>();
+    if (id) toRemove.add(id.toLowerCase().trim());
+    if (rollNumber) {
+      toRemove.add(rollNumber.toLowerCase().trim());
+      toRemove.add(rollNumber.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
+    }
+    if (studentName) toRemove.add(studentName.toLowerCase().trim());
+    const filtered = current.filter(item => !toRemove.has(item.toLowerCase().trim()));
     localStorage.setItem('ea_deleted_student_ids', JSON.stringify(filtered));
   } catch (e) {}
 }
@@ -1426,31 +1663,52 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
         const activeIds = new Set(validStudents.map(s => String(s.id)));
         const activeRolls = new Set(validStudents.map(s => (s.rollNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean));
         const activeNames = new Set(validStudents.map(s => (s.name || '').toLowerCase().trim()).filter(Boolean));
-        const tombstoneIds = getDeletedStudentIds().filter(Boolean);
         
         let toDeleteIds: string[] = [];
+        let toDeleteRolls: string[] = [];
+        let toDeleteNames: string[] = [];
+
         if (existingRows && existingRows.length > 0) {
-          toDeleteIds = existingRows
-            .filter(row => {
-              if (activeIds.has(String(row.id))) return false;
-              const r = (row.roll_number || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-              if (r && activeRolls.has(r)) return false;
-              const n = (row.name || '').toLowerCase().trim();
-              if (n && activeNames.has(n)) return false;
-              return true;
-            })
-            .map(row => row.id)
-            .filter(Boolean);
+          existingRows.forEach(row => {
+            const isTombstone = isStudentDeleted({ id: row.id, rollNumber: row.roll_number, name: row.name });
+            const r = (row.roll_number || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const n = (row.name || '').toLowerCase().trim();
+            const isActive = activeIds.has(String(row.id)) || (r && activeRolls.has(r)) || (n && activeNames.has(n));
+
+            if (isTombstone || !isActive) {
+              if (row.id) toDeleteIds.push(row.id);
+              if (row.roll_number) toDeleteRolls.push(row.roll_number);
+              if (row.name) toDeleteNames.push(row.name);
+            }
+          });
         }
-        const combinedDeleteIds = Array.from(new Set([...toDeleteIds, ...tombstoneIds]));
-        for (let i = 0; i < combinedDeleteIds.length; i += 25) {
-          const chunk = combinedDeleteIds.slice(i, i + 25);
+
+        // 1. Delete rows using exact verified database primary keys
+        for (let i = 0; i < toDeleteIds.length; i += 25) {
+          const chunk = toDeleteIds.slice(i, i + 25);
           await client.from('ea_grades').delete().in('student_id', chunk);
           await client.from('ea_attendance').delete().in('student_id', chunk);
           await client.from('ea_bills').delete().in('student_id', chunk);
           await client.from('ea_fee_payments').delete().in('student_id', chunk);
           await client.from('ea_jhs_mock_exams').delete().in('student_id', chunk);
           await client.from('ea_students').delete().in('id', chunk);
+        }
+
+        // 2. Delete rows using exact verified roll numbers
+        for (let i = 0; i < toDeleteRolls.length; i += 25) {
+          const chunk = toDeleteRolls.slice(i, i + 25);
+          await client.from('ea_grades').delete().in('student_id', chunk);
+          await client.from('ea_attendance').delete().in('student_id', chunk);
+          await client.from('ea_bills').delete().in('student_id', chunk);
+          await client.from('ea_fee_payments').delete().in('student_id', chunk);
+          await client.from('ea_jhs_mock_exams').delete().in('student_id', chunk);
+          await client.from('ea_students').delete().in('roll_number', chunk);
+        }
+
+        // 3. Delete rows using verified names
+        for (let i = 0; i < toDeleteNames.length; i += 25) {
+          const chunk = toDeleteNames.slice(i, i + 25);
+          await client.from('ea_students').delete().in('name', chunk);
         }
       }
     } catch (pruneErr) {
@@ -1735,12 +1993,19 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
       }
       if (id) {
         await client.from('ea_students').delete().eq('id', id);
+        await client.from('ea_students').delete().eq('id', id.trim());
       }
       if (rollNumber) {
         await client.from('ea_students').delete().eq('roll_number', rollNumber);
+        await client.from('ea_students').delete().eq('roll_number', rollNumber.trim());
+        await client.from('ea_students').delete().ilike('roll_number', rollNumber.trim());
+        await client.from('ea_students').delete().eq('id', rollNumber);
+      }
+      if (normRoll) {
+        await client.from('ea_students').delete().ilike('roll_number', `%${normRoll}%`);
       }
       if (studentName) {
-        await client.from('ea_students').delete().ilike('name', studentName);
+        await client.from('ea_students').delete().ilike('name', studentName.trim());
       }
 
       // Log deletion in ea_sync_logs and ea_deleted_records to sync across other client devices & sessions
@@ -1769,12 +2034,22 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
         }]);
       } catch (logErr) {}
 
+      // Broadcast globally across Realtime WebSockets, BroadcastChannels, and in-memory listeners
+      broadcastGlobalSync('ea_students', { id, rollNumber, studentName, action: 'DELETE' });
+      broadcastSync('students', { id, rollNumber, studentName }, 'delete');
+
       return true;
     } catch (err: any) {
       console.warn('deleteSupabaseStudent remote exception:', err);
+      broadcastGlobalSync('ea_students', { id, rollNumber, studentName, action: 'DELETE' });
+      broadcastSync('students', { id, rollNumber, studentName }, 'delete');
       return true;
     }
   }
+
+  // Broadcast deletion across local tabs even if client instance is offline
+  broadcastGlobalSync('ea_students', { id, rollNumber, studentName, action: 'DELETE' });
+  broadcastSync('students', { id, rollNumber, studentName }, 'delete');
   return true;
 }
 
@@ -3545,4 +3820,241 @@ export async function deleteSupabaseBookSale(id: string): Promise<boolean> {
   }
 
   return true;
+}
+
+// -------------------------------------------------------------
+// GLOBAL REALTIME & CROSS-TAB BROADCAST SYNCHRONIZATION BUS
+// -------------------------------------------------------------
+
+let globalBroadcastChannel: BroadcastChannel | null = null;
+try {
+  if (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined') {
+    globalBroadcastChannel = new BroadcastChannel('ea_global_sync_channel');
+  }
+} catch (e) {
+  // Fallback gracefully if BroadcastChannel is restricted
+}
+
+export type GlobalSyncDomain = 
+  | 'students'
+  | 'teachers'
+  | 'grades'
+  | 'attendance'
+  | 'config'
+  | 'bills'
+  | 'fee_payments'
+  | 'inventory'
+  | 'book_stock'
+  | 'book_sales'
+  | 'deleted_records'
+  | 'jhs_mock_exams'
+  | 'all';
+
+export interface GlobalSyncMessage {
+  domain: GlobalSyncDomain;
+  action?: 'insert' | 'update' | 'delete' | 'sync';
+  timestamp: number;
+  sourceTabId: string;
+  payload?: any;
+}
+
+const CURRENT_TAB_ID = typeof window !== 'undefined'
+  ? `tab_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+  : 'server_tab';
+
+/**
+ * Broadcast an update event across all open browser tabs and local event listeners immediately.
+ */
+export function broadcastSync(domain: GlobalSyncDomain, payload?: any, action: 'insert' | 'update' | 'delete' | 'sync' = 'sync') {
+  if (typeof window === 'undefined') return;
+
+  const message: GlobalSyncMessage = {
+    domain,
+    action,
+    timestamp: Date.now(),
+    sourceTabId: CURRENT_TAB_ID,
+    payload
+  };
+
+  // 1. Cross-tab broadcast
+  try {
+    globalBroadcastChannel?.postMessage(message);
+  } catch (e) {}
+
+  // 2. Intra-tab custom event
+  try {
+    window.dispatchEvent(new CustomEvent(`ea_${domain}_updated`, { detail: message }));
+    window.dispatchEvent(new CustomEvent('ea_global_sync', { detail: message }));
+    window.dispatchEvent(new Event('storage'));
+  } catch (e) {}
+}
+
+export interface RealtimeSyncCallbacks {
+  onSyncEvent?: (event: GlobalSyncMessage) => void;
+  onStudentsChange?: () => void;
+  onTeachersChange?: () => void;
+  onGradesChange?: () => void;
+  onAttendanceChange?: () => void;
+  onConfigChange?: () => void;
+  onBillsChange?: () => void;
+  onFeePaymentsChange?: () => void;
+  onInventoryChange?: () => void;
+  onBookStockChange?: () => void;
+  onBookSalesChange?: () => void;
+  onDeletedRecordsChange?: () => void;
+  onStatusChange?: (status: 'connected' | 'connecting' | 'error' | 'disconnected') => void;
+}
+
+/**
+ * Subscribes to Supabase Realtime postgres_changes across all Academy tables AND
+ * listens for cross-tab BroadcastChannel notifications.
+ * Returns an unsubscribe teardown function.
+ */
+export function subscribeToGlobalRealtime(callbacks: RealtimeSyncCallbacks = {}): () => void {
+  if (typeof window === 'undefined') return () => {};
+
+  // 1. Listen for cross-tab broadcasts
+  const handleBroadcastMessage = (event: MessageEvent<GlobalSyncMessage>) => {
+    const data = event.data;
+    if (!data || data.sourceTabId === CURRENT_TAB_ID) return;
+
+    callbacks.onSyncEvent?.(data);
+
+    switch (data.domain) {
+      case 'students':
+        callbacks.onStudentsChange?.();
+        break;
+      case 'teachers':
+        callbacks.onTeachersChange?.();
+        break;
+      case 'grades':
+        callbacks.onGradesChange?.();
+        break;
+      case 'attendance':
+        callbacks.onAttendanceChange?.();
+        break;
+      case 'config':
+        callbacks.onConfigChange?.();
+        break;
+      case 'bills':
+        callbacks.onBillsChange?.();
+        break;
+      case 'fee_payments':
+        callbacks.onFeePaymentsChange?.();
+        break;
+      case 'inventory':
+        callbacks.onInventoryChange?.();
+        break;
+      case 'book_stock':
+        callbacks.onBookStockChange?.();
+        break;
+      case 'book_sales':
+        callbacks.onBookSalesChange?.();
+        break;
+      case 'deleted_records':
+        callbacks.onDeletedRecordsChange?.();
+        break;
+      case 'all':
+        callbacks.onStudentsChange?.();
+        callbacks.onTeachersChange?.();
+        callbacks.onGradesChange?.();
+        callbacks.onAttendanceChange?.();
+        callbacks.onConfigChange?.();
+        callbacks.onBillsChange?.();
+        break;
+    }
+  };
+
+  if (globalBroadcastChannel) {
+    globalBroadcastChannel.addEventListener('message', handleBroadcastMessage);
+  }
+
+  // 2. Set up Supabase Realtime WebSocket subscription
+  const client = getSupabaseClient();
+  let channelInstance: any = null;
+
+  if (client) {
+    callbacks.onStatusChange?.('connecting');
+    const channelName = `ea_realtime_${Math.random().toString(36).substring(2, 8)}`;
+    channelInstance = client.channel(channelName);
+
+    const tablesToListen: { table: string; domain: GlobalSyncDomain; callbackKey?: keyof RealtimeSyncCallbacks }[] = [
+      { table: 'ea_config', domain: 'config', callbackKey: 'onConfigChange' },
+      { table: 'ea_students', domain: 'students', callbackKey: 'onStudentsChange' },
+      { table: 'ea_teachers', domain: 'teachers', callbackKey: 'onTeachersChange' },
+      { table: 'ea_grades', domain: 'grades', callbackKey: 'onGradesChange' },
+      { table: 'ea_attendance', domain: 'attendance', callbackKey: 'onAttendanceChange' },
+      { table: 'ea_bills', domain: 'bills', callbackKey: 'onBillsChange' },
+      { table: 'ea_fee_payments', domain: 'fee_payments', callbackKey: 'onFeePaymentsChange' },
+      { table: 'ea_inventory', domain: 'inventory', callbackKey: 'onInventoryChange' },
+      { table: 'ea_book_stock', domain: 'book_stock', callbackKey: 'onBookStockChange' },
+      { table: 'ea_book_sales', domain: 'book_sales', callbackKey: 'onBookSalesChange' },
+      { table: 'ea_deleted_records', domain: 'deleted_records', callbackKey: 'onDeletedRecordsChange' },
+      { table: 'ea_sync_logs', domain: 'deleted_records', callbackKey: 'onDeletedRecordsChange' },
+      { table: 'ea_jhs_mock_exams', domain: 'jhs_mock_exams' }
+    ];
+
+    tablesToListen.forEach(({ table, domain, callbackKey }) => {
+      channelInstance = channelInstance.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table },
+        (payload: any) => {
+          // If deleted records changed, update tombstone registry immediately
+          if (table === 'ea_deleted_records' && payload.new) {
+            const row = payload.new;
+            const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
+            if (row.record_type === 'STUDENT') {
+              recordDeletedStudentId(row.record_id || details.id, row.roll_number || details.rollNumber, row.name || details.studentName);
+            }
+          }
+
+          if (table === 'ea_sync_logs' && payload.new) {
+            const row = payload.new;
+            if (row.action_type === 'DELETE_STUDENT') {
+              const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
+              recordDeletedStudentId(details.id || details.studentId, details.rollNumber, details.studentName || details.name);
+            }
+          }
+
+          if (table === 'ea_students' && (payload.eventType === 'DELETE' || payload.event === 'DELETE')) {
+            if (payload.old) {
+              recordDeletedStudentId(payload.old.id, payload.old.roll_number, payload.old.name);
+            }
+          }
+
+          // Trigger domain callback
+          if (callbackKey && typeof callbacks[callbackKey] === 'function') {
+            (callbacks[callbackKey] as Function)();
+          }
+
+          // Broadcast locally
+          broadcastSync(domain, payload, (payload.eventType?.toLowerCase() as any) || 'update');
+        }
+      );
+    });
+
+    channelInstance.subscribe((status: string) => {
+      if (status === 'SUBSCRIBED') {
+        callbacks.onStatusChange?.('connected');
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        callbacks.onStatusChange?.('error');
+      } else if (status === 'CLOSED') {
+        callbacks.onStatusChange?.('disconnected');
+      }
+    });
+  } else {
+    callbacks.onStatusChange?.('disconnected');
+  }
+
+  // Return teardown function
+  return () => {
+    if (globalBroadcastChannel) {
+      globalBroadcastChannel.removeEventListener('message', handleBroadcastMessage);
+    }
+    if (channelInstance && client) {
+      try {
+        client.removeChannel(channelInstance);
+      } catch (e) {}
+    }
+  };
 }

@@ -18,7 +18,7 @@ import AdminDashboard from './components/AdminDashboard';
 import TeacherDashboard from './components/TeacherDashboard';
 import StudentAttendancePortal from './components/StudentAttendancePortal';
 import academyHubBg from './assets/images/academy_hub_bg_sharp_1786006863900.jpg';
-import { School, ShieldCheck, GraduationCap, Users2, FileCheck, CheckCircle2, Lock, Sparkles, BookOpen, Eye, EyeOff, Database, AlertTriangle, X, Menu, Library } from 'lucide-react';
+import { School, ShieldCheck, GraduationCap, Users2, FileCheck, CheckCircle2, Lock, Sparkles, BookOpen, Eye, EyeOff, Database, AlertTriangle, X, Menu } from 'lucide-react';
 import {
   getSupabaseCredentials,
   testSupabaseConnection,
@@ -41,8 +41,11 @@ import {
   SUPABASE_SQL_SCHEMA,
   SUPABASE_SQL_REPAIR,
   isStudentDeleted,
-  getDeletedStudentIds
+  getDeletedStudentIds,
+  subscribeToGlobalRealtime,
+  broadcastSync
 } from './lib/supabase';
+import { GlobalSyncBadge } from './components/GlobalSyncBadge';
 import { isAutoPromotionDue, promoteStudents, restoreAllStudentsToAdmittedLevels, deduplicateStudents, restoreStudentsFromTerminalReport } from './services/promotionService';
 import { getCanonicalSubjectId } from './utils/subjectUtils';
 
@@ -142,6 +145,8 @@ export default function App() {
   });
   const [isSupabaseSyncing, setIsSupabaseSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'offline'>('offline');
+  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'connecting' | 'error' | 'disconnected'>('connecting');
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(new Date());
   const [lastSyncError, setLastSyncError] = useState<string>('');
   const [showSyncErrorModal, setShowSyncErrorModal] = useState(false);
   const [copiedRepair, setCopiedRepair] = useState(false);
@@ -806,8 +811,11 @@ export default function App() {
     if (creds.isConfigured) {
       setSyncStatus('syncing');
       saveSupabaseStudents(students).then(ok => {
-        if (ok) setSyncStatus('synced');
-        else {
+        if (ok) {
+          setSyncStatus('synced');
+          setLastSyncTime(new Date());
+          broadcastSync('students', students);
+        } else {
           setSyncStatus('error');
           setLastSyncError('Failed to sync student updates to Cloud.');
         }
@@ -827,8 +835,11 @@ export default function App() {
     if (creds.isConfigured) {
       setSyncStatus('syncing');
       saveSupabaseTeachers(teachers).then(ok => {
-        if (ok) setSyncStatus('synced');
-        else {
+        if (ok) {
+          setSyncStatus('synced');
+          setLastSyncTime(new Date());
+          broadcastSync('teachers', teachers);
+        } else {
           setSyncStatus('error');
           setLastSyncError('Failed to sync staff updates to Cloud.');
         }
@@ -848,8 +859,11 @@ export default function App() {
     if (creds.isConfigured) {
       setSyncStatus('syncing');
       saveSupabaseGrades(grades).then(ok => {
-        if (ok) setSyncStatus('synced');
-        else {
+        if (ok) {
+          setSyncStatus('synced');
+          setLastSyncTime(new Date());
+          broadcastSync('grades', grades);
+        } else {
           setSyncStatus('error');
           setLastSyncError('Failed to sync grade records to Cloud.');
         }
@@ -869,8 +883,11 @@ export default function App() {
     if (creds.isConfigured) {
       setSyncStatus('syncing');
       saveSupabaseAttendance(attendance).then(ok => {
-        if (ok) setSyncStatus('synced');
-        else {
+        if (ok) {
+          setSyncStatus('synced');
+          setLastSyncTime(new Date());
+          broadcastSync('attendance', attendance);
+        } else {
           setSyncStatus('error');
           setLastSyncError('Failed to sync attendance updates to Cloud.');
         }
@@ -890,8 +907,11 @@ export default function App() {
     if (creds.isConfigured) {
       setSyncStatus('syncing');
       saveSupabaseConfig(config).then(ok => {
-        if (ok) setSyncStatus('synced');
-        else {
+        if (ok) {
+          setSyncStatus('synced');
+          setLastSyncTime(new Date());
+          broadcastSync('config', config);
+        } else {
           setSyncStatus('error');
           setLastSyncError('Failed to sync configuration to Cloud.');
         }
@@ -927,22 +947,37 @@ export default function App() {
     };
   }, []);
 
-  // Background polling & tab focus refresh to receive real-time admin updates across devices (e.g. reopening date & bills)
+  // Global Realtime WebSockets & Background multi-tab / device synchronization
   useEffect(() => {
     if (!isInitialized) return;
     const creds = getSupabaseCredentials();
-    if (!creds.isConfigured) return;
+    if (!creds.isConfigured) {
+      setRealtimeStatus('disconnected');
+      return;
+    }
+
+    let pullDebounceTimer: any = null;
 
     const pullRemoteUpdates = async () => {
       try {
-        const [remoteConfig, remoteBills, remoteGrades, remoteAttendance, _mock, _inv, remoteStudents] = await Promise.all([
+        const [
+          remoteConfig,
+          remoteBills,
+          remoteGrades,
+          remoteAttendance,
+          _mock,
+          _inv,
+          remoteStudents,
+          remoteTeachers
+        ] = await Promise.all([
           fetchSupabaseConfig(),
           fetchSupabaseBills(),
           fetchSupabaseGrades(),
           fetchSupabaseAttendance(),
           fetchSupabaseJHSMockExams(),
           fetchSupabaseInventory(),
-          fetchSupabaseStudents()
+          fetchSupabaseStudents(),
+          fetchSupabaseTeachers()
         ]);
 
         if (remoteStudents && Array.isArray(remoteStudents)) {
@@ -960,6 +995,19 @@ export default function App() {
               localStorage.setItem('ea_students', JSON.stringify(cleanPrev));
               localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanPrev));
               return cleanPrev;
+            }
+            return prev;
+          });
+        }
+
+        if (remoteTeachers && Array.isArray(remoteTeachers) && remoteTeachers.length > 0) {
+          setTeachers(prev => {
+            const prevIds = prev.map(t => t.id).sort().join(',');
+            const remoteIds = remoteTeachers.map(t => t.id).sort().join(',');
+            if (prevIds !== remoteIds) {
+              localStorage.setItem('ea_teachers', JSON.stringify(remoteTeachers));
+              localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(remoteTeachers));
+              return remoteTeachers;
             }
             return prev;
           });
@@ -992,6 +1040,7 @@ export default function App() {
             return prev;
           });
         }
+
         if (remoteBills && Array.isArray(remoteBills) && remoteBills.length > 0) {
           setBills(prev => {
             const hasChanged = JSON.stringify(prev) !== JSON.stringify(remoteBills);
@@ -1002,6 +1051,7 @@ export default function App() {
             return prev;
           });
         }
+
         if (remoteGrades && Array.isArray(remoteGrades) && remoteGrades.length > 0) {
           setGrades(prev => {
             const studentLevelMap = new Map<string, string>();
@@ -1044,6 +1094,7 @@ export default function App() {
             return prev;
           });
         }
+
         if (remoteAttendance && Array.isArray(remoteAttendance) && remoteAttendance.length > 0) {
           setAttendance(prev => {
             const attMap = new Map<string, Attendance>();
@@ -1072,22 +1123,119 @@ export default function App() {
             return prev;
           });
         }
+
+        setLastSyncTime(new Date());
+        setSyncStatus('synced');
       } catch (err) {
-        // silent catch
+        // silent catch during background sync
       }
     };
 
-    const interval = setInterval(pullRemoteUpdates, 4000);
-    const handleFocus = () => pullRemoteUpdates();
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleFocus);
+    // Debounced pull function to coalesce rapid realtime updates
+    const triggerDebouncedPull = () => {
+      if (pullDebounceTimer) clearTimeout(pullDebounceTimer);
+      pullDebounceTimer = setTimeout(() => {
+        pullRemoteUpdates();
+      }, 200);
+    };
+
+    // 1. Establish live Supabase Realtime WebSocket subscription & cross-tab bus
+    const unsubscribeRealtime = subscribeToGlobalRealtime({
+      onStatusChange: (status) => {
+        setRealtimeStatus(status);
+      },
+      onStudentsChange: triggerDebouncedPull,
+      onTeachersChange: triggerDebouncedPull,
+      onGradesChange: triggerDebouncedPull,
+      onAttendanceChange: triggerDebouncedPull,
+      onConfigChange: triggerDebouncedPull,
+      onBillsChange: triggerDebouncedPull,
+      onFeePaymentsChange: triggerDebouncedPull,
+      onDeletedRecordsChange: triggerDebouncedPull,
+      onInventoryChange: () => {
+        window.dispatchEvent(new Event('ea_inventory_updated'));
+      },
+      onBookStockChange: () => {
+        window.dispatchEvent(new Event('ea_book_stock_updated'));
+      },
+      onBookSalesChange: () => {
+        window.dispatchEvent(new Event('ea_book_sales_updated'));
+      }
+    });
+
+    // Initial fetch on mount to sync any remote changes that occurred while offline
+    pullRemoteUpdates();
 
     return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleFocus);
+      if (pullDebounceTimer) clearTimeout(pullDebounceTimer);
+      unsubscribeRealtime();
     };
   }, [isInitialized]);
+
+  // Manual trigger for force bidirectional sync
+  const handleForceSync = async () => {
+    setSyncStatus('syncing');
+    try {
+      const [
+        remoteConfig,
+        remoteBills,
+        remoteGrades,
+        remoteAttendance,
+        _mock,
+        _inv,
+        remoteStudents,
+        remoteTeachers
+      ] = await Promise.all([
+        fetchSupabaseConfig(),
+        fetchSupabaseBills(),
+        fetchSupabaseGrades(),
+        fetchSupabaseAttendance(),
+        fetchSupabaseJHSMockExams(),
+        fetchSupabaseInventory(),
+        fetchSupabaseStudents(),
+        fetchSupabaseTeachers()
+      ]);
+
+      if (remoteStudents && Array.isArray(remoteStudents)) {
+        const clean = remoteStudents.filter(s => !isStudentDeleted(s));
+        setStudents(clean);
+        localStorage.setItem('ea_students', JSON.stringify(clean));
+      }
+      if (remoteTeachers && Array.isArray(remoteTeachers)) {
+        setTeachers(remoteTeachers);
+        localStorage.setItem('ea_teachers', JSON.stringify(remoteTeachers));
+      }
+      if (remoteConfig) {
+        setConfig(prev => ({ ...prev, ...remoteConfig }));
+      }
+      if (remoteBills) {
+        setBills(remoteBills);
+      }
+      if (remoteGrades) {
+        setGrades(remoteGrades);
+      }
+      if (remoteAttendance) {
+        setAttendance(remoteAttendance);
+      }
+
+      // Bidirectional push of local states to guarantee parity
+      await Promise.allSettled([
+        saveSupabaseConfig(config),
+        saveSupabaseStudents(students),
+        saveSupabaseTeachers(teachers),
+        saveSupabaseGrades(grades),
+        saveSupabaseAttendance(attendance),
+        saveSupabaseBills(bills)
+      ]);
+
+      setLastSyncTime(new Date());
+      setSyncStatus('synced');
+      broadcastSync('all');
+    } catch (e: any) {
+      setSyncStatus('error');
+      setLastSyncError(e?.message || 'Sync failed');
+    }
+  };
 
 
   // 3. SECURE ADMIN PASSWORD CHECK
@@ -1192,28 +1340,29 @@ export default function App() {
             >
               Admin Portal
             </button>
-            <button
-              onClick={() => {
-                try {
-                  localStorage.setItem('ea_admin_active_tab', 'book-inventory');
-                } catch (e) {}
-                setActivePortal('admin');
-              }}
-              className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-black uppercase tracking-wider transition cursor-pointer flex items-center gap-1.5 shadow-sm ${
-                activePortal === 'admin'
-                  ? 'bg-amber-400 text-slate-950 border-2 border-amber-300 ring-2 ring-amber-400/40'
-                  : 'bg-amber-400/20 text-amber-300 hover:bg-amber-400 hover:text-slate-950 border border-amber-400/50'
-              }`}
-              title="Direct Jump to Textbook Stock Portal under Admin"
-              id="nav-textbook-stock-portal"
-            >
-              <Library className="w-4 h-4" />
-              <span>Textbook Stock</span>
-            </button>
+
+            <div className="ml-1 sm:ml-2 pl-2 border-l border-white/20">
+              <GlobalSyncBadge
+                status={realtimeStatus}
+                lastSyncTime={lastSyncTime}
+                onForceSync={handleForceSync}
+                studentCount={students.length}
+                teacherCount={teachers.length}
+                gradeCount={grades.length}
+              />
+            </div>
           </nav>
 
           {/* Mobile Menu Toggle Button */}
           <div className="flex md:hidden items-center gap-2">
+            <GlobalSyncBadge
+              status={realtimeStatus}
+              lastSyncTime={lastSyncTime}
+              onForceSync={handleForceSync}
+              studentCount={students.length}
+              teacherCount={teachers.length}
+              gradeCount={grades.length}
+            />
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -1326,25 +1475,6 @@ export default function App() {
               }`}
             >
               Admin Portal
-            </button>
-
-            <button
-              onClick={() => {
-                try {
-                  localStorage.setItem('ea_admin_active_tab', 'book-inventory');
-                } catch (e) {}
-                setActivePortal('admin');
-                setIsMobileMenuOpen(false);
-              }}
-              className="w-full text-left px-4 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition bg-amber-400 text-slate-950 border-2 border-amber-300 shadow-md flex items-center justify-between"
-            >
-              <div className="flex items-center gap-2">
-                <Library className="w-4 h-4 text-slate-950" />
-                <span>Textbook Stock Portal</span>
-              </div>
-              <span className="text-[9px] bg-slate-950 text-amber-300 px-2 py-0.5 rounded font-black">
-                FEATURED
-              </span>
             </button>
           </div>
         )}

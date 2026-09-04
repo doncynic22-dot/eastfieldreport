@@ -16,7 +16,7 @@ import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryMo
 import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, fetchSupabaseBookStock } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, fetchSupabaseBookStock, removeDeletedStudentId } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
@@ -1057,6 +1057,9 @@ export default function AdminDashboard({
     const finalClassName = studentForm.className || resolved.className;
     const finalLevel = studentForm.level || resolved.level;
 
+    // Clear any tombstone records if this pupil or roll number was previously marked deleted
+    removeDeletedStudentId(editingStudent?.id, studentForm.rollNumber, studentForm.name);
+
     let updatedStudentsList: Student[];
     if (editingStudent) {
       // Edit Student
@@ -1708,54 +1711,6 @@ export default function AdminDashboard({
           >
             <RotateCcw className="w-3.5 h-3.5 text-indigo-200" />
             <span>Restore Admitted Classes</span>
-          </button>
-        </div>
-      </div>
-
-      {/* QUICK ACCESS BANNER FOR TEXTBOOK STOCK PORTAL */}
-      <div className="bg-gradient-to-r from-purple-950 via-[#180433] to-indigo-950 text-white p-3 sm:p-4 rounded-2xl shadow-lg border-2 border-purple-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 my-2 no-print">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-amber-400 text-slate-950 rounded-xl border border-amber-300 shrink-0 shadow-md">
-            <Library className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h4 className="font-black text-sm sm:text-base text-white tracking-wide">
-                Textbook Stock Portal
-              </h4>
-              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-sm">
-                Featured Portal
-              </span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
-                Stock & POS Ledger
-              </span>
-            </div>
-            <p className="text-xs text-purple-200 mt-0.5">
-              {bookStockSummary.totalTitles > 0 ? (
-                <span>
-                  <strong className="text-amber-300">{bookStockSummary.totalTitles}</strong> registered titles •{' '}
-                  <strong className="text-emerald-300">{bookStockSummary.totalRemaining.toLocaleString()}</strong> copies in stock •{' '}
-                  <strong className="text-blue-300">{bookStockSummary.totalSold.toLocaleString()}</strong> sold (GH₵ {bookStockSummary.totalSalesValue.toLocaleString()}) • Total Sales vs Remaining Stock charts.
-                </span>
-              ) : (
-                <span>Manage Ghana syllabus textbooks, customised exercise books, daily cash/MoMo sales receipts, and stock visualizers.</span>
-              )}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-          <button
-            type="button"
-            onClick={() => handleSelectTab('book-inventory')}
-            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer flex-1 sm:flex-none uppercase tracking-wider ${
-              activeTab === 'book-inventory'
-                ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300'
-                : 'bg-amber-400 hover:bg-amber-300 text-slate-950 hover:shadow-amber-900/30'
-            }`}
-            id="btn-quick-open-textbook-stock"
-          >
-            <Library className="w-4 h-4 text-slate-950" />
-            <span>{activeTab === 'book-inventory' ? 'Viewing Textbook Stock Portal' : 'Open Textbook Stock Portal →'}</span>
           </button>
         </div>
       </div>
