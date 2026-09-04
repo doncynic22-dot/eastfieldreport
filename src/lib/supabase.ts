@@ -386,6 +386,7 @@ ALTER TABLE public.ea_sync_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_inventory DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_book_stock DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_book_sales DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_deleted_records DISABLE ROW LEVEL SECURITY;
 
 -- 9. Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';
@@ -561,6 +562,17 @@ CREATE TABLE IF NOT EXISTS public.ea_sync_logs (
   details JSONB DEFAULT '{}'::jsonb,
   timestamp VARCHAR NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 12. Create Deleted Records / Tombstone Table (for permanent sync across all sessions & devices)
+CREATE TABLE IF NOT EXISTS public.ea_deleted_records (
+  id VARCHAR PRIMARY KEY,
+  record_type VARCHAR NOT NULL,
+  record_id VARCHAR NOT NULL,
+  roll_number VARCHAR,
+  name VARCHAR,
+  details JSONB DEFAULT '{}'::jsonb,
+  deleted_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- Ensure columns exist on older tables in case "IF NOT EXISTS" table creation was skipped
@@ -1270,14 +1282,29 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     return null;
   }
   try {
-    // 1. Sync any recent DELETE_STUDENT logs to ensure global deletion propagation
+    // 1. Sync remote tombstones from ea_deleted_records and ea_sync_logs to ensure global deletion propagation
+    try {
+      const { data: delRecords } = await client
+        .from('ea_deleted_records')
+        .select('*')
+        .eq('record_type', 'STUDENT')
+        .order('deleted_at', { ascending: false })
+        .limit(200);
+      if (delRecords && Array.isArray(delRecords)) {
+        delRecords.forEach((row: any) => {
+          const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
+          recordDeletedStudentId(row.record_id || details.id, row.roll_number || details.rollNumber, row.name || details.studentName);
+        });
+      }
+    } catch (delErr) {}
+
     try {
       const { data: logs } = await client
         .from('ea_sync_logs')
         .select('*')
         .eq('action_type', 'DELETE_STUDENT')
         .order('timestamp', { ascending: false })
-        .limit(100);
+        .limit(200);
       if (logs && Array.isArray(logs)) {
         logs.forEach((log: any) => {
           const details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {});
@@ -1316,16 +1343,12 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       photoUrl: item.photo_url || '',
     }));
 
-    // If Supabase returned records that are marked deleted in tombstone registry, purge them from DB in background
+    // If Supabase returned records that are marked deleted in tombstone registry, purge them from remote DB in background
     const recordsToPurge = mapped.filter(s => isStudentDeleted(s));
     if (recordsToPurge.length > 0) {
-      const purgeIds = recordsToPurge.map(s => s.id);
-      client.from('ea_grades').delete().in('student_id', purgeIds).then(() => {});
-      client.from('ea_attendance').delete().in('student_id', purgeIds).then(() => {});
-      client.from('ea_bills').delete().in('student_id', purgeIds).then(() => {});
-      client.from('ea_fee_payments').delete().in('student_id', purgeIds).then(() => {});
-      client.from('ea_jhs_mock_exams').delete().in('student_id', purgeIds).then(() => {});
-      client.from('ea_students').delete().in('id', purgeIds).then(() => {});
+      for (const st of recordsToPurge) {
+        deleteSupabaseStudent(st.id, st.rollNumber, st.name).catch(() => {});
+      }
     }
 
     return filterDeleted(mapped);
@@ -1396,27 +1419,38 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
         await client.from('ea_attendance').delete().not('id', 'is', null);
         await client.from('ea_bills').delete().not('id', 'is', null);
         await client.from('ea_fee_payments').delete().not('id', 'is', null);
+        await client.from('ea_jhs_mock_exams').delete().not('id', 'is', null);
         await client.from('ea_students').delete().not('id', 'is', null);
       } else {
-        const { data: existingRows } = await client.from('ea_students').select('id');
+        const { data: existingRows } = await client.from('ea_students').select('id, roll_number, name');
         const activeIds = new Set(validStudents.map(s => String(s.id)));
+        const activeRolls = new Set(validStudents.map(s => (s.rollNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean));
+        const activeNames = new Set(validStudents.map(s => (s.name || '').toLowerCase().trim()).filter(Boolean));
         const tombstoneIds = getDeletedStudentIds().filter(Boolean);
         
         let toDeleteIds: string[] = [];
         if (existingRows && existingRows.length > 0) {
           toDeleteIds = existingRows
-            .filter(row => !activeIds.has(String(row.id)))
+            .filter(row => {
+              if (activeIds.has(String(row.id))) return false;
+              const r = (row.roll_number || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+              if (r && activeRolls.has(r)) return false;
+              const n = (row.name || '').toLowerCase().trim();
+              if (n && activeNames.has(n)) return false;
+              return true;
+            })
             .map(row => row.id)
             .filter(Boolean);
         }
         const combinedDeleteIds = Array.from(new Set([...toDeleteIds, ...tombstoneIds]));
-        if (combinedDeleteIds.length > 0) {
-          await client.from('ea_grades').delete().in('student_id', combinedDeleteIds);
-          await client.from('ea_attendance').delete().in('student_id', combinedDeleteIds);
-          await client.from('ea_bills').delete().in('student_id', combinedDeleteIds);
-          await client.from('ea_fee_payments').delete().in('student_id', combinedDeleteIds);
-          await client.from('ea_jhs_mock_exams').delete().in('student_id', combinedDeleteIds);
-          await client.from('ea_students').delete().in('id', combinedDeleteIds);
+        for (let i = 0; i < combinedDeleteIds.length; i += 25) {
+          const chunk = combinedDeleteIds.slice(i, i + 25);
+          await client.from('ea_grades').delete().in('student_id', chunk);
+          await client.from('ea_attendance').delete().in('student_id', chunk);
+          await client.from('ea_bills').delete().in('student_id', chunk);
+          await client.from('ea_fee_payments').delete().in('student_id', chunk);
+          await client.from('ea_jhs_mock_exams').delete().in('student_id', chunk);
+          await client.from('ea_students').delete().in('id', chunk);
         }
       }
     } catch (pruneErr) {
@@ -1709,7 +1743,19 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
         await client.from('ea_students').delete().ilike('name', studentName);
       }
 
-      // Log deletion in ea_sync_logs to sync across other client devices
+      // Log deletion in ea_sync_logs and ea_deleted_records to sync across other client devices & sessions
+      try {
+        await client.from('ea_deleted_records').upsert([{
+          id: `del_st_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          record_type: 'STUDENT',
+          record_id: id || rollNumber || '',
+          roll_number: rollNumber || null,
+          name: studentName || null,
+          details: { id, rollNumber, studentName, timestamp: new Date().toISOString() },
+          deleted_at: new Date().toISOString()
+        }]);
+      } catch (delErr) {}
+
       try {
         await client.from('ea_sync_logs').insert([{
           id: `del_st_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,

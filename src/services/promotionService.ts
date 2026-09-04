@@ -733,19 +733,7 @@ export function restoreAllStudentsToAdmittedLevels(students: Student[]): Student
     });
   }
 
-  // 2. Only populate INITIAL_STUDENTS if roster is completely empty (never repopulate if students exist)
-  if (!students || students.length === 0) {
-    for (const initSt of initialFiltered) {
-      if (isDeleted(initSt.id, initSt.rollNumber, initSt.name)) continue;
-      const initNormName = (initSt.name || '').toLowerCase().trim();
-      if (!processedIds.has(initSt.id) && !processedNames.has(initNormName)) {
-        restoredList.push(initSt);
-        processedIds.add(initSt.id);
-        processedNames.add(initNormName);
-      }
-    }
-  }
-
+  // 2. Do not repopulate INITIAL_STUDENTS if roster was emptied or cleared
   return deduplicateStudents(restoredList.filter(s => !isDeleted(s.id, s.rollNumber, s.name)));
 }
 
@@ -967,8 +955,8 @@ export function restoreStudentsFromTerminalReport(
     if (normName) processedNames.add(normName);
   }
 
-  // 4. Only populate INITIAL_STUDENTS if the current roster was completely empty (fresh initialization) or explicitly forced
-  if (!currentStudents || currentStudents.length === 0 || options?.forceSeedBaseline) {
+  // 4. Only populate INITIAL_STUDENTS if explicitly requested via forceSeedBaseline (never repopulate cleared/deleted roster automatically)
+  if (options?.forceSeedBaseline) {
     for (const initSt of initialFiltered) {
       if (isDeleted(initSt.id, initSt.rollNumber, initSt.name)) continue;
       const initNormName = (initSt.name || '').toLowerCase().trim();

@@ -42,7 +42,7 @@ interface AdminDashboardProps {
   supabaseStatus?: { isConfigured: boolean; isConnected: boolean; message: string };
   isSupabaseSyncing?: boolean;
   onPullFromSupabase?: () => Promise<boolean>;
-  onPushToSupabase?: (customStudents?: Student[], customConfig?: ReportConfig) => Promise<boolean>;
+  onPushToSupabase?: (customStudents?: Student[], customConfig?: ReportConfig, customTeachers?: User[], customGrades?: Grade[], customAttendance?: Attendance[], customBills?: StudentBill[]) => Promise<boolean>;
   onCheckSupabaseStatus?: () => Promise<boolean>;
   storedAdminPassword?: string;
   onUpdateAdminPassword?: (newPass: string) => void;
@@ -1129,19 +1129,23 @@ export default function AdminDashboard({
     if (selectedStudentId === id) setSelectedStudentId('');
 
     // Clean up grades and attendance for this student in local state
+    const remainingGrades = grades ? grades.filter(g => g.studentId !== id && (!rollNumber || g.studentId !== rollNumber)) : [];
+    const remainingAttendance = attendance ? attendance.filter(a => a.studentId !== id && (!rollNumber || a.studentId !== rollNumber)) : [];
+    const remainingBills = bills ? bills.filter(b => b.studentId !== id && (!rollNumber || b.studentId !== rollNumber)) : [];
+
     if (setGrades) {
-      setGrades(prev => prev.filter(g => g.studentId !== id && (!rollNumber || g.studentId !== rollNumber)));
+      setGrades(remainingGrades);
     }
     if (setAttendance) {
-      setAttendance(prev => prev.filter(a => a.studentId !== id && (!rollNumber || a.studentId !== rollNumber)));
+      setAttendance(remainingAttendance);
     }
 
     // Call deleteSupabaseStudent unconditionally (records tombstone, purges caches, and deletes remote DB)
     await deleteSupabaseStudent(id, rollNumber, studentName);
 
-    // Sync remaining students globally
+    // Sync remaining students globally along with filtered child collections
     if (onPushToSupabase) {
-      onPushToSupabase(remainingStudents, config);
+      onPushToSupabase(remainingStudents, config, undefined, remainingGrades, remainingAttendance, remainingBills);
     }
   };
 

@@ -296,42 +296,49 @@ export default function App() {
           );
         }
 
-        if (cleanStudents.length === 0 && localStudents.length > 0) {
+        const hasBeenInitialized = localStorage.getItem('ea_has_initialized') === 'true' || getDeletedStudentIds().length > 0;
+        cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s));
+
+        if (cleanStudents.length === 0 && localStudents.length > 0 && !hasBeenInitialized) {
           let cleanLocalStudents = localStudents.filter(
             s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
-          );
+          ).filter(s => !isStudentDeleted(s));
           cleanLocalStudents = deduplicateStudents(cleanLocalStudents);
           try {
             await saveSupabaseStudents(cleanLocalStudents);
             setStudents(cleanLocalStudents);
             localStorage.setItem('ea_students', JSON.stringify(cleanLocalStudents));
             localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanLocalStudents));
+            localStorage.setItem('ea_has_initialized', 'true');
           } catch (seedErr) {
             console.error("Failed seeding students to Supabase:", seedErr);
             setStudents(cleanLocalStudents);
           }
         } else {
-          if (cleanStudents.length === 0) {
-            cleanStudents = [...INITIAL_STUDENTS];
+          if (cleanStudents.length === 0 && !hasBeenInitialized) {
+            cleanStudents = [...INITIAL_STUDENTS].filter(s => !isStudentDeleted(s));
           }
           const { restoredStudents } = restoreStudentsFromTerminalReport(cleanStudents, localGrades);
-          cleanStudents = restoredStudents;
+          cleanStudents = restoredStudents.filter(s => !isStudentDeleted(s));
           setStudents(cleanStudents);
           localStorage.setItem('ea_students', JSON.stringify(cleanStudents));
           localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanStudents));
+          localStorage.setItem('ea_has_initialized', 'true');
         }
       } else {
+        const hasBeenInitialized = localStorage.getItem('ea_has_initialized') === 'true' || getDeletedStudentIds().length > 0;
         let cleanLocalStudents = localStudents.filter(
           s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
-        );
-        if (cleanLocalStudents.length === 0) {
-          cleanLocalStudents = [...INITIAL_STUDENTS];
+        ).filter(s => !isStudentDeleted(s));
+        if (cleanLocalStudents.length === 0 && !hasBeenInitialized) {
+          cleanLocalStudents = [...INITIAL_STUDENTS].filter(s => !isStudentDeleted(s));
         }
         const { restoredStudents } = restoreStudentsFromTerminalReport(cleanLocalStudents, localGrades);
-        cleanLocalStudents = restoredStudents;
+        cleanLocalStudents = restoredStudents.filter(s => !isStudentDeleted(s));
         setStudents(cleanLocalStudents);
         localStorage.setItem('ea_students', JSON.stringify(cleanLocalStudents));
         localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanLocalStudents));
+        localStorage.setItem('ea_has_initialized', 'true');
       }
 
       // 4. Fetch & Sync Grades
@@ -576,7 +583,8 @@ export default function App() {
     // CRITICAL: Filter out any deleted students
     cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s));
 
-    if (cleanStudents.length === 0 && getDeletedStudentIds().length === 0) {
+    const hasInitialized = localStorage.getItem('ea_has_initialized') === 'true' || getDeletedStudentIds().length > 0;
+    if (cleanStudents.length === 0 && !hasInitialized) {
       cleanStudents = INITIAL_STUDENTS.filter(s => !isStudentDeleted(s));
     } else {
       cleanStudents = deduplicateStudents(cleanStudents);
@@ -589,6 +597,7 @@ export default function App() {
     setStudents(cleanStudents);
     localStorage.setItem('ea_students', JSON.stringify(cleanStudents));
     localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanStudents));
+    localStorage.setItem('ea_has_initialized', 'true');
 
     let finalGrades: Grade[] = [];
     if (cachedGrades !== null) {
@@ -1408,19 +1417,6 @@ export default function App() {
                     className="bg-violet-900 hover:bg-violet-800 border border-white/30 text-white font-extrabold px-5 py-3 rounded-lg text-sm transition cursor-pointer uppercase tracking-wider shadow-md"
                   >
                     Open Attendance Portal
-                  </button>
-                  <button
-                    onClick={() => {
-                      try {
-                        localStorage.setItem('ea_admin_active_tab', 'book-inventory');
-                      } catch (e) {}
-                      setActivePortal('admin');
-                    }}
-                    className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-5 py-3 rounded-lg text-sm transition cursor-pointer uppercase tracking-wider shadow-md flex items-center justify-center gap-2 border-2 border-amber-300"
-                    id="hub-btn-open-textbook-stock"
-                  >
-                    <Library className="w-4 h-4 text-slate-950" />
-                    <span>Textbook Stock Portal</span>
                   </button>
                 </div>
               </div>
