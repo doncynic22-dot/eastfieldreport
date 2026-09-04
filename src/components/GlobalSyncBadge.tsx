@@ -69,30 +69,30 @@ export const GlobalSyncBadge: React.FC<GlobalSyncBadgeProps> = ({
         return {
           dotClass: 'bg-emerald-400 animate-pulse',
           badgeBg: 'bg-emerald-950/70 border-emerald-500/40 text-emerald-200 hover:bg-emerald-900/80',
-          label: 'Realtime Live',
-          description: 'WebSockets & Multi-Tab Sync Active'
+          label: 'Auto-Sync Active',
+          description: 'Automatic WebSockets & Multi-Tab Cloud Sync'
         };
       case 'connecting':
         return {
           dotClass: 'bg-amber-400 animate-ping',
           badgeBg: 'bg-amber-950/70 border-amber-500/40 text-amber-200 hover:bg-amber-900/80',
-          label: 'Connecting...',
+          label: 'Auto-Sync Connecting',
           description: 'Establishing Supabase realtime channel'
         };
       case 'error':
         return {
           dotClass: 'bg-rose-400',
           badgeBg: 'bg-rose-950/70 border-rose-500/40 text-rose-200 hover:bg-rose-900/80',
-          label: 'Sync Alert',
-          description: 'Polling fallback active (channel error)'
+          label: 'Auto-Sync Retrying',
+          description: 'Automatic background polling active'
         };
       case 'disconnected':
       default:
         return {
           dotClass: 'bg-slate-400',
           badgeBg: 'bg-slate-900/80 border-slate-600/40 text-slate-300 hover:bg-slate-800',
-          label: 'Local / Offline',
-          description: 'Changes will sync when online'
+          label: 'Auto-Sync Local',
+          description: 'Changes will auto-sync when online'
         };
     }
   };
@@ -107,7 +107,7 @@ export const GlobalSyncBadge: React.FC<GlobalSyncBadgeProps> = ({
         id="global-sync-badge-button"
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-semibold tracking-wide transition shadow-sm cursor-pointer ${config.badgeBg}`}
-        title={`Supabase Realtime: ${config.label} (${timeAgo})`}
+        title={`Supabase: ${config.label} (${timeAgo}) - Automatic Continuous Sync`}
         aria-expanded={isOpen}
       >
         <span className="relative flex h-2 w-2">
@@ -142,10 +142,10 @@ export const GlobalSyncBadge: React.FC<GlobalSyncBadgeProps> = ({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-violet-100 flex items-center gap-1.5">
-                    Global Synchronization
+                    Automatic Synchronization
                   </h4>
                   <p className="text-[11px] text-violet-300/80">
-                    Real-time Supabase & Multi-Tab Bus
+                    Real-time Supabase & Multi-Tab Sync
                   </p>
                 </div>
               </div>
@@ -161,6 +161,16 @@ export const GlobalSyncBadge: React.FC<GlobalSyncBadgeProps> = ({
 
             {/* Status Details */}
             <div className="py-3 space-y-2 text-xs">
+              <div className="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-violet-950/60 border border-violet-900/50">
+                <span className="text-violet-300 flex items-center gap-1.5">
+                  <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                  Sync Mode:
+                </span>
+                <span className="font-semibold text-emerald-300 flex items-center gap-1">
+                  100% Automatic (Real-time)
+                </span>
+              </div>
+
               <div className="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-violet-950/60 border border-violet-900/50">
                 <span className="text-violet-300 flex items-center gap-1.5">
                   <Radio className="w-3.5 h-3.5 text-emerald-400" />
@@ -183,6 +193,15 @@ export const GlobalSyncBadge: React.FC<GlobalSyncBadgeProps> = ({
                 <span className="text-violet-300">Last Synced:</span>
                 <span className="font-medium text-violet-200">{timeAgo}</span>
               </div>
+            </div>
+
+            {/* Automatic Synchronization Banner */}
+            <div className="p-2.5 rounded-xl bg-violet-950/90 border border-violet-700/50 text-[11px] text-violet-200 leading-relaxed mb-3">
+              <span className="font-bold text-emerald-300 flex items-center gap-1 mb-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 inline" />
+                Automatic & Hands-Free
+              </span>
+              All pupils, marks, attendance, bills, and stock changes synchronize automatically in the background across devices every few seconds. No manual syncing is required.
             </div>
 
             {/* Entity Counts */}
@@ -219,7 +238,7 @@ export const GlobalSyncBadge: React.FC<GlobalSyncBadgeProps> = ({
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-bold transition shadow-md disabled:opacity-50 cursor-pointer"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span>{isSyncing ? 'Synchronizing Cloud...' : 'Force Sync Now'}</span>
+                <span>{isSyncing ? 'Verifying Cloud Parity...' : 'Check & Verify Cloud Sync'}</span>
               </button>
             </div>
           </div>

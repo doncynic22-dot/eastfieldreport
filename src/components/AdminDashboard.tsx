@@ -150,9 +150,11 @@ export default function AdminDashboard({
     updateBookSummary();
     window.addEventListener('ea_book_stock_updated', updateBookSummary);
     window.addEventListener('ea_book_sales_updated', updateBookSummary);
+    window.addEventListener('storage', updateBookSummary);
     return () => {
       window.removeEventListener('ea_book_stock_updated', updateBookSummary);
       window.removeEventListener('ea_book_sales_updated', updateBookSummary);
+      window.removeEventListener('storage', updateBookSummary);
     };
   }, []);
 
@@ -654,7 +656,7 @@ export default function AdminDashboard({
   };
 
   const handleRestoreFromTerminalReport = () => {
-    if (!confirm('Are you sure you want to restore previous registered students based on previous term (Term 3) terminal reports? All 170 registered pupils will be verified, enrolled, and assigned.')) {
+    if (!confirm('Are you sure you want to restore and verify registered students based on previous term (Term 3) terminal reports? All registered pupils will be verified, enrolled, and assigned.')) {
       return;
     }
 
@@ -743,6 +745,36 @@ export default function AdminDashboard({
 
     setPromotionSuccessMsg(`✨ ID Alignment Complete: Scanned roll numbers (e.g. EA/J1/... -> JHS 1) and aligned all ${corrected.length} pupils (${updatedCount} updated) to their proper class!`);
     setTimeout(() => setPromotionSuccessMsg(''), 10000);
+  };
+
+  const handleClearAllStudents = async () => {
+    if (!confirm('Are you sure you want to clear all enrolled pupils? This will reset the student registry to 0 pupils across all classes.')) {
+      return;
+    }
+    for (const s of students) {
+      await deleteSupabaseStudent(s.id, s.rollNumber, s.name);
+    }
+    setStudents([]);
+    if (setGrades) setGrades([]);
+    if (setAttendance) setAttendance([]);
+    localStorage.setItem('ea_students', JSON.stringify([]));
+    localStorage.setItem('ea_grades', JSON.stringify([]));
+    localStorage.setItem('ea_attendance', JSON.stringify([]));
+    localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
+    localStorage.setItem('mock_supabase_ea_grades', JSON.stringify([]));
+    localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify([]));
+    localStorage.setItem('ea_has_initialized', 'true');
+
+    const creds = getSupabaseCredentials();
+    if (creds.isConfigured) {
+      saveSupabaseStudents([]).catch(err => console.warn('Supabase students clear error', err));
+      saveSupabaseGrades([]).catch(err => console.warn('Supabase grades clear error', err));
+      saveSupabaseAttendance([]).catch(err => console.warn('Supabase attendance clear error', err));
+      onPushToSupabase?.([], config, undefined, [], [], []);
+    }
+
+    setPromotionSuccessMsg('All pupil records cleared. Total enrolled pupils is now 0.');
+    setTimeout(() => setPromotionSuccessMsg(''), 8000);
   };
 
   // Deletion confirmation states
@@ -2464,6 +2496,16 @@ export default function AdminDashboard({
               >
                 <GraduationCap className="w-3.5 h-3.5" /> First Term Promotion Roll
               </button>
+              {students.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAllStudents}
+                  className="bg-rose-700 hover:bg-rose-800 text-white font-bold px-3 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
+                  title="Clear all pupils and reset roster to 0 enrolled pupils"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Clear Roster (0)
+                </button>
+              )}
               <button
                 onClick={() => {
                   setEditingStudent(null);
@@ -2599,7 +2641,47 @@ export default function AdminDashboard({
                 <tbody className="divide-y divide-mauve-50 text-xs text-gray-800">
                   {filteredStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-6 text-center text-mauve-800 font-bold">No student matching selected filters.</td>
+                      <td colSpan={6} className="p-8 text-center">
+                        <div className="flex flex-col items-center justify-center max-w-md mx-auto space-y-3">
+                          <div className="w-12 h-12 rounded-full bg-mauve-100 flex items-center justify-center text-mauve-700">
+                            <GraduationCap className="w-6 h-6" />
+                          </div>
+                          {students.length === 0 ? (
+                            <>
+                              <div className="text-sm font-black text-mauve-950">0 Total Students Recorded</div>
+                              <p className="text-xs text-mauve-700 leading-relaxed">
+                                The pupil registry is currently empty. You can enrol pupils individually using the button below.
+                              </p>
+                              <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingStudent(null);
+                                    const defaultLevel = 'PRIMARY' as AcademicLevel;
+                                    const defaultClass = 'Primary 1';
+                                    const autoRoll = getAutoRollNumber(defaultLevel, defaultClass);
+                                    setStudentForm({
+                                      name: '',
+                                      rollNumber: autoRoll,
+                                      level: defaultLevel,
+                                      className: defaultClass,
+                                      guardianName: '',
+                                      guardianEmail: '',
+                                      guardianPhone: ''
+                                    });
+                                    setShowStudentModal(true);
+                                  }}
+                                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 cursor-pointer shadow-xs"
+                                >
+                                  <Plus className="w-3.5 h-3.5" /> Enrol Pupil
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-xs text-mauve-800 font-bold">No student matching selected filters.</div>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ) : (
                     filteredStudents.map((s, idx) => (

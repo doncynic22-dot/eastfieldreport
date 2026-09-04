@@ -209,8 +209,15 @@ export function restoreTermAssessments(
   restoredCount: number;
   totalTermGrades: number;
 } {
-  // Ensure students include standard initial students if empty
-  const activeStudents = students && students.length > 0 ? students : INITIAL_STUDENTS;
+  // Only generate grades for actively registered students
+  const activeStudents = students && students.length > 0 ? students : [];
+  if (activeStudents.length === 0) {
+    return {
+      mergedGrades: existingGrades,
+      restoredCount: 0,
+      totalTermGrades: existingGrades.filter(g => (g.term || 'Term 1') === term && (g.year || '2025/2026') === year).length
+    };
+  }
   const targetGrades = generateAllStudentsTermGrades(activeStudents, subjects, term, year);
 
   const gradeMap = new Map<string, Grade>();
@@ -253,7 +260,10 @@ export function forceRestoreAllTerm3Assessments(
   students: Student[],
   subjects: Subject[] = INITIAL_SUBJECTS
 ): Grade[] {
-  const activeStudents = students && students.length > 0 ? students : INITIAL_STUDENTS;
+  const activeStudents = students && students.length > 0 ? students : [];
+  if (activeStudents.length === 0) {
+    return existingGrades;
+  }
   const term3Generated = generateAllStudentsTermGrades(activeStudents, subjects, 'Term 3', '2025/2026');
 
   const gradeMap = new Map<string, Grade>();

@@ -140,7 +140,7 @@ export default function BookInventoryModule({
   useEffect(() => {
     loadData();
 
-    // Listen for updates from other tabs
+    // Listen for updates from other tabs, realtime channels, and background sync
     const handleStockUpdate = () => {
       fetchSupabaseBookStock().then(setStockItems).catch(() => {});
     };
@@ -150,10 +150,12 @@ export default function BookInventoryModule({
 
     window.addEventListener('ea_book_stock_updated', handleStockUpdate);
     window.addEventListener('ea_book_sales_updated', handleSalesUpdate);
+    window.addEventListener('storage', handleStockUpdate);
 
     return () => {
       window.removeEventListener('ea_book_stock_updated', handleStockUpdate);
       window.removeEventListener('ea_book_sales_updated', handleSalesUpdate);
+      window.removeEventListener('storage', handleStockUpdate);
     };
   }, []);
 
@@ -388,7 +390,7 @@ export default function BookInventoryModule({
           type: 'success',
           message: `Stock record "${target.title}" was deleted immediately and database synced.`
         });
-        await deleteSupabaseBookStockItem(target.id);
+        await deleteSupabaseBookStockItem(target.id, target.title);
       } else {
         setSalesRecords((prev) => prev.filter((s) => s.id !== target.id));
         setToastNotification({

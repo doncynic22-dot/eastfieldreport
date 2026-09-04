@@ -1334,13 +1334,13 @@ export default function ReportPDF({
                 </div>
               )}
 
-              {/* Subject Assessment & Marks Customizer - Admin manual sync */}
+              {/* Subject Assessment & Marks Customizer - Admin auto sync */}
               {onUpdateGrade && (
                 <div className="col-span-1 md:col-span-2 border-t border-mauve-500/10 pt-3 space-y-3">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <p className="text-[10px] font-bold text-mauve-900 uppercase tracking-wider flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-mauve-900" />
-                      Subject Assessment Marks Sheet (Manual Database Sync)
+                      Subject Assessment Marks Sheet (Automatic Database Sync)
                     </p>
                     <span className="text-[9px] font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" />

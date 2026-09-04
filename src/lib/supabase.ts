@@ -8,9 +8,11 @@ export function getSupabaseCredentials() {
   const defaultKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiemVwYWhnenR5anJua25wZnFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MjcxNjYsImV4cCI6MjA5OTg0MjcwOX0.Jq87AWN9Hq-kABasG2TM4qc_ZTJXKqSH16BuHL9yEV4";
 
   // @ts-ignore
-  const envUrl = import.meta.env?.VITE_SUPABASE_URL || import.meta.env?.SUPABASE_URL || (typeof process !== 'undefined' ? (process.env?.VITE_SUPABASE_URL || process.env?.SUPABASE_URL) : '') || '';
+  const rawEnvUrl = import.meta.env?.VITE_SUPABASE_URL || import.meta.env?.SUPABASE_URL || (typeof process !== 'undefined' ? (process.env?.VITE_SUPABASE_URL || process.env?.SUPABASE_URL) : '') || '';
   // @ts-ignore
-  const envKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || import.meta.env?.SUPABASE_ANON_KEY || (typeof process !== 'undefined' ? (process.env?.VITE_SUPABASE_ANON_KEY || process.env?.SUPABASE_ANON_KEY) : '') || '';
+  const rawEnvKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || import.meta.env?.SUPABASE_ANON_KEY || (typeof process !== 'undefined' ? (process.env?.VITE_SUPABASE_ANON_KEY || process.env?.SUPABASE_ANON_KEY) : '') || '';
+  const envUrl = (rawEnvUrl && !rawEnvUrl.includes('tigcnyawfhcxcdjqdfaf')) ? rawEnvUrl : '';
+  const envKey = (rawEnvUrl && !rawEnvUrl.includes('tigcnyawfhcxcdjqdfaf')) ? rawEnvKey : '';
   
   let localUrl = '';
   let localKey = '';
@@ -1460,6 +1462,12 @@ export function removeDeletedStudentId(id?: string, rollNumber?: string, student
     if (studentName) toRemove.add(studentName.toLowerCase().trim());
     const filtered = current.filter(item => !toRemove.has(item.toLowerCase().trim()));
     localStorage.setItem('ea_deleted_student_ids', JSON.stringify(filtered));
+  } catch (e) {}
+}
+
+export function clearAllDeletedStudentIds(): void {
+  try {
+    localStorage.removeItem('ea_deleted_student_ids');
   } catch (e) {}
 }
 
@@ -3365,6 +3373,16 @@ export function recordDeletedBookStockId(id: string): void {
   } catch (e) {}
 }
 
+export function removeDeletedBookStockId(id: string): void {
+  if (!id) return;
+  const cleanId = String(id).trim().toLowerCase();
+  try {
+    const current = getDeletedBookStockIds();
+    const filtered = current.filter((c) => c.toLowerCase() !== cleanId);
+    localStorage.setItem('ea_deleted_book_stock_ids', JSON.stringify(filtered));
+  } catch (e) {}
+}
+
 export function getDeletedBookSaleIds(): string[] {
   try {
     const saved = localStorage.getItem('ea_deleted_book_sales_ids');
@@ -3390,6 +3408,41 @@ export function recordDeletedBookSaleId(id: string): void {
 }
 
 export async function fetchSupabaseBookStock(): Promise<BookStockItem[]> {
+  const client = getSupabaseClient();
+
+  // 1. Sync remote tombstones from ea_deleted_records & ea_sync_logs to guarantee global deletion parity
+  if (client) {
+    try {
+      const { data: delRecords } = await client
+        .from('ea_deleted_records')
+        .select('*')
+        .eq('record_type', 'BOOK_STOCK')
+        .order('deleted_at', { ascending: false })
+        .limit(200);
+      if (delRecords && Array.isArray(delRecords)) {
+        delRecords.forEach((row: any) => {
+          const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
+          recordDeletedBookStockId(row.record_id || details.id);
+        });
+      }
+    } catch (delErr) {}
+
+    try {
+      const { data: logs } = await client
+        .from('ea_sync_logs')
+        .select('*')
+        .eq('action_type', 'DELETE_BOOK_STOCK')
+        .order('timestamp', { ascending: false })
+        .limit(200);
+      if (logs && Array.isArray(logs)) {
+        logs.forEach((log: any) => {
+          const details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {});
+          recordDeletedBookStockId(details.id || log.record_id);
+        });
+      }
+    } catch (logErr) {}
+  }
+
   const deletedIdsList = getDeletedBookStockIds();
   const deletedIdsLower = new Set(deletedIdsList.map((id) => id.toLowerCase()));
 
@@ -3414,12 +3467,11 @@ export async function fetchSupabaseBookStock(): Promise<BookStockItem[]> {
     console.warn('Error reading book stock from localStorage:', e);
   }
 
-  const client = getSupabaseClient();
   if (client) {
     try {
       const fetchPromise = client.from('ea_book_stock').select('*').order('created_at', { ascending: false });
       const timeoutPromise = new Promise<{ data: any; error: any }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'Query timeout' } }), 4000)
+        setTimeout(() => resolve({ data: null, error: { message: 'Query timeout' } }), 5000)
       );
       const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
 
@@ -3485,6 +3537,20 @@ export async function fetchSupabaseBookStock(): Promise<BookStockItem[]> {
 }
 
 export async function saveSupabaseBookStock(items: BookStockItem[], deletedIds?: string[]): Promise<boolean> {
+  // 1. Un-tombstone any item being updated or inserted
+  if (Array.isArray(items)) {
+    items.forEach((item) => {
+      if (item && item.id) {
+        removeDeletedBookStockId(item.id);
+      }
+    });
+  }
+
+  // Record any explicitly provided deletedIds
+  if (Array.isArray(deletedIds) && deletedIds.length > 0) {
+    deletedIds.forEach((id) => recordDeletedBookStockId(id));
+  }
+
   const activeDeletedList = getDeletedBookStockIds();
   const activeDeletedLower = new Set(activeDeletedList.map((id) => id.toLowerCase()));
 
@@ -3492,30 +3558,44 @@ export async function saveSupabaseBookStock(items: BookStockItem[], deletedIds?:
     (b) => b && b.id && !activeDeletedLower.has(String(b.id).trim().toLowerCase())
   );
 
+  // 2. Immediately persist to localStorage for instant local reactivity
   try {
     localStorage.setItem('ea_book_stock_items', JSON.stringify(cleanItems));
     localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(cleanItems));
     localStorage.setItem('ea_book_stock_initialized', 'true');
     localStorage.setItem('ea_book_stock_seeded', 'true');
+    window.dispatchEvent(new Event('storage'));
     window.dispatchEvent(new Event('ea_book_stock_updated'));
   } catch (e) {}
 
   const client = getSupabaseClient();
-  if (!client) return true;
+  if (!client) {
+    broadcastGlobalSync('ea_book_stock', { action: 'UPSERT', count: cleanItems.length });
+    broadcastSync('book_stock', cleanItems, 'update');
+    return true;
+  }
 
   try {
     const allDeletedToPurge = Array.from(new Set([...(deletedIds || []), ...activeDeletedList]));
     if (allDeletedToPurge.length > 0) {
       try {
-        const purgePromise = client.from('ea_book_stock').delete().in('id', allDeletedToPurge);
-        const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 3500));
-        await Promise.race([purgePromise, timeoutPromise]);
+        await client.from('ea_book_stock').delete().in('id', allDeletedToPurge);
       } catch (delErr) {
         console.warn('Error purging deleted book stock items from Supabase:', delErr);
       }
     }
 
+    // Clean any old tombstones for items that are being inserted or active
+    if (cleanItems.length > 0) {
+      try {
+        const activeIds = cleanItems.map((b) => b.id);
+        await client.from('ea_deleted_records').delete().eq('record_type', 'BOOK_STOCK').in('record_id', activeIds);
+      } catch (e) {}
+    }
+
     if (cleanItems.length === 0) {
+      broadcastGlobalSync('ea_book_stock', { action: 'CLEAR', count: 0 });
+      broadcastSync('book_stock', [], 'update');
       return true;
     }
 
@@ -3540,20 +3620,52 @@ export async function saveSupabaseBookStock(items: BookStockItem[], deletedIds?:
 
     const upsertPromise = safeUpsert('ea_book_stock', payloads, client, 'id');
     const timeoutPromise = new Promise<{ error: any }>((resolve) =>
-      setTimeout(() => resolve({ error: { message: 'Upsert timeout' } }), 4000)
+      setTimeout(() => resolve({ error: { message: 'Upsert timeout' } }), 6000)
     );
     const { error } = await Promise.race([upsertPromise, timeoutPromise]);
     if (error) {
       console.warn('saveSupabaseBookStock error:', error);
     }
+
+    // Log sync operation
+    try {
+      await client.from('ea_sync_logs').insert([{
+        id: `sync_book_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        action_type: 'UPSERT_BOOK_STOCK',
+        description: `Textbook records synced: ${cleanItems.length} items`,
+        performed_by: 'User',
+        status: 'SUCCESS',
+        details: { count: cleanItems.length, timestamp: new Date().toISOString() },
+        timestamp: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }]);
+    } catch (logErr) {}
+
+    // Broadcast globally across Realtime WebSockets, BroadcastChannels, and in-memory listeners
+    broadcastGlobalSync('ea_book_stock', { action: 'UPSERT', count: cleanItems.length });
+    broadcastSync('book_stock', cleanItems, 'update');
+
     return true;
   } catch (err) {
     console.warn('saveSupabaseBookStock exception:', err);
+    broadcastGlobalSync('ea_book_stock', { action: 'UPSERT', count: cleanItems.length });
+    broadcastSync('book_stock', cleanItems, 'update');
     return true;
   }
 }
 
-export async function deleteSupabaseBookStockItem(id: string): Promise<boolean> {
+export async function saveSingleSupabaseBookStockItem(item: BookStockItem): Promise<boolean> {
+  if (!item || !item.id) return false;
+  removeDeletedBookStockId(item.id);
+
+  const current = await fetchSupabaseBookStock();
+  const exists = current.some((b) => b.id === item.id);
+  const updated = exists ? current.map((b) => (b.id === item.id ? item : b)) : [item, ...current];
+
+  return saveSupabaseBookStock(updated);
+}
+
+export async function deleteSupabaseBookStockItem(id: string, title?: string): Promise<boolean> {
   if (!id) return true;
   const cleanId = String(id).trim();
   if (!cleanId) return true;
@@ -3583,23 +3695,52 @@ export async function deleteSupabaseBookStockItem(id: string): Promise<boolean> 
 
   // 3. Immediately dispatch storage / update event for live UI reactivity
   try {
+    window.dispatchEvent(new Event('storage'));
     window.dispatchEvent(new Event('ea_book_stock_updated'));
   } catch (e) {}
 
-  // 4. Directly sync deletion to Supabase database (with fast non-blocking guard)
+  // 4. Directly sync deletion to Supabase database & record tombstone
   const client = getSupabaseClient();
   if (client) {
     try {
-      const deletePromise = Promise.all([
+      await Promise.allSettled([
         client.from('ea_book_stock').delete().eq('id', cleanId),
         client.from('ea_book_stock').delete().ilike('id', cleanId)
       ]);
-      const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 600));
-      await Promise.race([deletePromise, timeoutPromise]);
+
+      // Record in ea_deleted_records for other devices to discover on poll/sync
+      try {
+        await client.from('ea_deleted_records').upsert([{
+          id: `del_book_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          record_type: 'BOOK_STOCK',
+          record_id: cleanId,
+          name: title || cleanId,
+          details: { id: cleanId, title: title || '', timestamp: new Date().toISOString() },
+          deleted_at: new Date().toISOString()
+        }]);
+      } catch (delErr) {}
+
+      // Log in ea_sync_logs
+      try {
+        await client.from('ea_sync_logs').insert([{
+          id: `del_book_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          action_type: 'DELETE_BOOK_STOCK',
+          description: `Textbook deleted: ${title || cleanId} (${cleanId})`,
+          performed_by: 'Admin',
+          status: 'SUCCESS',
+          details: { id: cleanId, title: title || '', timestamp: new Date().toISOString() },
+          timestamp: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }]);
+      } catch (logErr) {}
     } catch (e) {
       console.warn('deleteSupabaseBookStockItem remote delete exception:', e);
     }
   }
+
+  // 5. Broadcast globally across Realtime channel and Cross-Tab BroadcastChannel
+  broadcastGlobalSync('ea_book_stock', { id: cleanId, title, action: 'DELETE' });
+  broadcastSync('book_stock', { id: cleanId, title }, 'delete');
 
   return true;
 }
@@ -4005,6 +4146,9 @@ export function subscribeToGlobalRealtime(callbacks: RealtimeSyncCallbacks = {})
             const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
             if (row.record_type === 'STUDENT') {
               recordDeletedStudentId(row.record_id || details.id, row.roll_number || details.rollNumber, row.name || details.studentName);
+            } else if (row.record_type === 'BOOK_STOCK' || row.record_type === 'TEXTBOOK') {
+              recordDeletedBookStockId(row.record_id || details.id);
+              window.dispatchEvent(new Event('ea_book_stock_updated'));
             }
           }
 
@@ -4013,6 +4157,10 @@ export function subscribeToGlobalRealtime(callbacks: RealtimeSyncCallbacks = {})
             if (row.action_type === 'DELETE_STUDENT') {
               const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
               recordDeletedStudentId(details.id || details.studentId, details.rollNumber, details.studentName || details.name);
+            } else if (row.action_type === 'DELETE_BOOK_STOCK') {
+              const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
+              recordDeletedBookStockId(details.id || row.record_id);
+              window.dispatchEvent(new Event('ea_book_stock_updated'));
             }
           }
 
@@ -4020,6 +4168,15 @@ export function subscribeToGlobalRealtime(callbacks: RealtimeSyncCallbacks = {})
             if (payload.old) {
               recordDeletedStudentId(payload.old.id, payload.old.roll_number, payload.old.name);
             }
+          }
+
+          if (table === 'ea_book_stock' && (payload.eventType === 'DELETE' || payload.event === 'DELETE')) {
+            if (payload.old && payload.old.id) {
+              recordDeletedBookStockId(payload.old.id);
+            }
+            window.dispatchEvent(new Event('ea_book_stock_updated'));
+          } else if (table === 'ea_book_stock') {
+            window.dispatchEvent(new Event('ea_book_stock_updated'));
           }
 
           // Trigger domain callback

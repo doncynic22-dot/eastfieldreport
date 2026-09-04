@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Student, User, Subject, ReportConfig, Grade, Attendance, StudentBill, DailyAttendanceRecord } from './types';
 import { 
   INITIAL_CLASSES, 
@@ -38,6 +38,7 @@ import {
   saveSupabaseAttendance,
   saveSupabaseBills,
   saveSupabaseFeePayments,
+  fetchSupabaseBookStock,
   SUPABASE_SQL_SCHEMA,
   SUPABASE_SQL_REPAIR,
   isStudentDeleted,
@@ -45,7 +46,6 @@ import {
   subscribeToGlobalRealtime,
   broadcastSync
 } from './lib/supabase';
-import { GlobalSyncBadge } from './components/GlobalSyncBadge';
 import { isAutoPromotionDue, promoteStudents, restoreAllStudentsToAdmittedLevels, deduplicateStudents, restoreStudentsFromTerminalReport } from './services/promotionService';
 import { getCanonicalSubjectId } from './utils/subjectUtils';
 
@@ -150,6 +150,7 @@ export default function App() {
   const [lastSyncError, setLastSyncError] = useState<string>('');
   const [showSyncErrorModal, setShowSyncErrorModal] = useState(false);
   const [copiedRepair, setCopiedRepair] = useState(false);
+  const isPullingRemoteRef = useRef(false);
 
   // Check connection status
   const checkSupabaseStatus = async () => {
@@ -188,16 +189,16 @@ export default function App() {
       const localConfig = cachedConfigStr ? JSON.parse(cachedConfigStr) : DEFAULT_REPORT_CONFIG;
 
       const cachedStudentsStr = localStorage.getItem('ea_students');
-      const localStudents: Student[] = cachedStudentsStr ? JSON.parse(cachedStudentsStr) : INITIAL_STUDENTS;
+      const localStudents: Student[] = cachedStudentsStr ? JSON.parse(cachedStudentsStr) : [];
 
       const cachedTeachersStr = localStorage.getItem('ea_teachers');
       const localTeachers: User[] = cachedTeachersStr ? JSON.parse(cachedTeachersStr) : INITIAL_USERS;
 
       const cachedGradesStr = localStorage.getItem('ea_grades');
-      const localGrades: Grade[] = cachedGradesStr ? JSON.parse(cachedGradesStr) : INITIAL_GRADES;
+      const localGrades: Grade[] = cachedGradesStr ? JSON.parse(cachedGradesStr) : [];
 
       const cachedAttendanceStr = localStorage.getItem('ea_attendance');
-      const localAttendance: Attendance[] = cachedAttendanceStr ? JSON.parse(cachedAttendanceStr) : INITIAL_ATTENDANCE;
+      const localAttendance: Attendance[] = cachedAttendanceStr ? JSON.parse(cachedAttendanceStr) : [];
 
       // 1. Fetch & Sync Config
       let sConfig: ReportConfig | null = null;
@@ -320,14 +321,15 @@ export default function App() {
             setStudents(cleanLocalStudents);
           }
         } else {
-          if (cleanStudents.length === 0 && !hasBeenInitialized) {
-            cleanStudents = [...INITIAL_STUDENTS].filter(s => !isStudentDeleted(s));
+          let activeStudents = cleanStudents;
+          if (activeStudents.length > 0) {
+            const { restoredStudents } = restoreStudentsFromTerminalReport(activeStudents, localGrades);
+            activeStudents = restoredStudents.filter(s => !isStudentDeleted(s));
           }
-          const { restoredStudents } = restoreStudentsFromTerminalReport(cleanStudents, localGrades);
-          cleanStudents = restoredStudents.filter(s => !isStudentDeleted(s));
-          setStudents(cleanStudents);
-          localStorage.setItem('ea_students', JSON.stringify(cleanStudents));
-          localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanStudents));
+          activeStudents = deduplicateStudents(activeStudents);
+          setStudents(activeStudents);
+          localStorage.setItem('ea_students', JSON.stringify(activeStudents));
+          localStorage.setItem('mock_supabase_ea_students', JSON.stringify(activeStudents));
           localStorage.setItem('ea_has_initialized', 'true');
         }
       } else {
@@ -335,11 +337,11 @@ export default function App() {
         let cleanLocalStudents = localStudents.filter(
           s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
         ).filter(s => !isStudentDeleted(s));
-        if (cleanLocalStudents.length === 0 && !hasBeenInitialized) {
-          cleanLocalStudents = [...INITIAL_STUDENTS].filter(s => !isStudentDeleted(s));
+        if (cleanLocalStudents.length > 0) {
+          const { restoredStudents } = restoreStudentsFromTerminalReport(cleanLocalStudents, localGrades);
+          cleanLocalStudents = restoredStudents.filter(s => !isStudentDeleted(s));
         }
-        const { restoredStudents } = restoreStudentsFromTerminalReport(cleanLocalStudents, localGrades);
-        cleanLocalStudents = restoredStudents.filter(s => !isStudentDeleted(s));
+        cleanLocalStudents = deduplicateStudents(cleanLocalStudents);
         setStudents(cleanLocalStudents);
         localStorage.setItem('ea_students', JSON.stringify(cleanLocalStudents));
         localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanLocalStudents));
@@ -572,10 +574,10 @@ export default function App() {
       try {
         finalStudents = JSON.parse(cachedStudents) as Student[];
       } catch (e) {
-        finalStudents = INITIAL_STUDENTS;
+        finalStudents = [];
       }
     } else {
-      finalStudents = INITIAL_STUDENTS;
+      finalStudents = [];
     }
 
     // Filter out any teacher accounts that may have leaked into students
@@ -587,17 +589,13 @@ export default function App() {
 
     // CRITICAL: Filter out any deleted students
     cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s));
+    cleanStudents = deduplicateStudents(cleanStudents);
 
-    const hasInitialized = localStorage.getItem('ea_has_initialized') === 'true' || getDeletedStudentIds().length > 0;
-    if (cleanStudents.length === 0 && !hasInitialized) {
-      cleanStudents = INITIAL_STUDENTS.filter(s => !isStudentDeleted(s));
-    } else {
-      cleanStudents = deduplicateStudents(cleanStudents);
+    if (cleanStudents.length > 0) {
+      // Ensure students are restored with correct classes from terminal reports without repopulating deleted pupils
+      const { restoredStudents } = restoreStudentsFromTerminalReport(cleanStudents, []);
+      cleanStudents = restoredStudents.filter(s => !isStudentDeleted(s));
     }
-
-    // Ensure students are restored with correct classes from terminal reports without repopulating deleted pupils
-    const { restoredStudents } = restoreStudentsFromTerminalReport(cleanStudents, []);
-    cleanStudents = restoredStudents.filter(s => !isStudentDeleted(s));
 
     setStudents(cleanStudents);
     localStorage.setItem('ea_students', JSON.stringify(cleanStudents));
@@ -612,25 +610,14 @@ export default function App() {
         finalGrades = [];
       }
     } else {
-      finalGrades = INITIAL_GRADES.filter(g => {
-        const studentExists = cleanStudents.some(s => s.id === g.studentId || s.rollNumber === g.studentId);
-        return studentExists && !isStudentDeleted({ id: g.studentId });
-      });
+      finalGrades = [];
     }
 
-    // Auto-restore any initial grades only for existing, non-deleted students
-    const existingGradeKeys = new Set(finalGrades.map(g => `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`));
-    INITIAL_GRADES.forEach(initG => {
-      const studentExists = cleanStudents.some(s => s.id === initG.studentId || s.rollNumber === initG.studentId);
-      if (studentExists && !isStudentDeleted({ id: initG.studentId })) {
-        const key = `${initG.studentId}_${initG.subjectId}_${initG.term || 'Term 1'}_${initG.year || '2025/2026'}`;
-        if (!existingGradeKeys.has(key)) {
-          finalGrades.push(initG);
-        }
-      }
+    // Filter grades only for actively enrolled students
+    finalGrades = finalGrades.filter(g => {
+      const studentExists = cleanStudents.some(s => s.id === g.studentId || s.rollNumber === g.studentId);
+      return studentExists && !isStudentDeleted({ id: g.studentId });
     });
-
-    finalGrades = finalGrades.filter(g => !isStudentDeleted({ id: g.studentId }));
     setGrades(finalGrades);
     localStorage.setItem('ea_grades', JSON.stringify(finalGrades));
 
@@ -642,24 +629,13 @@ export default function App() {
         finalAttendance = [];
       }
     } else {
-      finalAttendance = INITIAL_ATTENDANCE.filter(a => {
-        const studentExists = cleanStudents.some(s => s.id === a.studentId || s.rollNumber === a.studentId);
-        return studentExists && !isStudentDeleted({ id: a.studentId });
-      });
+      finalAttendance = [];
     }
 
-    const existingAttKeys = new Set(finalAttendance.map(a => `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`));
-    INITIAL_ATTENDANCE.forEach(initA => {
-      const studentExists = cleanStudents.some(s => s.id === initA.studentId || s.rollNumber === initA.studentId);
-      if (studentExists && !isStudentDeleted({ id: initA.studentId })) {
-        const key = `${initA.studentId}_${initA.term || 'Term 1'}_${initA.year || '2025/2026'}`;
-        if (!existingAttKeys.has(key)) {
-          finalAttendance.push(initA);
-        }
-      }
+    finalAttendance = finalAttendance.filter(a => {
+      const studentExists = cleanStudents.some(s => s.id === a.studentId || s.rollNumber === a.studentId);
+      return studentExists && !isStudentDeleted({ id: a.studentId });
     });
-
-    finalAttendance = finalAttendance.filter(a => !isStudentDeleted({ id: a.studentId }));
     setAttendance(finalAttendance);
     localStorage.setItem('ea_attendance', JSON.stringify(finalAttendance));
 
@@ -807,6 +783,7 @@ export default function App() {
   useEffect(() => {
     if (!isInitialized) return;
     localStorage.setItem('ea_students', JSON.stringify(students));
+    if (isPullingRemoteRef.current) return;
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       setSyncStatus('syncing');
@@ -831,6 +808,7 @@ export default function App() {
   useEffect(() => {
     if (!isInitialized) return;
     localStorage.setItem('ea_teachers', JSON.stringify(teachers));
+    if (isPullingRemoteRef.current) return;
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       setSyncStatus('syncing');
@@ -855,6 +833,7 @@ export default function App() {
   useEffect(() => {
     if (!isInitialized) return;
     localStorage.setItem('ea_grades', JSON.stringify(grades));
+    if (isPullingRemoteRef.current) return;
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       setSyncStatus('syncing');
@@ -879,6 +858,7 @@ export default function App() {
   useEffect(() => {
     if (!isInitialized) return;
     localStorage.setItem('ea_attendance', JSON.stringify(attendance));
+    if (isPullingRemoteRef.current) return;
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       setSyncStatus('syncing');
@@ -903,6 +883,7 @@ export default function App() {
   useEffect(() => {
     if (!isInitialized) return;
     localStorage.setItem('ea_config', JSON.stringify(config));
+    if (isPullingRemoteRef.current) return;
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       setSyncStatus('syncing');
@@ -923,6 +904,22 @@ export default function App() {
       setSyncStatus('offline');
     }
   }, [config, isInitialized]);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    localStorage.setItem('ea_bills', JSON.stringify(bills));
+    if (isPullingRemoteRef.current) return;
+    const creds = getSupabaseCredentials();
+    if (creds.isConfigured) {
+      saveSupabaseBills(bills).then(ok => {
+        if (ok) {
+          broadcastSync('bills', bills);
+        }
+      }).catch(err => {
+        console.warn('Bills auto-sync warning:', err);
+      });
+    }
+  }, [bills, isInitialized]);
 
   // Listen for local or multi-tab student deletion/update events
   useEffect(() => {
@@ -960,6 +957,7 @@ export default function App() {
 
     const pullRemoteUpdates = async () => {
       try {
+        isPullingRemoteRef.current = true;
         const [
           remoteConfig,
           remoteBills,
@@ -968,7 +966,9 @@ export default function App() {
           _mock,
           _inv,
           remoteStudents,
-          remoteTeachers
+          remoteTeachers,
+          remoteFeePayments,
+          remoteBookStock
         ] = await Promise.all([
           fetchSupabaseConfig(),
           fetchSupabaseBills(),
@@ -977,7 +977,9 @@ export default function App() {
           fetchSupabaseJHSMockExams(),
           fetchSupabaseInventory(),
           fetchSupabaseStudents(),
-          fetchSupabaseTeachers()
+          fetchSupabaseTeachers(),
+          fetchSupabaseFeePayments(),
+          fetchSupabaseBookStock()
         ]);
 
         if (remoteStudents && Array.isArray(remoteStudents)) {
@@ -1050,6 +1052,23 @@ export default function App() {
             }
             return prev;
           });
+        }
+
+        if (remoteFeePayments && Array.isArray(remoteFeePayments) && remoteFeePayments.length > 0) {
+          const cached = localStorage.getItem('ea_fee_payments');
+          if (cached !== JSON.stringify(remoteFeePayments)) {
+            localStorage.setItem('ea_fee_payments', JSON.stringify(remoteFeePayments));
+            window.dispatchEvent(new Event('ea_fee_payments_updated'));
+          }
+        }
+
+        if (remoteBookStock && Array.isArray(remoteBookStock)) {
+          const cached = localStorage.getItem('ea_book_stock_items');
+          if (cached !== JSON.stringify(remoteBookStock)) {
+            localStorage.setItem('ea_book_stock_items', JSON.stringify(remoteBookStock));
+            localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(remoteBookStock));
+            window.dispatchEvent(new Event('ea_book_stock_updated'));
+          }
         }
 
         if (remoteGrades && Array.isArray(remoteGrades) && remoteGrades.length > 0) {
@@ -1128,6 +1147,10 @@ export default function App() {
         setSyncStatus('synced');
       } catch (err) {
         // silent catch during background sync
+      } finally {
+        setTimeout(() => {
+          isPullingRemoteRef.current = false;
+        }, 400);
       }
     };
 
@@ -1151,23 +1174,52 @@ export default function App() {
       onConfigChange: triggerDebouncedPull,
       onBillsChange: triggerDebouncedPull,
       onFeePaymentsChange: triggerDebouncedPull,
-      onDeletedRecordsChange: triggerDebouncedPull,
+      onDeletedRecordsChange: () => {
+        triggerDebouncedPull();
+        fetchSupabaseBookStock().then((books) => {
+          localStorage.setItem('ea_book_stock_items', JSON.stringify(books));
+          localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(books));
+          window.dispatchEvent(new Event('ea_book_stock_updated'));
+        }).catch(() => {});
+      },
       onInventoryChange: () => {
         window.dispatchEvent(new Event('ea_inventory_updated'));
       },
       onBookStockChange: () => {
-        window.dispatchEvent(new Event('ea_book_stock_updated'));
+        fetchSupabaseBookStock().then((books) => {
+          localStorage.setItem('ea_book_stock_items', JSON.stringify(books));
+          localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(books));
+          window.dispatchEvent(new Event('ea_book_stock_updated'));
+        }).catch(() => {
+          window.dispatchEvent(new Event('ea_book_stock_updated'));
+        });
       },
       onBookSalesChange: () => {
         window.dispatchEvent(new Event('ea_book_sales_updated'));
       }
     });
 
+    // 2. Automatic continuous background sync heartbeat (every 5 seconds)
+    // Ensures real-time data sync across devices even if WebSockets are suspended or firewalled
+    const autoSyncInterval = setInterval(pullRemoteUpdates, 5000);
+
+    // 3. Automatic synchronization triggers on window focus, online reconnect, and visibility change
+    const handleAutoSyncTrigger = () => {
+      pullRemoteUpdates();
+    };
+    window.addEventListener('focus', handleAutoSyncTrigger);
+    window.addEventListener('online', handleAutoSyncTrigger);
+    document.addEventListener('visibilitychange', handleAutoSyncTrigger);
+
     // Initial fetch on mount to sync any remote changes that occurred while offline
     pullRemoteUpdates();
 
     return () => {
       if (pullDebounceTimer) clearTimeout(pullDebounceTimer);
+      clearInterval(autoSyncInterval);
+      window.removeEventListener('focus', handleAutoSyncTrigger);
+      window.removeEventListener('online', handleAutoSyncTrigger);
+      document.removeEventListener('visibilitychange', handleAutoSyncTrigger);
       unsubscribeRealtime();
     };
   }, [isInitialized]);
@@ -1184,7 +1236,8 @@ export default function App() {
         _mock,
         _inv,
         remoteStudents,
-        remoteTeachers
+        remoteTeachers,
+        remoteBookStock
       ] = await Promise.all([
         fetchSupabaseConfig(),
         fetchSupabaseBills(),
@@ -1193,8 +1246,15 @@ export default function App() {
         fetchSupabaseJHSMockExams(),
         fetchSupabaseInventory(),
         fetchSupabaseStudents(),
-        fetchSupabaseTeachers()
+        fetchSupabaseTeachers(),
+        fetchSupabaseBookStock()
       ]);
+
+      if (remoteBookStock && Array.isArray(remoteBookStock)) {
+        localStorage.setItem('ea_book_stock_items', JSON.stringify(remoteBookStock));
+        localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(remoteBookStock));
+        window.dispatchEvent(new Event('ea_book_stock_updated'));
+      }
 
       if (remoteStudents && Array.isArray(remoteStudents)) {
         const clean = remoteStudents.filter(s => !isStudentDeleted(s));
@@ -1340,29 +1400,10 @@ export default function App() {
             >
               Admin Portal
             </button>
-
-            <div className="ml-1 sm:ml-2 pl-2 border-l border-white/20">
-              <GlobalSyncBadge
-                status={realtimeStatus}
-                lastSyncTime={lastSyncTime}
-                onForceSync={handleForceSync}
-                studentCount={students.length}
-                teacherCount={teachers.length}
-                gradeCount={grades.length}
-              />
-            </div>
           </nav>
 
           {/* Mobile Menu Toggle Button */}
           <div className="flex md:hidden items-center gap-2">
-            <GlobalSyncBadge
-              status={realtimeStatus}
-              lastSyncTime={lastSyncTime}
-              onForceSync={handleForceSync}
-              studentCount={students.length}
-              teacherCount={teachers.length}
-              gradeCount={grades.length}
-            />
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
