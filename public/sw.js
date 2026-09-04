@@ -3,7 +3,7 @@
  * Provides offline caching for static assets, scripts, styles, and core database records.
  */
 
-const CACHE_VERSION = 'eastfield-v1';
+const CACHE_VERSION = 'eastfield-v2-stock-portal';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 

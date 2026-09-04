@@ -18,7 +18,7 @@ import AdminDashboard from './components/AdminDashboard';
 import TeacherDashboard from './components/TeacherDashboard';
 import StudentAttendancePortal from './components/StudentAttendancePortal';
 import academyHubBg from './assets/images/academy_hub_bg_sharp_1786006863900.jpg';
-import { School, ShieldCheck, GraduationCap, Users2, FileCheck, CheckCircle2, Lock, Sparkles, BookOpen, Eye, EyeOff, Database, AlertTriangle, X, Menu } from 'lucide-react';
+import { School, ShieldCheck, GraduationCap, Users2, FileCheck, CheckCircle2, Lock, Sparkles, BookOpen, Eye, EyeOff, Database, AlertTriangle, X, Menu, Library } from 'lucide-react';
 import {
   getSupabaseCredentials,
   testSupabaseConnection,
@@ -1183,6 +1183,24 @@ export default function App() {
             >
               Admin Portal
             </button>
+            <button
+              onClick={() => {
+                try {
+                  localStorage.setItem('ea_admin_active_tab', 'book-inventory');
+                } catch (e) {}
+                setActivePortal('admin');
+              }}
+              className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-black uppercase tracking-wider transition cursor-pointer flex items-center gap-1.5 shadow-sm ${
+                activePortal === 'admin'
+                  ? 'bg-amber-400 text-slate-950 border-2 border-amber-300 ring-2 ring-amber-400/40'
+                  : 'bg-amber-400/20 text-amber-300 hover:bg-amber-400 hover:text-slate-950 border border-amber-400/50'
+              }`}
+              title="Direct Jump to Textbook Stock Portal under Admin"
+              id="nav-textbook-stock-portal"
+            >
+              <Library className="w-4 h-4" />
+              <span>Textbook Stock</span>
+            </button>
           </nav>
 
           {/* Mobile Menu Toggle Button */}
@@ -1300,6 +1318,25 @@ export default function App() {
             >
               Admin Portal
             </button>
+
+            <button
+              onClick={() => {
+                try {
+                  localStorage.setItem('ea_admin_active_tab', 'book-inventory');
+                } catch (e) {}
+                setActivePortal('admin');
+                setIsMobileMenuOpen(false);
+              }}
+              className="w-full text-left px-4 py-3 rounded-xl text-sm font-black uppercase tracking-wider transition bg-amber-400 text-slate-950 border-2 border-amber-300 shadow-md flex items-center justify-between"
+            >
+              <div className="flex items-center gap-2">
+                <Library className="w-4 h-4 text-slate-950" />
+                <span>Textbook Stock Portal</span>
+              </div>
+              <span className="text-[9px] bg-slate-950 text-amber-300 px-2 py-0.5 rounded font-black">
+                FEATURED
+              </span>
+            </button>
           </div>
         )}
       </header>
@@ -1349,28 +1386,41 @@ export default function App() {
                     EASTFIELD ACADEMY SCHOOL MANAGEMENT SYSTEM
                   </h1>
                   <p className="text-xs text-gray-600 max-w-xl mx-auto leading-relaxed">
-                    An integrated portal for Eastfield Academy teachers and administrators to manage pupil assessments, academic records, fee tracking, and official report cards.
+                    An integrated portal for Eastfield Academy teachers and administrators to manage pupil assessments, academic records, fee tracking, textbook stock, and official report cards.
                   </p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row justify-center gap-3 pt-1 relative z-10">
+                <div className="flex flex-col sm:flex-row flex-wrap justify-center gap-3 pt-1 relative z-10">
                   <button
                     onClick={() => setActivePortal('teacher')}
-                    className="bg-mauve-900 hover:bg-mauve-700 text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer shadow-md uppercase tracking-wider border border-white/30"
+                    className="bg-mauve-900 hover:bg-mauve-700 text-white font-extrabold px-5 py-3 rounded-lg text-sm transition cursor-pointer shadow-md uppercase tracking-wider border border-white/30"
                   >
                     Enter Teacher Portal
                   </button>
                   <button
                     onClick={() => setActivePortal('admin')}
-                    className="bg-[#1E0650] border border-white/30 hover:bg-[#2B0D5D] text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer uppercase tracking-wider shadow-md"
+                    className="bg-[#1E0650] border border-white/30 hover:bg-[#2B0D5D] text-white font-extrabold px-5 py-3 rounded-lg text-sm transition cursor-pointer uppercase tracking-wider shadow-md"
                   >
                     Enter Admin Portal
                   </button>
                   <button
                     onClick={() => setActivePortal('attendance')}
-                    className="bg-violet-900 hover:bg-violet-800 border border-white/30 text-white font-extrabold px-6 py-3 rounded-lg text-sm sm:text-base transition cursor-pointer uppercase tracking-wider shadow-md"
+                    className="bg-violet-900 hover:bg-violet-800 border border-white/30 text-white font-extrabold px-5 py-3 rounded-lg text-sm transition cursor-pointer uppercase tracking-wider shadow-md"
                   >
                     Open Attendance Portal
+                  </button>
+                  <button
+                    onClick={() => {
+                      try {
+                        localStorage.setItem('ea_admin_active_tab', 'book-inventory');
+                      } catch (e) {}
+                      setActivePortal('admin');
+                    }}
+                    className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-5 py-3 rounded-lg text-sm transition cursor-pointer uppercase tracking-wider shadow-md flex items-center justify-center gap-2 border-2 border-amber-300"
+                    id="hub-btn-open-textbook-stock"
+                  >
+                    <Library className="w-4 h-4 text-slate-950" />
+                    <span>Textbook Stock Portal</span>
                   </button>
                 </div>
               </div>
@@ -1417,7 +1467,7 @@ export default function App() {
                       <Lock className="w-6 h-6" />
                     </div>
                     <h3 className="font-display font-extrabold text-mauve-950 text-lg uppercase tracking-tight">Administrative Access Security</h3>
-                    <p className="text-xs text-gray-600 leading-relaxed font-medium">Sign in with administrative credentials to access student admissions, staff mapping, and report configurations.</p>
+                    <p className="text-xs text-gray-600 leading-relaxed font-medium">Sign in with administrative credentials to access the Textbook Stock Portal, student admissions, fee tracking, and report configurations.</p>
                   </div>
 
                   {adminError && (

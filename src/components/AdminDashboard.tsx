@@ -75,7 +75,35 @@ export default function AdminDashboard({
   storedAdminPassword = 'adminSecure2026!',
   onUpdateAdminPassword = () => {}
 }: AdminDashboardProps) {
-  const [activeTab, setActiveTab] = useState<AdminTab>('analytics');
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash || '';
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') || params.get('adminTab');
+      if (tabParam === 'book-inventory' || tabParam === 'textbook' || tabParam === 'textbook-portal' || hash === '#book-inventory' || hash === '#textbook' || hash === '#textbook-portal') {
+        return 'book-inventory';
+      }
+      const savedTab = localStorage.getItem('ea_admin_active_tab');
+      if (savedTab && ['analytics', 'fees-dashboard', 'fees', 'bulk-sms', 'report-sms-alerts', 'transcripts', 'jhs3-mock', 'terminal-history', 'students', 'teachers', 'teacher-profiles', 'class-assignments', 'inventory', 'book-inventory', 'config'].includes(savedTab)) {
+        return savedTab as AdminTab;
+      }
+    }
+    return 'analytics';
+  });
+
+  const handleSelectTab = (newTab: AdminTab) => {
+    setActiveTab(newTab);
+    try {
+      localStorage.setItem('ea_admin_active_tab', newTab);
+      const url = new URL(window.location.href);
+      if (newTab === 'book-inventory') {
+        url.searchParams.set('tab', 'book-inventory');
+      } else {
+        url.searchParams.delete('tab');
+      }
+      window.history.replaceState(null, '', url.toString());
+    } catch (e) {}
+  };
 
   // Book Inventory & Textbook Stock Quick Summary for Admin Overview
   const [bookStockSummary, setBookStockSummary] = useState<{
@@ -1680,7 +1708,7 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {/* QUICK ACCESS BANNER FOR TEXTBOOK STOCK DASHBOARD */}
+      {/* QUICK ACCESS BANNER FOR TEXTBOOK STOCK PORTAL */}
       <div className="bg-gradient-to-r from-purple-950 via-[#180433] to-indigo-950 text-white p-3 sm:p-4 rounded-2xl shadow-lg border-2 border-purple-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 my-2 no-print">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-amber-400 text-slate-950 rounded-xl border border-amber-300 shrink-0 shadow-md">
@@ -1689,10 +1717,10 @@ export default function AdminDashboard({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="font-black text-sm sm:text-base text-white tracking-wide">
-                Textbook Stock Dashboard
+                Textbook Stock Portal
               </h4>
               <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-sm">
-                Active Module
+                Featured Portal
               </span>
               <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
                 Stock & POS Ledger
@@ -1714,7 +1742,7 @@ export default function AdminDashboard({
         <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
           <button
             type="button"
-            onClick={() => setActiveTab('book-inventory')}
+            onClick={() => handleSelectTab('book-inventory')}
             className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer flex-1 sm:flex-none uppercase tracking-wider ${
               activeTab === 'book-inventory'
                 ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-300'
@@ -1723,7 +1751,7 @@ export default function AdminDashboard({
             id="btn-quick-open-textbook-stock"
           >
             <Library className="w-4 h-4 text-slate-950" />
-            <span>{activeTab === 'book-inventory' ? 'Viewing Textbook Stock' : 'Open Textbook Stock Dashboard →'}</span>
+            <span>{activeTab === 'book-inventory' ? 'Viewing Textbook Stock Portal' : 'Open Textbook Stock Portal →'}</span>
           </button>
         </div>
       </div>
@@ -1759,12 +1787,12 @@ export default function AdminDashboard({
               id="admin-tabs-dropdown-selector"
               aria-label="Admin Tabs Drop Down Menu"
               value={activeTab}
-              onChange={(e) => setActiveTab(e.target.value as AdminTab)}
+              onChange={(e) => handleSelectTab(e.target.value as AdminTab)}
               className="w-full px-3.5 py-2.5 rounded-xl bg-white border-2 border-amber-400 text-slate-950 font-black text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 shadow-md cursor-pointer"
             >
               <optgroup label="📊 Core Dashboards">
                 <option value="analytics">📊 Overview Metrics</option>
-                <option value="book-inventory">📚 Textbook Stock Dashboard (Featured)</option>
+                <option value="book-inventory">📚 Textbook Stock Portal (Stock & POS Ledger)</option>
                 <option value="fees-dashboard">📈 Fees Dashboard</option>
               </optgroup>
               <optgroup label="💰 Finance & School Assets">
@@ -1794,7 +1822,7 @@ export default function AdminDashboard({
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-2">
           {[
             { id: 'analytics', label: 'Overview Metrics', icon: Users },
-            { id: 'book-inventory', label: 'Textbook Stock Dashboard', icon: Library, isFeatured: true },
+            { id: 'book-inventory', label: 'Textbook Stock Portal', icon: Library, isFeatured: true },
             { id: 'fees-dashboard', label: 'Fees Dashboard', icon: BarChart3 },
             { id: 'fees', label: 'Fees Collection', icon: CreditCard },
             { id: 'inventory', label: 'School Inventory', icon: Boxes },
@@ -1814,7 +1842,7 @@ export default function AdminDashboard({
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as AdminTab)}
+                onClick={() => handleSelectTab(tab.id as AdminTab)}
                 className={`flex items-center justify-start gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2.5 rounded-xl text-[11px] sm:text-xs uppercase tracking-wider transition-all duration-150 cursor-pointer border w-full text-left min-h-[44px] ${
                   isActive
                     ? 'bg-amber-400 text-slate-950 shadow-md border-2 border-amber-500 ring-2 ring-amber-300 font-black'
@@ -1876,7 +1904,7 @@ export default function AdminDashboard({
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
-                      Textbook Stock & Book Sales Dashboard
+                      Textbook Stock Portal & Book Sales
                     </h3>
                     <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
                       Integrated POS Ledger & Recharts
@@ -1891,12 +1919,12 @@ export default function AdminDashboard({
               <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('book-inventory')}
+                  onClick={() => handleSelectTab('book-inventory')}
                   className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl transition flex items-center gap-2 shadow-lg shadow-amber-950/40 cursor-pointer uppercase tracking-wider"
                   id="overview-btn-open-textbook-dashboard"
                 >
                   <Library className="w-4 h-4 text-slate-950" />
-                  <span>Open Textbook Stock Dashboard →</span>
+                  <span>Open Textbook Stock Portal →</span>
                 </button>
               </div>
             </div>

@@ -683,7 +683,7 @@ export default function SchoolInventoryModule({
             </div>
             <div>
               <div className="text-white text-sm font-bold flex items-center gap-2">
-                <span>Textbook Stock Dashboard & POS Sales Ledger</span>
+                <span>Textbook Stock Portal & POS Sales Ledger</span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
                   Recharts Visualizer
                 </span>
@@ -699,7 +699,7 @@ export default function SchoolInventoryModule({
             className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl transition shadow flex items-center justify-center gap-2 cursor-pointer shrink-0 uppercase tracking-wider"
           >
             <Library className="w-4 h-4" />
-            <span>Open Textbook Stock Dashboard →</span>
+            <span>Open Textbook Stock Portal →</span>
           </button>
         </div>
       )}

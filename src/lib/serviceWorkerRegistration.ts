@@ -15,6 +15,11 @@ export function registerServiceWorker() {
       .then((registration) => {
         console.log('[SW Registration] Service worker registered successfully with scope:', registration.scope);
 
+        // Force an immediate update check against the server
+        try {
+          registration.update();
+        } catch (e) {}
+
         // Check for updates to the service worker
         registration.addEventListener('updatefound', () => {
           const installingWorker = registration.installing;
@@ -22,7 +27,8 @@ export function registerServiceWorker() {
             installingWorker.addEventListener('statechange', () => {
               if (installingWorker.state === 'installed') {
                 if (navigator.serviceWorker.controller) {
-                  console.log('[SW Registration] New content is available; please refresh.');
+                  console.log('[SW Registration] New content is available; applying update.');
+                  installingWorker.postMessage({ type: 'SKIP_WAITING' });
                 } else {
                   console.log('[SW Registration] Content is cached for offline use.');
                 }
