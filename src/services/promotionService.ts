@@ -944,12 +944,14 @@ export function restoreStudentsFromTerminalReport(
       continue;
     }
 
-    // Custom or newly enrolled student: resolve class from ID or keep as is
-    const resolved = resolveClassAndLevelFromStudentId(st.rollNumber || st.id, st.level);
+    // Custom or newly enrolled student: preserve assigned class & level, only fallback to heuristic if missing
+    const resolved = (st.className && st.level)
+      ? { className: st.className, level: st.level }
+      : resolveClassAndLevelFromStudentId(st.rollNumber || st.id, st.level);
     restoredList.push({
       ...st,
-      className: resolved.className,
-      level: resolved.level
+      className: st.className || resolved.className,
+      level: st.level || resolved.level
     });
     processedIds.add(st.id);
     if (normName) processedNames.add(normName);

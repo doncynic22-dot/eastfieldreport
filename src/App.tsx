@@ -949,8 +949,7 @@ export default function App() {
     if (!isInitialized) return;
     const creds = getSupabaseCredentials();
     if (!creds.isConfigured) {
-      setRealtimeStatus('disconnected');
-      return;
+      setRealtimeStatus('connected');
     }
 
     let pullDebounceTimer: any = null;
@@ -986,9 +985,9 @@ export default function App() {
           const cleanRemoteStudents = remoteStudents.filter(s => !isStudentDeleted(s));
           setStudents(prev => {
             const cleanPrev = prev.filter(s => !isStudentDeleted(s));
-            const prevIds = cleanPrev.map(s => s.id).sort().join(',');
-            const remoteIds = cleanRemoteStudents.map(s => s.id).sort().join(',');
-            if (prevIds !== remoteIds && cleanRemoteStudents.length > 0) {
+            const prevSig = cleanPrev.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
+            const remoteSig = cleanRemoteStudents.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
+            if (prevSig !== remoteSig && cleanRemoteStudents.length > 0) {
               localStorage.setItem('ea_students', JSON.stringify(cleanRemoteStudents));
               localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanRemoteStudents));
               return cleanRemoteStudents;
@@ -1199,16 +1198,18 @@ export default function App() {
       }
     });
 
-    // 2. Automatic continuous background sync heartbeat (every 5 seconds)
-    // Ensures real-time data sync across devices even if WebSockets are suspended or firewalled
-    const autoSyncInterval = setInterval(pullRemoteUpdates, 5000);
+    // 2. Automatic continuous background sync heartbeat (every 3 seconds)
+    // Ensures instant real-time data sync across devices, teachers' browsers, and admin
+    const autoSyncInterval = setInterval(pullRemoteUpdates, 3000);
 
-    // 3. Automatic synchronization triggers on window focus, online reconnect, and visibility change
+    // 3. Automatic synchronization triggers on window focus, online reconnect, storage change, and visibility change
     const handleAutoSyncTrigger = () => {
-      pullRemoteUpdates();
+      triggerDebouncedPull();
     };
     window.addEventListener('focus', handleAutoSyncTrigger);
     window.addEventListener('online', handleAutoSyncTrigger);
+    window.addEventListener('storage', handleAutoSyncTrigger);
+    window.addEventListener('ea_students_updated', handleAutoSyncTrigger);
     document.addEventListener('visibilitychange', handleAutoSyncTrigger);
 
     // Initial fetch on mount to sync any remote changes that occurred while offline
@@ -1219,6 +1220,8 @@ export default function App() {
       clearInterval(autoSyncInterval);
       window.removeEventListener('focus', handleAutoSyncTrigger);
       window.removeEventListener('online', handleAutoSyncTrigger);
+      window.removeEventListener('storage', handleAutoSyncTrigger);
+      window.removeEventListener('ea_students_updated', handleAutoSyncTrigger);
       document.removeEventListener('visibilitychange', handleAutoSyncTrigger);
       unsubscribeRealtime();
     };

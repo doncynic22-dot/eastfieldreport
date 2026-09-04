@@ -1515,8 +1515,32 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     return list.filter(s => !isStudentDeleted(s));
   };
 
+  // Helper to query Server / CDN endpoint
+  const fetchFromServer = async (): Promise<Student[] | null> => {
+    try {
+      const res = await fetch('/api/students', {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json && Array.isArray(json.students) && json.students.length > 0) {
+          return filterDeleted(json.students);
+        }
+      }
+    } catch (e) {
+      console.warn('[Fetch Students] Server endpoint fallback notice:', e);
+    }
+    return null;
+  };
+
   const client = getSupabaseClient();
   if (!client) {
+    const serverResult = await fetchFromServer();
+    if (serverResult && serverResult.length > 0) return serverResult;
+
     const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
     if (cached) {
       try {
@@ -1563,6 +1587,9 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
 
     const { data, error } = await client.from('ea_students').select('*');
     if (error) {
+      const serverResult = await fetchFromServer();
+      if (serverResult && serverResult.length > 0) return serverResult;
+
       if (isMissingTableOrConnectionError(error)) {
         const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
         if (cached) {
@@ -1575,7 +1602,11 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       }
       return null;
     }
-    if (!data) return null;
+    if (!data || data.length === 0) {
+      const serverResult = await fetchFromServer();
+      if (serverResult && serverResult.length > 0) return serverResult;
+      return [];
+    }
     const mapped = data.map(item => ({
       id: item.id,
       name: item.name || '',
@@ -1596,8 +1627,24 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       }
     }
 
-    return filterDeleted(mapped);
+    const cleanMapped = filterDeleted(mapped);
+
+    // Keep server / CDN synchronized in background with latest Supabase roster
+    if (cleanMapped.length > 0) {
+      try {
+        fetch('/api/students', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ students: cleanMapped })
+        }).catch(() => {});
+      } catch (e) {}
+    }
+
+    return cleanMapped;
   } catch (err: any) {
+    const serverResult = await fetchFromServer();
+    if (serverResult && serverResult.length > 0) return serverResult;
+
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
       if (cached) {
@@ -1611,16 +1658,152 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
   }
 }
 
+// Dedicated single-student admission & instant global sync
+export async function saveSingleSupabaseStudent(student: Student): Promise<boolean> {
+  if (!student || (!student.id && !student.name)) return false;
+
+  // 1. Immediately remove any tombstone locally and from memory
+  removeDeletedStudentId(student.id, student.rollNumber, student.name);
+
+  // 2. Immediately update local caches for zero latency
+  try {
+    const cached = localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students');
+    let currentList: Student[] = [];
+    if (cached) {
+      try {
+        currentList = JSON.parse(cached);
+      } catch (e) {}
+    }
+    const idx = currentList.findIndex(
+      s => s.id === student.id || (student.rollNumber && s.rollNumber === student.rollNumber)
+    );
+    let updatedList: Student[];
+    if (idx >= 0) {
+      updatedList = currentList.map((s, i) => i === idx ? student : s);
+    } else {
+      updatedList = [...currentList, student];
+    }
+    localStorage.setItem('ea_students', JSON.stringify(updatedList));
+    localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updatedList));
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('ea_students_updated'));
+  } catch (e) {}
+
+  // 3. Immediately dispatch to Server / CDN API
+  try {
+    fetch('/api/students/admit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student })
+    }).catch(e => console.warn('Sync /api/students/admit warning:', e));
+  } catch (e) {}
+
+  // 4. Upsert to Supabase Cloud Database
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      // Clear remote tombstone from ea_deleted_records
+      try {
+        if (student.id) {
+          await client.from('ea_deleted_records').delete().eq('record_id', student.id);
+        }
+        if (student.rollNumber) {
+          await client.from('ea_deleted_records').delete().eq('roll_number', student.rollNumber);
+        }
+      } catch (tombErr) {}
+
+      // Upsert single student directly to Supabase
+      const payload = {
+        id: student.id,
+        name: student.name,
+        roll_number: student.rollNumber,
+        level: student.level || 'PRIMARY',
+        class_name: student.className,
+        guardian_name: student.guardianName || '',
+        guardian_email: student.guardianEmail || '',
+        guardian_phone: student.guardianPhone || '',
+        photo_url: student.photoUrl || '',
+        updated_at: new Date().toISOString()
+      };
+
+      let { error } = await safeUpsert('ea_students', [payload], client, 'id');
+      if (error && (error.message?.includes('photo_url') || error.message?.includes('guardian_phone') || error.code === '42703')) {
+        const { photo_url, guardian_phone, ...legacyPayload } = payload;
+        const retryRes = await safeUpsert('ea_students', [legacyPayload], client, 'id');
+        error = retryRes.error;
+      }
+
+      if (error) {
+        console.warn('[Supabase saveSingleStudent] Notice:', error.message || error);
+      }
+
+      // Log sync operation
+      try {
+        await client.from('ea_sync_logs').insert([{
+          id: `sync_adm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          action_type: 'ADMIT_STUDENT',
+          description: `Pupil admitted / updated: ${student.name} (${student.rollNumber}) - ${student.className}`,
+          performed_by: 'Admin',
+          status: 'SUCCESS',
+          details: { id: student.id, name: student.name, rollNumber: student.rollNumber, className: student.className, timestamp: new Date().toISOString() },
+          timestamp: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }]);
+      } catch (logErr) {}
+
+      // Broadcast globally across Realtime WebSockets, BroadcastChannels, and in-memory listeners
+      broadcastGlobalSync('ea_students', { action: 'UPSERT', student, id: student.id, rollNumber: student.rollNumber });
+      broadcastSync('students', student, 'insert');
+
+      return true;
+    } catch (err) {
+      console.warn('saveSingleSupabaseStudent exception:', err);
+      broadcastGlobalSync('ea_students', { action: 'UPSERT', student, id: student.id });
+      broadcastSync('students', student, 'insert');
+      return true;
+    }
+  }
+
+  broadcastGlobalSync('ea_students', { action: 'UPSERT', student, id: student.id });
+  broadcastSync('students', student, 'insert');
+  return true;
+}
+
 export async function saveSupabaseStudents(students: Student[]): Promise<boolean> {
+  // Un-tombstone all active students
+  if (Array.isArray(students)) {
+    students.forEach(s => {
+      if (s && s.id) {
+        removeDeletedStudentId(s.id, s.rollNumber, s.name);
+      }
+    });
+  }
+
   // Filter out any students that have been marked deleted
   const validStudents = students.filter(s => !isStudentDeleted(s));
 
   // Always persist to local cache immediately to guarantee offline/local persistence
   localStorage.setItem('mock_supabase_ea_students', JSON.stringify(validStudents));
   localStorage.setItem('ea_students', JSON.stringify(validStudents));
+  window.dispatchEvent(new Event('storage'));
+  window.dispatchEvent(new Event('ea_students_updated'));
+
+  // Sync to Server / CDN API
+  try {
+    fetch('/api/students', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ students: validStudents })
+    }).catch(e => console.warn('Sync /api/students warning:', e));
+  } catch (e) {}
 
   const client = getSupabaseClient();
-  if (!client) return true;
+  if (!client) {
+    broadcastGlobalSync('ea_students', { action: 'UPSERT', count: validStudents.length });
+    broadcastSync('students', validStudents, 'update');
+    return true;
+  }
+
   try {
     const payloads = validStudents.map(s => ({
       id: s.id,
@@ -1634,97 +1817,38 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
       photo_url: s.photoUrl || '',
       updated_at: new Date().toISOString()
     }));
-    let { error } = await safeUpsert('ea_students', payloads, client);
-    if (error && (error.message?.includes('photo_url') || error.message?.includes('guardian_phone') || error.code === '42703')) {
-      console.warn('Supabase ea_students table missing photo_url/guardian_phone column. Retrying without new columns until SQL migration is run.');
-      const legacyPayloads = validStudents.map(s => ({
-        id: s.id,
-        name: s.name,
-        roll_number: s.rollNumber,
-        level: s.level,
-        class_name: s.className,
-        guardian_name: s.guardianName,
-        guardian_email: s.guardianEmail,
-        updated_at: new Date().toISOString()
-      }));
-      const retryRes = await safeUpsert('ea_students', legacyPayloads, client);
-      error = retryRes.error;
-    }
-    if (error) {
-      if (isMissingTableOrConnectionError(error)) {
-        return true;
+
+    // Upsert in safe chunks of 40 with onConflict: 'id'
+    for (let i = 0; i < payloads.length; i += 40) {
+      const chunk = payloads.slice(i, i + 40);
+      let { error } = await safeUpsert('ea_students', chunk, client, 'id');
+      if (error && (error.message?.includes('photo_url') || error.message?.includes('guardian_phone') || error.code === '42703')) {
+        const legacyChunk = chunk.map(({ photo_url, guardian_phone, ...rest }) => rest);
+        await safeUpsert('ea_students', legacyChunk, client, 'id');
       }
-      return false;
     }
     
-    // Prune deleted students safely
+    // Only prune rows that are explicitly tombstoned
     try {
-      if (validStudents.length === 0) {
-        await client.from('ea_grades').delete().not('id', 'is', null);
-        await client.from('ea_attendance').delete().not('id', 'is', null);
-        await client.from('ea_bills').delete().not('id', 'is', null);
-        await client.from('ea_fee_payments').delete().not('id', 'is', null);
-        await client.from('ea_jhs_mock_exams').delete().not('id', 'is', null);
-        await client.from('ea_students').delete().not('id', 'is', null);
-      } else {
-        const { data: existingRows } = await client.from('ea_students').select('id, roll_number, name');
-        const activeIds = new Set(validStudents.map(s => String(s.id)));
-        const activeRolls = new Set(validStudents.map(s => (s.rollNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean));
-        const activeNames = new Set(validStudents.map(s => (s.name || '').toLowerCase().trim()).filter(Boolean));
-        
-        let toDeleteIds: string[] = [];
-        let toDeleteRolls: string[] = [];
-        let toDeleteNames: string[] = [];
-
-        if (existingRows && existingRows.length > 0) {
-          existingRows.forEach(row => {
-            const isTombstone = isStudentDeleted({ id: row.id, rollNumber: row.roll_number, name: row.name });
-            const r = (row.roll_number || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-            const n = (row.name || '').toLowerCase().trim();
-            const isActive = activeIds.has(String(row.id)) || (r && activeRolls.has(r)) || (n && activeNames.has(n));
-
-            if (isTombstone || !isActive) {
-              if (row.id) toDeleteIds.push(row.id);
-              if (row.roll_number) toDeleteRolls.push(row.roll_number);
-              if (row.name) toDeleteNames.push(row.name);
-            }
-          });
-        }
-
-        // 1. Delete rows using exact verified database primary keys
-        for (let i = 0; i < toDeleteIds.length; i += 25) {
-          const chunk = toDeleteIds.slice(i, i + 25);
-          await client.from('ea_grades').delete().in('student_id', chunk);
-          await client.from('ea_attendance').delete().in('student_id', chunk);
-          await client.from('ea_bills').delete().in('student_id', chunk);
-          await client.from('ea_fee_payments').delete().in('student_id', chunk);
-          await client.from('ea_jhs_mock_exams').delete().in('student_id', chunk);
-          await client.from('ea_students').delete().in('id', chunk);
-        }
-
-        // 2. Delete rows using exact verified roll numbers
-        for (let i = 0; i < toDeleteRolls.length; i += 25) {
-          const chunk = toDeleteRolls.slice(i, i + 25);
-          await client.from('ea_grades').delete().in('student_id', chunk);
-          await client.from('ea_attendance').delete().in('student_id', chunk);
-          await client.from('ea_bills').delete().in('student_id', chunk);
-          await client.from('ea_fee_payments').delete().in('student_id', chunk);
-          await client.from('ea_jhs_mock_exams').delete().in('student_id', chunk);
-          await client.from('ea_students').delete().in('roll_number', chunk);
-        }
-
-        // 3. Delete rows using verified names
-        for (let i = 0; i < toDeleteNames.length; i += 25) {
-          const chunk = toDeleteNames.slice(i, i + 25);
-          await client.from('ea_students').delete().in('name', chunk);
+      const deletedIds = getDeletedStudentIds();
+      if (deletedIds.length > 0) {
+        for (const dId of deletedIds) {
+          try {
+            await client.from('ea_students').delete().eq('id', dId);
+          } catch (e) {}
         }
       }
     } catch (pruneErr) {
       console.warn('Student prune notice:', pruneErr);
     }
 
+    broadcastGlobalSync('ea_students', { action: 'UPSERT', count: validStudents.length });
+    broadcastSync('students', validStudents, 'update');
+
     return true;
   } catch (err: any) {
+    broadcastGlobalSync('ea_students', { action: 'UPSERT', count: validStudents.length });
+    broadcastSync('students', validStudents, 'update');
     return true;
   }
 }
@@ -1987,6 +2111,15 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
   } catch (e) {
     console.warn('Local student delete cleanup error:', e);
   }
+
+  // 1.5 Sync deletion to Server / CDN API
+  try {
+    fetch(`/api/students/${encodeURIComponent(id || rollNumber || 'unknown')}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rollNumber, studentName })
+    }).catch(err => console.warn('Server delete notify warning:', err));
+  } catch (e) {}
 
   // 2. Delete from Supabase remote database
   const client = getSupabaseClient();

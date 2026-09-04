@@ -1,6 +1,33 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
+
+// Storage path for student registry cache
+const STUDENTS_CACHE_FILE = path.join(process.cwd(), "students_registry.json");
+
+function loadServerStudents(): any[] {
+  try {
+    if (fs.existsSync(STUDENTS_CACHE_FILE)) {
+      const data = fs.readFileSync(STUDENTS_CACHE_FILE, "utf-8");
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (err) {
+    console.warn("[Server Students] Failed to read students cache:", err);
+  }
+  return [];
+}
+
+function saveServerStudents(students: any[]): boolean {
+  try {
+    fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(students, null, 2), "utf-8");
+    return true;
+  } catch (err) {
+    console.warn("[Server Students] Failed to write students cache:", err);
+    return false;
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -275,6 +302,121 @@ async function startServer() {
       console.error("Arkesel SMS proxy error:", err);
       return res.status(500).json({ status: "error", message: err?.message || "Failed to dispatch Arkesel SMS" });
     }
+  });
+
+  // ==========================================
+  // GLOBAL INSTANT STUDENT SYNC & CDN APIS
+  // ==========================================
+
+  // GET /api/students: Fetch global list of admitted students with strict anti-caching headers
+  app.get("/api/students", (req, res) => {
+    // Ensure CDNs, proxies, and browser caches never serve stale pupil rosters
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
+    const students = loadServerStudents();
+    return res.status(200).json({
+      status: "success",
+      students,
+      count: students.length,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // POST /api/students/admit: Instantly admit or update a single pupil globally
+  app.post("/api/students/admit", (req, res) => {
+    const student = req.body?.student;
+    if (!student || (!student.id && !student.name)) {
+      return res.status(400).json({ status: "error", message: "Invalid student payload" });
+    }
+
+    const currentStudents = loadServerStudents();
+    const cleanId = String(student.id || `st-${Date.now()}`);
+    const cleanRoll = String(student.rollNumber || "").trim();
+
+    // Check if student already exists by ID or Roll Number
+    const existingIndex = currentStudents.findIndex(
+      s => s.id === cleanId || (cleanRoll && s.rollNumber && s.rollNumber.trim().toLowerCase() === cleanRoll.toLowerCase())
+    );
+
+    const normalizedStudent = {
+      ...student,
+      id: cleanId,
+      updated_at: new Date().toISOString()
+    };
+
+    let updatedList: any[];
+    if (existingIndex >= 0) {
+      updatedList = currentStudents.map((s, idx) => idx === existingIndex ? normalizedStudent : s);
+    } else {
+      updatedList = [...currentStudents, normalizedStudent];
+    }
+
+    saveServerStudents(updatedList);
+    console.log(`[Global Student Sync] Pupil '${normalizedStudent.name}' admitted / updated. Total pupils: ${updatedList.length}`);
+
+    return res.status(200).json({
+      status: "success",
+      student: normalizedStudent,
+      count: updatedList.length,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // POST /api/students: Bulk sync entire student roster
+  app.post("/api/students", (req, res) => {
+    const students = req.body?.students;
+    if (!Array.isArray(students)) {
+      return res.status(400).json({ status: "error", message: "Expected students array" });
+    }
+
+    // Merge non-destructively with existing students in server cache
+    const currentStudents = loadServerStudents();
+    const studentMap = new Map<string, any>();
+
+    // Seed existing
+    currentStudents.forEach(s => {
+      const key = s.id || s.rollNumber || s.name;
+      if (key) studentMap.set(key, s);
+    });
+
+    // Upsert incoming
+    students.forEach(s => {
+      const key = s.id || s.rollNumber || s.name;
+      if (key) studentMap.set(key, s);
+    });
+
+    const mergedStudents = Array.from(studentMap.values());
+    saveServerStudents(mergedStudents);
+
+    return res.status(200).json({
+      status: "success",
+      count: mergedStudents.length,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // DELETE /api/students/:id: Delete pupil from global server store
+  app.delete("/api/students/:id", (req, res) => {
+    const targetId = req.params.id;
+    const { rollNumber, studentName } = req.body || {};
+
+    const currentStudents = loadServerStudents();
+    const updated = currentStudents.filter(s => {
+      if (s.id === targetId) return false;
+      if (rollNumber && s.rollNumber && s.rollNumber.toLowerCase() === rollNumber.toLowerCase()) return false;
+      if (studentName && s.name && s.name.toLowerCase() === studentName.toLowerCase()) return false;
+      return true;
+    });
+
+    saveServerStudents(updated);
+    console.log(`[Global Student Sync] Student ID '${targetId}' deleted. Remaining pupils: ${updated.length}`);
+
+    return res.status(200).json({
+      status: "success",
+      count: updated.length
+    });
   });
 
   // Vite middleware for development or static serving for production

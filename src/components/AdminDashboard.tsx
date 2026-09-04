@@ -16,7 +16,7 @@ import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryMo
 import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, fetchSupabaseBookStock, removeDeletedStudentId } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, fetchSupabaseBookStock, removeDeletedStudentId } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
@@ -1093,17 +1093,19 @@ export default function AdminDashboard({
     removeDeletedStudentId(editingStudent?.id, studentForm.rollNumber, studentForm.name);
 
     let updatedStudentsList: Student[];
+    let savedStudent: Student;
     if (editingStudent) {
       // Edit Student
-      updatedStudentsList = students.map(s => s.id === editingStudent.id ? {
-        ...s,
+      savedStudent = {
+        ...editingStudent,
         ...studentForm,
         className: finalClassName,
         level: finalLevel
-      } : s);
+      };
+      updatedStudentsList = students.map(s => s.id === editingStudent.id ? savedStudent : s);
     } else {
       // Add Student
-      const newStudent: Student = {
+      savedStudent = {
         id: `st-${Date.now()}`,
         name: studentForm.name,
         rollNumber: studentForm.rollNumber,
@@ -1114,10 +1116,13 @@ export default function AdminDashboard({
         guardianPhone: studentForm.guardianPhone,
         photoUrl: studentForm.photoUrl
       };
-      updatedStudentsList = [...students, newStudent];
+      updatedStudentsList = [...students, savedStudent];
     }
 
     setStudents(updatedStudentsList);
+
+    // Instant pupil admission sync across Server / CDN and Supabase
+    saveSingleSupabaseStudent(savedStudent).catch(err => console.warn('Instant student admission sync error:', err));
 
     // Global Supabase Sync
     if (onPushToSupabase) {
