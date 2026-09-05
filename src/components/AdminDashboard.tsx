@@ -18,7 +18,7 @@ import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, fetchSupabaseBookStock, removeDeletedStudentId } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
-import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId } from '../services/promotionService';
+import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
 import { INITIAL_SUBJECTS } from '../data/mockData';
 import { matchesSubject } from '../utils/subjectUtils';
@@ -1054,9 +1054,9 @@ export default function AdminDashboard({
   const overallAvg = grades.length > 0 ? (grades.reduce((sum, g) => sum + g.totalScore, 0) / grades.length) : 0;
 
   // Helper to dynamically auto-generate Roll / Register ID
-  const getAutoRollNumber = (level: AcademicLevel, className: string) => {
+  const getAutoRollNumber = (level: AcademicLevel, className: string, currentStudents: Student[] = students) => {
     let classAbbr = '';
-    const nameLower = className.toLowerCase();
+    const nameLower = (className || '').toLowerCase();
     if (nameLower.includes('nursery 1')) classAbbr = 'N1';
     else if (nameLower.includes('nursery 2')) classAbbr = 'N2';
     else if (nameLower.includes('kindergarten 1') || nameLower.includes('kg 1')) classAbbr = 'KG1';
@@ -1068,18 +1068,45 @@ export default function AdminDashboard({
       const num = nameLower.replace(/[^0-9]/g, '');
       classAbbr = `J${num || '1'}`;
     } else {
-      classAbbr = level.substring(0, 3).toUpperCase();
+      classAbbr = (level || 'PRIMARY').substring(0, 3).toUpperCase();
     }
 
     const year = '2026';
-    const classStudentsCount = students.filter(s => s.className === className).length;
-    const nextSeq = String(classStudentsCount + 1).padStart(3, '0');
+    // Collect all existing roll numbers in memory and in local storage
+    const allKnown = [...currentStudents];
+    try {
+      const raw = localStorage.getItem('ea_students');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) allKnown.push(...parsed);
+      }
+    } catch (e) {}
 
-    return `EA/${classAbbr}/${year}/${nextSeq}`;
+    const existingRolls = new Set(allKnown.map(s => (s.rollNumber || '').toUpperCase().trim()));
+
+    // Find highest existing sequence for this class / abbr (ignoring reserved/test numbers >= 900)
+    const regex = new RegExp(`^EA/${classAbbr}/${year}/(\\d+)$`, 'i');
+    let maxSeq = 0;
+    allKnown.forEach(s => {
+      const match = (s.rollNumber || '').trim().match(regex);
+      if (match && match[1]) {
+        const val = parseInt(match[1], 10);
+        if (!isNaN(val) && val < 900 && val > maxSeq) maxSeq = val;
+      }
+    });
+
+    let nextSeq = Math.max(maxSeq + 1, 1);
+    let candidate = `EA/${classAbbr}/${year}/${String(nextSeq).padStart(3, '0')}`;
+    while (existingRolls.has(candidate.toUpperCase().trim())) {
+      nextSeq++;
+      candidate = `EA/${classAbbr}/${year}/${String(nextSeq).padStart(3, '0')}`;
+    }
+
+    return candidate;
   };
 
   // 2. STUDENT DIRECTORY LOGIC
-  const handleAddOrEditStudent = (e: React.FormEvent) => {
+  const handleAddOrEditStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!studentForm.name || !studentForm.rollNumber) {
       alert('Please fill out Name and Roll Number');
@@ -1091,35 +1118,56 @@ export default function AdminDashboard({
     const finalClassName = studentForm.className || resolved.className;
     const finalLevel = studentForm.level || resolved.level;
 
-    // Clear any tombstone records if this pupil or roll number was previously marked deleted
-    removeDeletedStudentId(editingStudent?.id, studentForm.rollNumber, studentForm.name);
+    // Check if the roll number is already used by another pupil (avoid collision)
+    let finalRollNumber = studentForm.rollNumber.trim();
+    const collision = students.some(
+      s => (!editingStudent || s.id !== editingStudent.id) &&
+        s.rollNumber && s.rollNumber.trim().toUpperCase() === finalRollNumber.toUpperCase()
+    );
+    if (collision) {
+      finalRollNumber = getAutoRollNumber(finalLevel, finalClassName, students);
+    }
 
+    const nowIso = new Date().toISOString();
     let updatedStudentsList: Student[];
     let savedStudent: Student;
+
     if (editingStudent) {
       // Edit Student
       savedStudent = {
         ...editingStudent,
         ...studentForm,
+        rollNumber: finalRollNumber,
         className: finalClassName,
-        level: finalLevel
+        level: finalLevel,
+        updated_at: nowIso,
+        updatedAt: nowIso
       };
       updatedStudentsList = students.map(s => s.id === editingStudent.id ? savedStudent : s);
     } else {
       // Add Student
+      const newId = `st-${Date.now()}`;
       savedStudent = {
-        id: `st-${Date.now()}`,
-        name: studentForm.name,
-        rollNumber: studentForm.rollNumber,
+        id: newId,
+        name: studentForm.name.trim(),
+        rollNumber: finalRollNumber,
         level: finalLevel,
         className: finalClassName,
-        guardianName: studentForm.guardianName,
-        guardianEmail: studentForm.guardianEmail,
-        guardianPhone: studentForm.guardianPhone,
-        photoUrl: studentForm.photoUrl
+        guardianName: studentForm.guardianName || '',
+        guardianEmail: studentForm.guardianEmail || '',
+        guardianPhone: studentForm.guardianPhone || '',
+        photoUrl: studentForm.photoUrl || '',
+        updated_at: nowIso,
+        updatedAt: nowIso
       };
       updatedStudentsList = [...students, savedStudent];
     }
+
+    // Ensure deduplication preserves all unique records
+    updatedStudentsList = deduplicateStudents(updatedStudentsList);
+
+    // Clear any tombstone records for this student ID, roll number, and name
+    removeDeletedStudentId(savedStudent.id, savedStudent.rollNumber, savedStudent.name);
 
     setStudents(updatedStudentsList);
     try {
@@ -1128,7 +1176,11 @@ export default function AdminDashboard({
     } catch (e) {}
 
     // Instant pupil admission sync across Server / CDN and Supabase
-    saveSingleSupabaseStudent(savedStudent).catch(err => console.warn('Instant student admission sync error:', err));
+    try {
+      await saveSingleSupabaseStudent(savedStudent);
+    } catch (err) {
+      console.warn('Instant student admission sync error:', err);
+    }
 
     // Global Supabase Sync
     if (onPushToSupabase) {

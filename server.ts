@@ -358,14 +358,24 @@ async function startServer() {
     const cleanId = String(student.id || `st-${Date.now()}`);
     const cleanRoll = String(student.rollNumber || "").trim();
 
-    // Check if student already exists by ID or Roll Number
-    const existingIndex = currentStudents.findIndex(
-      s => s.id === cleanId || (cleanRoll && s.rollNumber && s.rollNumber.trim().toLowerCase() === cleanRoll.toLowerCase())
-    );
+    // Check if student already exists by unique ID
+    const existingIndex = currentStudents.findIndex(s => s.id === cleanId);
+    let finalRoll = cleanRoll;
+
+    // If new student admission collides with a different existing pupil's roll number, disambiguate
+    if (existingIndex < 0 && cleanRoll) {
+      const rollCollision = currentStudents.some(
+        s => s.id !== cleanId && s.rollNumber && s.rollNumber.trim().toLowerCase() === cleanRoll.toLowerCase()
+      );
+      if (rollCollision) {
+        finalRoll = `${cleanRoll}-${cleanId.slice(-4)}`;
+      }
+    }
 
     const normalizedStudent = {
       ...student,
       id: cleanId,
+      rollNumber: finalRoll,
       updated_at: new Date().toISOString()
     };
 

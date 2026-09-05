@@ -49,13 +49,13 @@ export function getClassCode(className: string, level?: AcademicLevel): string {
 }
 
 /**
- * Deduplicates an array of students to guarantee 100% unique IDs and unique student roll numbers.
- * Purges duplicate records that may have been created by legacy sessions or repeated syncs.
+ * Deduplicates an array of students to guarantee 100% unique IDs while preserving every pupil.
+ * If two students with different IDs share a roll number, disambiguates the roll number rather than deleting the pupil.
  */
 export function deduplicateStudents(students: Student[]): Student[] {
   if (!Array.isArray(students)) return [];
   const seenIds = new Set<string>();
-  const seenRolls = new Set<string>();
+  const seenRolls = new Map<string, Student>();
   const clean: Student[] = [];
 
   for (const s of students) {
@@ -63,17 +63,30 @@ export function deduplicateStudents(students: Student[]): Student[] {
     const rawId = (s.id || '').trim();
     if (!rawId) continue;
 
-    const normRoll = (s.rollNumber || '').trim().toLowerCase();
-    
     // Skip if this exact ID has already been included
     if (seenIds.has(rawId)) continue;
-    
-    // Skip if another student with the exact same non-empty rollNumber has already been included
-    if (normRoll && seenRolls.has(normRoll)) continue;
-
     seenIds.add(rawId);
-    if (normRoll) seenRolls.add(normRoll);
-    clean.push(s);
+
+    const normRoll = (s.rollNumber || '').trim().toLowerCase();
+    if (normRoll && seenRolls.has(normRoll)) {
+      const existing = seenRolls.get(normRoll)!;
+      const normName1 = (existing.name || '').trim().toLowerCase();
+      const normName2 = (s.name || '').trim().toLowerCase();
+      // Only skip if exact same person name and class (true duplicate clone)
+      if (normName1 && normName1 === normName2 && existing.className === s.className) {
+        continue;
+      }
+      // Different pupils: preserve both, assign unique suffix to roll number so neither pupil is dropped
+      const suffix = s.id.slice(-4);
+      const disambiguatedRoll = `${s.rollNumber || 'EA/REG'}-${suffix}`;
+      clean.push({
+        ...s,
+        rollNumber: disambiguatedRoll
+      });
+    } else {
+      if (normRoll) seenRolls.set(normRoll, s);
+      clean.push(s);
+    }
   }
 
   return clean;
@@ -644,13 +657,8 @@ export function assignStudentsToCorrectClassesFromId(students: Student[]): Stude
  */
 export function restoreAllStudentsToAdmittedLevels(students: Student[]): Student[] {
   const deletedIds = new Set(getDeletedStudentIds().map(id => id.trim().toLowerCase()));
-  const isDeleted = (id?: string, roll?: string, _name?: string) => {
+  const isDeleted = (id?: string, _roll?: string, _name?: string) => {
     if (id && deletedIds.has(id.trim().toLowerCase())) return true;
-    if (roll) {
-      const r = roll.trim().toLowerCase();
-      const cleanR = r.replace(/[^a-z0-9]/g, '');
-      if (deletedIds.has(r) || (cleanR && deletedIds.has(cleanR))) return true;
-    }
     return false;
   };
 
@@ -882,13 +890,8 @@ export function restoreStudentsFromTerminalReport(
 
   // 3. Reconcile with INITIAL_STUDENTS (the foundational registered students, excluding deleted)
   const deletedIds = new Set(getDeletedStudentIds().map(id => id.trim().toLowerCase()));
-  const isDeleted = (id?: string, roll?: string, _name?: string) => {
+  const isDeleted = (id?: string, _roll?: string, _name?: string) => {
     if (id && deletedIds.has(id.trim().toLowerCase())) return true;
-    if (roll) {
-      const r = roll.trim().toLowerCase();
-      const cleanR = r.replace(/[^a-z0-9]/g, '');
-      if (deletedIds.has(r) || (cleanR && deletedIds.has(cleanR))) return true;
-    }
     return false;
   };
 

@@ -1401,45 +1401,35 @@ export function getDeletedStudentIds(): string[] {
     const saved = localStorage.getItem('ea_deleted_student_ids');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        // Return only explicit student IDs; filter out any roll number patterns like EA/... or values with slashes
+        return parsed.filter(x => typeof x === 'string' && x.trim() && !x.includes('/') && !x.startsWith('EA'));
+      }
     }
   } catch (e) {}
   return [];
 }
 
-export function recordDeletedStudentId(id: string, rollNumber?: string, studentName?: string): void {
-  if (!id && !rollNumber) return;
+export function recordDeletedStudentId(id: string, _rollNumber?: string, _studentName?: string): void {
+  if (!id) return;
   try {
+    const cleanId = id.trim();
+    if (!cleanId || cleanId.includes('/') || cleanId.startsWith('EA')) return;
     const current = getDeletedStudentIds();
-    const toAdd: string[] = [];
-    if (id) toAdd.push(id.trim());
-    if (rollNumber) {
-      const r = rollNumber.trim();
-      toAdd.push(r);
-      const cleanR = r.replace(/[^A-Za-z0-9]/g, '');
-      if (cleanR) toAdd.push(cleanR);
-    }
     const currentLower = new Set(current.map(x => String(x).toLowerCase().trim()));
-    const newItems = toAdd.filter(x => !currentLower.has(x.toLowerCase().trim()));
-    if (newItems.length > 0) {
-      localStorage.setItem('ea_deleted_student_ids', JSON.stringify([...current, ...newItems]));
+    if (!currentLower.has(cleanId.toLowerCase())) {
+      localStorage.setItem('ea_deleted_student_ids', JSON.stringify([...current, cleanId]));
     }
   } catch (e) {}
 }
 
 export function isStudentDeleted(student?: { id?: string; rollNumber?: string; name?: string } | null): boolean {
-  if (!student) return false;
+  if (!student || !student.id) return false;
   const deleted = getDeletedStudentIds();
   if (deleted.length === 0) return false;
   const deletedSet = new Set(deleted.map(x => String(x).toLowerCase().trim()));
   
-  if (student.id && deletedSet.has(student.id.toLowerCase().trim())) return true;
-  if (student.rollNumber) {
-    const r = student.rollNumber.toLowerCase().trim();
-    const cleanR = r.replace(/[^a-z0-9]/g, '');
-    if (deletedSet.has(r) || (cleanR && deletedSet.has(cleanR))) return true;
-  }
-  return false;
+  return deletedSet.has(student.id.toLowerCase().trim());
 }
 
 export function removeDeletedStudentId(id?: string, rollNumber?: string, studentName?: string): void {
@@ -1668,15 +1658,22 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
         currentList = JSON.parse(cached);
       } catch (e) {}
     }
-    const idx = currentList.findIndex(
-      s => s.id === student.id || (student.rollNumber && s.rollNumber === student.rollNumber)
-    );
+    const idx = currentList.findIndex(s => s.id === student.id);
     let updatedList: Student[];
     if (idx >= 0) {
-      updatedList = currentList.map((s, i) => i === idx ? student : s);
+      updatedList = currentList.map((s, i) => i === idx ? { ...s, ...student } : s);
     } else {
       updatedList = [...currentList, student];
     }
+    const seen = new Set<string>();
+    const cleanList: Student[] = [];
+    for (const s of updatedList) {
+      if (s && s.id && !seen.has(s.id)) {
+        seen.add(s.id);
+        cleanList.push(s);
+      }
+    }
+    updatedList = cleanList;
     localStorage.setItem('ea_students', JSON.stringify(updatedList));
     localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updatedList));
     window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'internal_save' } }));

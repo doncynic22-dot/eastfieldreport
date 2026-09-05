@@ -1,1 +1,37 @@
-[]
+[
+  {
+    "id": "st-test-1788607466717",
+    "name": "Test Pupil",
+    "rollNumber": "EA/P1/2026/999",
+    "level": "PRIMARY",
+    "className": "Primary 1",
+    "guardianName": "Test Guardian",
+    "guardianEmail": "test@example.com",
+    "guardianPhone": "0240000000",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788608026118",
+    "name": "Dessss gggg",
+    "rollNumber": "EA/P1/2026/002",
+    "level": "PRIMARY",
+    "className": "Primary 1",
+    "guardianName": "Desmond Ameyaw",
+    "guardianEmail": "",
+    "guardianPhone": "+233559071892",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788608704754",
+    "name": "Desmond Ameyaw",
+    "rollNumber": "EA/P1/2026/1000",
+    "level": "PRIMARY",
+    "className": "Primary 1",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": "",
+    "updated_at": "2026-09-05T11:45:04.754Z",
+    "updatedAt": "2026-09-05T11:45:04.754Z"
+  }
+]
