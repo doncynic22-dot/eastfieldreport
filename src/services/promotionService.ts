@@ -49,13 +49,13 @@ export function getClassCode(className: string, level?: AcademicLevel): string {
 }
 
 /**
- * Deduplicates an array of students to guarantee 100% unique IDs and unique student names.
+ * Deduplicates an array of students to guarantee 100% unique IDs and unique student roll numbers.
  * Purges duplicate records that may have been created by legacy sessions or repeated syncs.
  */
 export function deduplicateStudents(students: Student[]): Student[] {
   if (!Array.isArray(students)) return [];
   const seenIds = new Set<string>();
-  const seenNames = new Set<string>();
+  const seenRolls = new Set<string>();
   const clean: Student[] = [];
 
   for (const s of students) {
@@ -63,16 +63,16 @@ export function deduplicateStudents(students: Student[]): Student[] {
     const rawId = (s.id || '').trim();
     if (!rawId) continue;
 
-    const normName = (s.name || '').trim().toLowerCase();
+    const normRoll = (s.rollNumber || '').trim().toLowerCase();
     
     // Skip if this exact ID has already been included
     if (seenIds.has(rawId)) continue;
     
-    // Skip if a student with the exact same non-empty name is already in the roster
-    if (normName && seenNames.has(normName)) continue;
+    // Skip if another student with the exact same non-empty rollNumber has already been included
+    if (normRoll && seenRolls.has(normRoll)) continue;
 
     seenIds.add(rawId);
-    if (normName) seenNames.add(normName);
+    if (normRoll) seenRolls.add(normRoll);
     clean.push(s);
   }
 
@@ -644,18 +644,17 @@ export function assignStudentsToCorrectClassesFromId(students: Student[]): Stude
  */
 export function restoreAllStudentsToAdmittedLevels(students: Student[]): Student[] {
   const deletedIds = new Set(getDeletedStudentIds().map(id => id.trim().toLowerCase()));
-  const isDeleted = (id?: string, roll?: string, name?: string) => {
+  const isDeleted = (id?: string, roll?: string, _name?: string) => {
     if (id && deletedIds.has(id.trim().toLowerCase())) return true;
     if (roll) {
       const r = roll.trim().toLowerCase();
       const cleanR = r.replace(/[^a-z0-9]/g, '');
       if (deletedIds.has(r) || (cleanR && deletedIds.has(cleanR))) return true;
     }
-    if (name && deletedIds.has(name.trim().toLowerCase())) return true;
     return false;
   };
 
-  const initialFiltered = INITIAL_STUDENTS.filter(s => !isDeleted(s.id, s.rollNumber, s.name));
+  const initialFiltered = INITIAL_STUDENTS.filter(s => !isDeleted(s.id, s.rollNumber));
   const initialMap = new Map(initialFiltered.map(s => [s.id, s]));
   const initialNameMap = new Map(initialFiltered.map(s => [(s.name || '').toLowerCase().trim(), s]));
   const initialRollMap = new Map(initialFiltered.map(s => [(s.rollNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), s]));
@@ -881,20 +880,19 @@ export function restoreStudentsFromTerminalReport(
     });
   }
 
-  // 3. Reconcile with INITIAL_STUDENTS (the foundational 170 registered students, excluding deleted)
+  // 3. Reconcile with INITIAL_STUDENTS (the foundational registered students, excluding deleted)
   const deletedIds = new Set(getDeletedStudentIds().map(id => id.trim().toLowerCase()));
-  const isDeleted = (id?: string, roll?: string, name?: string) => {
+  const isDeleted = (id?: string, roll?: string, _name?: string) => {
     if (id && deletedIds.has(id.trim().toLowerCase())) return true;
     if (roll) {
       const r = roll.trim().toLowerCase();
       const cleanR = r.replace(/[^a-z0-9]/g, '');
       if (deletedIds.has(r) || (cleanR && deletedIds.has(cleanR))) return true;
     }
-    if (name && deletedIds.has(name.trim().toLowerCase())) return true;
     return false;
   };
 
-  const initialFiltered = INITIAL_STUDENTS.filter(s => !isDeleted(s.id, s.rollNumber, s.name));
+  const initialFiltered = INITIAL_STUDENTS.filter(s => !isDeleted(s.id, s.rollNumber));
   const initialMap = new Map(initialFiltered.map(s => [s.id, s]));
   const initialNameMap = new Map(initialFiltered.map(s => [(s.name || '').toLowerCase().trim(), s]));
   const initialRollMap = new Map(initialFiltered.map(s => [(s.rollNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), s]));

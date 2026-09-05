@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord, BookStockItem, BookSaleRecord } from '../types';
 import { DEFAULT_INVENTORY_DATA, DEFAULT_BOOK_STOCK_ITEMS, DEFAULT_BOOK_SALES } from '../data/mockData';
+import { isDemoStudent } from '../data/demoPupils';
 
 // Helper to retrieve credentials from env or localStorage
 export function getSupabaseCredentials() {
@@ -1504,7 +1505,7 @@ export function removeDeletedTeacherId(id: string): void {
 // 2. SYNC STUDENTS
 export async function fetchSupabaseStudents(): Promise<Student[] | null> {
   const filterDeleted = (list: Student[]) => {
-    return list.filter(s => !isStudentDeleted(s));
+    return list.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
   };
 
   // Helper to query Server / CDN endpoint
@@ -1518,7 +1519,7 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       });
       if (res.ok) {
         const json = await res.json();
-        if (json && Array.isArray(json.students) && json.students.length > 0) {
+        if (json && Array.isArray(json.students)) {
           return filterDeleted(json.students);
         }
       }
@@ -1528,19 +1529,44 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     return null;
   };
 
-  const client = getSupabaseClient();
-  if (!client) {
+  const getMergedFallback = async (): Promise<Student[] | null> => {
     const serverResult = await fetchFromServer();
-    if (serverResult && serverResult.length > 0) return serverResult;
-
-    const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
+    const cached = localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students');
+    let localParsed: Student[] = [];
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return filterDeleted(parsed);
+        if (Array.isArray(parsed)) localParsed = filterDeleted(parsed);
       } catch (e) {}
     }
+
+    if (serverResult !== null || localParsed.length > 0) {
+      const studentMap = new Map<string, Student>();
+      (serverResult || []).forEach(s => {
+        if (s && s.id) studentMap.set(s.id, s);
+      });
+      localParsed.forEach(s => {
+        if (s && s.id) {
+          const existing = studentMap.get(s.id);
+          if (!existing) {
+            studentMap.set(s.id, s);
+          } else {
+            const localTime = (s as any).updated_at || (s as any).updatedAt ? new Date((s as any).updated_at || (s as any).updatedAt).getTime() : 0;
+            const remoteTime = (existing as any).updated_at || (existing as any).updatedAt ? new Date((existing as any).updated_at || (existing as any).updatedAt).getTime() : 0;
+            if (localTime >= remoteTime) {
+              studentMap.set(s.id, s);
+            }
+          }
+        }
+      });
+      return Array.from(studentMap.values());
+    }
     return null;
+  };
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return await getMergedFallback();
   }
   try {
     // 1. Sync remote tombstones from ea_deleted_records and ea_sync_logs to ensure global deletion propagation
@@ -1580,28 +1606,11 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     const { data, error } = await client.from('ea_students').select('*');
     if (error) {
       console.warn('[Fetch Students] Supabase query error, falling back to server/cache:', error.message || error);
-      const serverResult = await fetchFromServer();
-      if (serverResult && serverResult.length > 0) return serverResult;
-
-      const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) return filterDeleted(parsed);
-        } catch (e) {}
-      }
-      return null;
+      return await getMergedFallback();
     }
     if (!data || data.length === 0) {
-      const serverResult = await fetchFromServer();
-      if (serverResult && serverResult.length > 0) return serverResult;
-      const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) return filterDeleted(parsed);
-        } catch (e) {}
-      }
+      const fallback = await getMergedFallback();
+      if (fallback && fallback.length > 0) return fallback;
       return [];
     }
     const mapped = data.map(item => ({
@@ -1639,17 +1648,7 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
 
     return cleanMapped;
   } catch (err: any) {
-    const serverResult = await fetchFromServer();
-    if (serverResult && serverResult.length > 0) return serverResult;
-
-    const cached = localStorage.getItem('mock_supabase_ea_students') || localStorage.getItem('ea_students');
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) return filterDeleted(parsed);
-      } catch (e) {}
-    }
-    return null;
+    return await getMergedFallback();
   }
 }
 
@@ -1680,8 +1679,7 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
     }
     localStorage.setItem('ea_students', JSON.stringify(updatedList));
     localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updatedList));
-    window.dispatchEvent(new Event('storage'));
-    window.dispatchEvent(new Event('ea_students_updated'));
+    window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'internal_save' } }));
   } catch (e) {}
 
   // 3. Immediately dispatch to Server / CDN API
@@ -1774,18 +1772,17 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
     });
   }
 
-  // Filter out any students that have been marked deleted
-  const validStudents = students.filter(s => !isStudentDeleted(s));
+  // Filter out any students that have been marked deleted or demo
+  const validStudents = students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
   // Always persist to local cache immediately to guarantee offline/local persistence
   localStorage.setItem('mock_supabase_ea_students', JSON.stringify(validStudents));
   localStorage.setItem('ea_students', JSON.stringify(validStudents));
-  window.dispatchEvent(new Event('storage'));
-  window.dispatchEvent(new Event('ea_students_updated'));
+  window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'internal_save' } }));
 
   // Sync to Server / CDN API
   try {
-    fetch('/api/students', {
+    await fetch('/api/students', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ students: validStudents })
@@ -2097,8 +2094,7 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
       }
     }
 
-    window.dispatchEvent(new Event('storage'));
-    window.dispatchEvent(new Event('ea_students_updated'));
+    window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'delete' } }));
     window.dispatchEvent(new Event('ea_grades_updated'));
     window.dispatchEvent(new Event('ea_attendance_updated'));
     window.dispatchEvent(new Event('ea_bills_updated'));

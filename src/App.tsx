@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Student, User, Subject, ReportConfig, Grade, Attendance, StudentBill, DailyAttendanceRecord } from './types';
 import { 
   INITIAL_CLASSES, 
@@ -48,6 +48,7 @@ import {
 } from './lib/supabase';
 import { isAutoPromotionDue, promoteStudents, restoreAllStudentsToAdmittedLevels, deduplicateStudents, restoreStudentsFromTerminalReport } from './services/promotionService';
 import { getCanonicalSubjectId } from './utils/subjectUtils';
+import { isDemoStudent } from './data/demoPupils';
 
 
 export default function App() {
@@ -151,6 +152,12 @@ export default function App() {
   const [showSyncErrorModal, setShowSyncErrorModal] = useState(false);
   const [copiedRepair, setCopiedRepair] = useState(false);
   const isPullingRemoteRef = useRef(false);
+  const lastSavedStudentsSigRef = useRef<string>('');
+  const lastSavedTeachersSigRef = useRef<string>('');
+  const lastSavedGradesSigRef = useRef<string>('');
+  const lastSavedAttendanceSigRef = useRef<string>('');
+  const lastSavedConfigSigRef = useRef<string>('');
+  const lastSavedBillsSigRef = useRef<string>('');
 
   // Check connection status
   const checkSupabaseStatus = async () => {
@@ -289,7 +296,7 @@ export default function App() {
 
       if (studentsFetchSuccess && sStudents !== null) {
         let cleanStudents = sStudents.filter(
-          s => !teacherIds.has(s.id) && !teacherEmails.has(s.guardianEmail.toLowerCase())
+          s => !teacherIds.has(s.id) && !teacherEmails.has((s.guardianEmail || '').toLowerCase())
         );
 
         // Auto-heal if any students were corrupted into "Graduated"
@@ -302,44 +309,45 @@ export default function App() {
           );
         }
 
-        const hasBeenInitialized = localStorage.getItem('ea_has_initialized') === 'true' || getDeletedStudentIds().length > 0;
-        cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s));
+        cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
-        if (cleanStudents.length === 0 && localStudents.length > 0 && !hasBeenInitialized) {
-          let cleanLocalStudents = localStudents.filter(
-            s => !teacherIds.has(s.id)
-          ).filter(s => !isStudentDeleted(s));
-          cleanLocalStudents = deduplicateStudents(cleanLocalStudents);
-          try {
-            await saveSupabaseStudents(cleanLocalStudents);
-            setStudents(cleanLocalStudents);
-            localStorage.setItem('ea_students', JSON.stringify(cleanLocalStudents));
-            localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanLocalStudents));
-            localStorage.setItem('ea_has_initialized', 'true');
-          } catch (seedErr) {
-            console.error("Failed seeding students to Supabase:", seedErr);
-            setStudents(cleanLocalStudents);
+        // Merge remote students with local cache non-destructively so newly admitted students are never lost
+        const studentMap = new Map<string, Student>();
+        cleanStudents.forEach(s => {
+          if (s && s.id) studentMap.set(s.id, s);
+        });
+        localStudents.forEach(s => {
+          if (s && s.id && !teacherIds.has(s.id) && !isStudentDeleted(s) && !isDemoStudent(s)) {
+            const existing = studentMap.get(s.id);
+            if (!existing) {
+              studentMap.set(s.id, s);
+            } else {
+              const localTime = (s as any).updated_at || (s as any).updatedAt ? new Date((s as any).updated_at || (s as any).updatedAt).getTime() : 0;
+              const remoteTime = (existing as any).updated_at || (existing as any).updatedAt ? new Date((existing as any).updated_at || (existing as any).updatedAt).getTime() : 0;
+              if (localTime >= remoteTime) {
+                studentMap.set(s.id, s);
+              }
+            }
           }
-        } else {
-          let activeStudents = cleanStudents;
-          if (activeStudents.length > 0) {
-            const { restoredStudents } = restoreStudentsFromTerminalReport(activeStudents, localGrades);
-            activeStudents = restoredStudents.filter(s => !isStudentDeleted(s));
-          }
-          activeStudents = deduplicateStudents(activeStudents);
-          setStudents(activeStudents);
-          localStorage.setItem('ea_students', JSON.stringify(activeStudents));
-          localStorage.setItem('mock_supabase_ea_students', JSON.stringify(activeStudents));
-          localStorage.setItem('ea_has_initialized', 'true');
+        });
+
+        let activeStudents = Array.from(studentMap.values());
+        if (activeStudents.length > 0) {
+          const { restoredStudents } = restoreStudentsFromTerminalReport(activeStudents, localGrades);
+          activeStudents = restoredStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
         }
+        activeStudents = deduplicateStudents(activeStudents);
+        setStudents(activeStudents);
+        localStorage.setItem('ea_students', JSON.stringify(activeStudents));
+        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(activeStudents));
+        localStorage.setItem('ea_has_initialized', 'true');
       } else {
-        const hasBeenInitialized = localStorage.getItem('ea_has_initialized') === 'true' || getDeletedStudentIds().length > 0;
         let cleanLocalStudents = localStudents.filter(
           s => !teacherIds.has(s.id)
-        ).filter(s => !isStudentDeleted(s));
+        ).filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
         if (cleanLocalStudents.length > 0) {
           const { restoredStudents } = restoreStudentsFromTerminalReport(cleanLocalStudents, localGrades);
-          cleanLocalStudents = restoredStudents.filter(s => !isStudentDeleted(s));
+          cleanLocalStudents = restoredStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
         }
         cleanLocalStudents = deduplicateStudents(cleanLocalStudents);
         setStudents(cleanLocalStudents);
@@ -499,7 +507,7 @@ export default function App() {
   };
 
   // Push all local states to Supabase
-  const handlePushToSupabase = async (
+  const handlePushToSupabase = useCallback(async (
     customStudents?: Student[],
     customConfig?: ReportConfig,
     customTeachers?: User[],
@@ -509,11 +517,8 @@ export default function App() {
   ) => {
     setIsSupabaseSyncing(true);
     try {
-      const active = await checkSupabaseStatus();
-      if (!active) {
-        setIsSupabaseSyncing(false);
-        return false;
-      }
+      // Check status for UI indicator, but do not block server and local persistence
+      await checkSupabaseStatus();
 
       const targetConfig = customConfig || config;
       const targetStudents = customStudents || students;
@@ -545,7 +550,7 @@ export default function App() {
       setIsSupabaseSyncing(false);
       return false;
     }
-  };
+  }, [config, students, teachers, grades, attendance, bills]);
 
   // 1. INITIALIZE MASTER STATES FROM LOCALSTORAGE OR MOCK DATA
   useEffect(() => {
@@ -586,14 +591,14 @@ export default function App() {
       s => !teacherIds.has(s.id)
     );
 
-    // CRITICAL: Filter out any deleted students
-    cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s));
+    // CRITICAL: Filter out any deleted students and demo pupils
+    cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
     cleanStudents = deduplicateStudents(cleanStudents);
 
     if (cleanStudents.length > 0) {
       // Ensure students are restored with correct classes from terminal reports without repopulating deleted pupils
       const { restoredStudents } = restoreStudentsFromTerminalReport(cleanStudents, []);
-      cleanStudents = restoredStudents.filter(s => !isStudentDeleted(s));
+      cleanStudents = restoredStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
     }
 
     setStudents(cleanStudents);
@@ -791,6 +796,10 @@ export default function App() {
     if (!isInitialized) return;
     localStorage.setItem('ea_students', JSON.stringify(students));
     if (isPullingRemoteRef.current) return;
+    const sig = students.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+    if (lastSavedStudentsSigRef.current === sig) return;
+    lastSavedStudentsSigRef.current = sig;
+
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       setSyncStatus('syncing');
@@ -816,6 +825,10 @@ export default function App() {
     if (!isInitialized) return;
     localStorage.setItem('ea_teachers', JSON.stringify(teachers));
     if (isPullingRemoteRef.current) return;
+    const sig = teachers.map(t => `${t.id}:${t.email}:${t.role}:${t.className}`).join('|');
+    if (lastSavedTeachersSigRef.current === sig) return;
+    lastSavedTeachersSigRef.current = sig;
+
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       setSyncStatus('syncing');
@@ -841,6 +854,10 @@ export default function App() {
     if (!isInitialized) return;
     localStorage.setItem('ea_grades', JSON.stringify(grades));
     if (isPullingRemoteRef.current) return;
+    const sig = grades.map(g => `${g.id}:${g.studentId}:${g.subjectId}:${g.totalScore}`).join('|');
+    if (lastSavedGradesSigRef.current === sig) return;
+    lastSavedGradesSigRef.current = sig;
+
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       setSyncStatus('syncing');
@@ -866,6 +883,10 @@ export default function App() {
     if (!isInitialized) return;
     localStorage.setItem('ea_attendance', JSON.stringify(attendance));
     if (isPullingRemoteRef.current) return;
+    const sig = attendance.map(a => `${a.id}:${a.studentId}:${a.totalDaysPresent}:${a.totalDaysOpened}`).join('|');
+    if (lastSavedAttendanceSigRef.current === sig) return;
+    lastSavedAttendanceSigRef.current = sig;
+
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       setSyncStatus('syncing');
@@ -891,6 +912,10 @@ export default function App() {
     if (!isInitialized) return;
     localStorage.setItem('ea_config', JSON.stringify(config));
     if (isPullingRemoteRef.current) return;
+    const sig = `${config.term}:${config.schoolYear}:${config.reopeningDate}:${config.vacationDate}:${config.lastPromotedYear}`;
+    if (lastSavedConfigSigRef.current === sig) return;
+    lastSavedConfigSigRef.current = sig;
+
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       setSyncStatus('syncing');
@@ -916,6 +941,10 @@ export default function App() {
     if (!isInitialized) return;
     localStorage.setItem('ea_bills', JSON.stringify(bills));
     if (isPullingRemoteRef.current) return;
+    const sig = bills.map(b => `${b.id}:${b.studentId}:${b.totalPayable}`).join('|');
+    if (lastSavedBillsSigRef.current === sig) return;
+    lastSavedBillsSigRef.current = sig;
+
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       saveSupabaseBills(bills).then(ok => {
@@ -930,14 +959,24 @@ export default function App() {
 
   // Listen for local or multi-tab student deletion/update events
   useEffect(() => {
-    const handleStudentsUpdated = () => {
+    const handleStudentsUpdated = (e?: Event) => {
+      if (e && (e as CustomEvent).detail?.source === 'internal_save') return;
+      if (e instanceof StorageEvent && e.key && e.key !== 'ea_students') return;
       try {
         const raw = localStorage.getItem('ea_students');
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
             const filtered = parsed.filter((s: Student) => !isStudentDeleted(s));
-            setStudents(filtered);
+            setStudents(prev => {
+              if (prev.length === filtered.length) {
+                const prevSig = prev.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+                const nextSig = filtered.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+                if (prevSig === nextSig) return prev;
+              }
+              lastSavedStudentsSigRef.current = filtered.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+              return filtered;
+            });
           }
         }
       } catch (e) {}
@@ -991,8 +1030,8 @@ export default function App() {
         if (remoteStudents && Array.isArray(remoteStudents)) {
           setStudents(prev => {
             const deletedIds = new Set(getDeletedStudentIds().map(x => String(x).toLowerCase().trim()));
-            const cleanRemote = remoteStudents.filter(s => s && s.id && !deletedIds.has(s.id.toLowerCase().trim()));
-            const cleanPrev = prev.filter(s => s && s.id && !deletedIds.has(s.id.toLowerCase().trim()));
+            const cleanRemote = remoteStudents.filter(s => s && s.id && !deletedIds.has(s.id.toLowerCase().trim()) && !isDemoStudent(s));
+            const cleanPrev = prev.filter(s => s && s.id && !deletedIds.has(s.id.toLowerCase().trim()) && !isDemoStudent(s));
 
             // Build student map preserving any local newly added students
             const studentMap = new Map<string, Student>();
@@ -1006,8 +1045,8 @@ export default function App() {
               if (!existing) {
                 studentMap.set(s.id, s);
               } else {
-                const localUpdated = (s as any).updatedAt ? new Date((s as any).updatedAt).getTime() : 0;
-                const remoteUpdated = (existing as any).updatedAt ? new Date((existing as any).updatedAt).getTime() : 0;
+                const localUpdated = (s as any).updated_at || (s as any).updatedAt ? new Date((s as any).updated_at || (s as any).updatedAt).getTime() : 0;
+                const remoteUpdated = (existing as any).updated_at || (existing as any).updatedAt ? new Date((existing as any).updated_at || (existing as any).updatedAt).getTime() : 0;
                 if (localUpdated > remoteUpdated) {
                   studentMap.set(s.id, s);
                 }

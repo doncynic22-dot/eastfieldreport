@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill, User } from '../types';
 import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History, Contact, PhoneCall, Briefcase, BadgeCheck, UserCheck, MapPin, IdCard, Zap, Eye, Database, RefreshCw, Library } from 'lucide-react';
 import ReportPDF from './ReportPDF';
@@ -1037,9 +1037,11 @@ export default function AdminDashboard({
   const jhsStudentsCount = students.filter((s) => s.level === 'JHS').length;
 
   // Class Lists for dropdown queries
-  const standardClasses = [...classes.NURSERY, ...kgClasses, ...classes.PRIMARY, ...classes.JHS];
-  const customStudentClasses = Array.from(new Set(students.map((s) => s.className).filter(Boolean)));
-  const allClassNames = Array.from(new Set([...standardClasses, ...customStudentClasses]));
+  const allClassNames = useMemo(() => {
+    const standardClasses = [...(classes.NURSERY || []), ...(kgClasses || []), ...(classes.PRIMARY || []), ...(classes.JHS || [])];
+    const customStudentClasses = Array.from(new Set(students.map((s) => s.className).filter(Boolean)));
+    return Array.from(new Set([...standardClasses, ...customStudentClasses]));
+  }, [kgClasses, students]);
 
   // Calculate Overall Averages
   const levelAverages = (level: AcademicLevel) => {
@@ -1507,7 +1509,7 @@ export default function AdminDashboard({
         }
       }
     }
-  }, [students, selectedClass, selectedStudentId, allClassNames]);
+  }, [students.length, selectedClass, selectedStudentId, allClassNames]);
 
   // Auto-heal students who are marked as "Graduated" / "Graduated JHS"
   useEffect(() => {
@@ -1515,17 +1517,19 @@ export default function AdminDashboard({
       const hasGraduated = students.some((s) => (s.className || '').toLowerCase().includes('graduated'));
       if (hasGraduated) {
         const restored = restoreAllStudentsToAdmittedLevels(students);
-        setStudents(restored);
-        localStorage.setItem('ea_students', JSON.stringify(restored));
-        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(restored));
-        const creds = getSupabaseCredentials();
-        if (creds.isConfigured) {
-          saveSupabaseStudents(restored).catch((err) => console.warn('Sync restored students error', err));
-          onPushToSupabase?.(restored, config);
+        const stillGraduated = restored.some((s) => (s.className || '').toLowerCase().includes('graduated'));
+        if (!stillGraduated) {
+          setStudents(restored);
+          localStorage.setItem('ea_students', JSON.stringify(restored));
+          localStorage.setItem('mock_supabase_ea_students', JSON.stringify(restored));
+          const creds = getSupabaseCredentials();
+          if (creds.isConfigured) {
+            saveSupabaseStudents(restored).catch((err) => console.warn('Sync restored students error', err));
+          }
         }
       }
     }
-  }, [students, config, onPushToSupabase]);
+  }, [students.length]);
 
   // Helper to compute student statistics for email report cards
   const getStudentStatsForEmail = (studentId: string) => {
