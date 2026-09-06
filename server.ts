@@ -3,8 +3,9 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 
-// Storage path for student registry cache
+// Storage path for student registry cache and master persistent database
 const STUDENTS_CACHE_FILE = path.join(process.cwd(), "students_registry.json");
+const DB_FILE = path.join(process.cwd(), "school_database.json");
 
 const DEMO_PUPIL_IDS = new Set<string>([
   "st-105","st-110","st-n1-03","st-n1-04","st-n1-05","st-n1-06","st-n1-07","st-n1-08","st-n1-09","st-n1-10","st-n1-11","st-n1-12","st-n1-13",
@@ -30,6 +31,10 @@ function isDemoStudent(s: any): boolean {
 
 function loadServerStudents(): any[] {
   try {
+    const db = dbCache || (fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, "utf-8")) : null);
+    if (db && db.rosterCleared) {
+      return [];
+    }
     if (fs.existsSync(STUDENTS_CACHE_FILE)) {
       const data = fs.readFileSync(STUDENTS_CACHE_FILE, "utf-8");
       const parsed = JSON.parse(data);
@@ -45,9 +50,156 @@ function saveServerStudents(students: any[]): boolean {
   try {
     const clean = (students || []).filter(s => !isDemoStudent(s));
     fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(clean, null, 2), "utf-8");
+    // Also update unified server database
+    const db = loadServerDatabase();
+    db.students = clean;
+    if (clean.length === 0) {
+      db.rosterCleared = true;
+      db.rosterClearedAt = new Date().toISOString();
+      db.grades = [];
+      db.attendance = [];
+      db.bills = [];
+      db.dailyAttendance = [];
+      db.jhsMockExams = [];
+    } else {
+      db.rosterCleared = false;
+    }
+    saveServerDatabase(db, "students", clean);
     return true;
   } catch (err) {
     console.warn("[Server Students] Failed to write students cache:", err);
+    return false;
+  }
+}
+
+// Master Server Database structure
+interface ServerDatabase {
+  version: number;
+  lastUpdated: string;
+  config: any;
+  teachers: any[];
+  students: any[];
+  grades: any[];
+  attendance: any[];
+  dailyAttendance: any[];
+  bills: any[];
+  feePayments: any[];
+  feeStructures: any[];
+  dailyCollections: any[];
+  inventory: any[];
+  bookStock: any[];
+  bookSales: any[];
+  jhsMockExams: any[];
+  deletedStudentIds: string[];
+  deletedTeacherIds: string[];
+  rosterCleared?: boolean;
+  rosterClearedAt?: string;
+}
+
+let dbCache: ServerDatabase | null = null;
+const sseClients = new Set<express.Response>();
+
+function broadcastSse(type: string, entity: string, payload?: any) {
+  const currentDb = dbCache || loadServerDatabase();
+  const eventData = JSON.stringify({
+    type,
+    entity,
+    version: currentDb.version,
+    payload,
+    timestamp: currentDb.lastUpdated
+  });
+
+  for (const client of sseClients) {
+    try {
+      client.write(`event: sync\ndata: ${eventData}\n\n`);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
+
+function getDefaultDatabase(): ServerDatabase {
+  const existingStudents = loadServerStudents();
+  return {
+    version: 1,
+    lastUpdated: new Date().toISOString(),
+    config: null,
+    teachers: [],
+    students: existingStudents,
+    grades: [],
+    attendance: [],
+    dailyAttendance: [],
+    bills: [],
+    feePayments: [],
+    feeStructures: [],
+    dailyCollections: [],
+    inventory: [],
+    bookStock: [],
+    bookSales: [],
+    jhsMockExams: [],
+    deletedStudentIds: [],
+    deletedTeacherIds: []
+  };
+}
+
+function loadServerDatabase(): ServerDatabase {
+  if (dbCache) return dbCache;
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const data = fs.readFileSync(DB_FILE, "utf-8");
+      const parsed = JSON.parse(data);
+      if (parsed && typeof parsed === "object") {
+        if (!parsed.rosterCleared && (!Array.isArray(parsed.students) || parsed.students.length === 0)) {
+          const fallbackStudents = loadServerStudents();
+          if (fallbackStudents.length > 0) {
+            parsed.students = fallbackStudents;
+          }
+        }
+        dbCache = {
+          ...getDefaultDatabase(),
+          ...parsed,
+          students: parsed.rosterCleared ? [] : (parsed.students || []).filter((s: any) => !isDemoStudent(s))
+        };
+        return dbCache!;
+      }
+    }
+  } catch (err) {
+    console.warn("[Server DB] Failed reading school_database.json:", err);
+  }
+
+  dbCache = getDefaultDatabase();
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(dbCache, null, 2), "utf-8");
+  } catch (e) {}
+  return dbCache;
+}
+
+function saveServerDatabase(db: ServerDatabase, broadcastEntity?: string, payload?: any): boolean {
+  try {
+    db.version = (db.version || 0) + 1;
+    db.lastUpdated = new Date().toISOString();
+    db.students = (db.students || []).filter(s => !isDemoStudent(s));
+    dbCache = db;
+
+    // Atomic write to disk
+    const tmpFile = `${DB_FILE}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2), "utf-8");
+    fs.renameSync(tmpFile, DB_FILE);
+
+    // Also synchronize legacy students_registry.json
+    try {
+      fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(db.students, null, 2), "utf-8");
+    } catch (e) {}
+
+    // Broadcast update via SSE to all connected browsers & devices
+    if (broadcastEntity) {
+      broadcastSse("UPDATE", broadcastEntity, payload);
+    } else {
+      broadcastSse("SYNC_ALL", "all", null);
+    }
+    return true;
+  } catch (err) {
+    console.error("[Server DB] Failed saving database:", err);
     return false;
   }
 }
@@ -56,7 +208,37 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  // Support large sync payloads (up to 50MB) for full school rosters, photos, grades & backups
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // Handle PayloadTooLargeError or malformed JSON payloads gracefully
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err && (err.type === "entity.too.large" || err.status === 413 || err.name === "PayloadTooLargeError")) {
+      console.warn(`[Payload Warning] Request entity too large on ${req.method} ${req.path}`);
+      return res.status(413).json({
+        status: "error",
+        error: "PayloadTooLargeError",
+        message: "Request entity is too large. Please reduce payload size or image resolution."
+      });
+    }
+    if (err && err instanceof SyntaxError && "body" in err) {
+      return res.status(400).json({ status: "error", message: "Invalid JSON format." });
+    }
+    next(err);
+  });
+
+  // 0. CDN & Edge Proxy Anti-Caching Middleware for all API routes
+  // Guarantees that Google Cloud CDN, Cloudflare, proxies, and mobile browsers NEVER serve stale responses
+  app.use("/api", (req, res, next) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Cloudflare-CDN-Cache-Control", "no-store");
+    next();
+  });
 
   // API Route: Check Arkesel API Balance
   app.get("/api/sms/balance", async (req, res) => {
@@ -426,6 +608,18 @@ async function startServer() {
       return res.status(400).json({ status: "error", message: "Expected students array" });
     }
 
+    if (students.length === 0) {
+      saveServerStudents([]);
+      return res.status(200).json({
+        status: "success",
+        count: 0,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const db = loadServerDatabase();
+    db.rosterCleared = false;
+
     // Merge non-destructively with existing students in server cache
     const currentStudents = loadServerStudents();
     const studentMap = new Map<string, any>();
@@ -471,6 +665,319 @@ async function startServer() {
       status: "success",
       count: updated.length
     });
+  });
+
+  // ==========================================
+  // REAL-TIME CROSS-DEVICE SYNC & SSE STREAM
+  // ==========================================
+
+  // GET /api/sync/stream: Real-time Server-Sent Events stream for cross-device updates
+  app.get("/api/sync/stream", (req, res) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform, no-store");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    
+    // Flush initial connection packet
+    const db = loadServerDatabase();
+    res.write(`event: connected\ndata: ${JSON.stringify({ status: "connected", version: db.version, timestamp: new Date().toISOString() })}\n\n`);
+
+    sseClients.add(res);
+    console.log(`[Global Sync SSE] Client connected. Total active streams: ${sseClients.size}`);
+
+    req.on("close", () => {
+      sseClients.delete(res);
+      console.log(`[Global Sync SSE] Client disconnected. Remaining streams: ${sseClients.size}`);
+    });
+  });
+
+  // Keep-alive heartbeat to prevent CDN, GCP Cloud Run, and mobile proxy timeouts
+  setInterval(() => {
+    for (const client of sseClients) {
+      try {
+        client.write(`: ping\n\n`);
+      } catch {
+        sseClients.delete(client);
+      }
+    }
+  }, 20000);
+
+  // GET /api/sync/version: Fast, lightweight version check
+  app.get("/api/sync/version", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({
+      status: "success",
+      version: db.version,
+      lastUpdated: db.lastUpdated,
+      counts: {
+        students: db.students?.length || 0,
+        teachers: db.teachers?.length || 0,
+        grades: db.grades?.length || 0,
+        attendance: db.attendance?.length || 0,
+        bills: db.bills?.length || 0,
+        feePayments: db.feePayments?.length || 0
+      }
+    });
+  });
+
+  // GET /api/sync/all: Retrieve complete school database state
+  app.get("/api/sync/all", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({
+      status: "success",
+      version: db.version,
+      lastUpdated: db.lastUpdated,
+      data: db
+    });
+  });
+
+  // POST /api/sync/all: Bulk or partial update to master database
+  app.post("/api/sync/all", (req, res) => {
+    const incoming = req.body;
+    if (!incoming || typeof incoming !== "object") {
+      return res.status(400).json({ status: "error", message: "Invalid payload" });
+    }
+
+    const db = loadServerDatabase();
+
+    if (incoming.config) db.config = incoming.config;
+    if (Array.isArray(incoming.teachers)) db.teachers = incoming.teachers;
+    if (Array.isArray(incoming.students)) {
+      const cleanStudents = incoming.students.filter((s: any) => !isDemoStudent(s));
+      db.students = cleanStudents;
+      if (cleanStudents.length === 0) {
+        db.rosterCleared = true;
+        db.rosterClearedAt = new Date().toISOString();
+        try {
+          fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify([], null, 2), "utf-8");
+        } catch (e) {}
+      } else {
+        db.rosterCleared = false;
+      }
+    }
+    if (incoming.rosterCleared === true) {
+      db.students = [];
+      db.rosterCleared = true;
+      db.rosterClearedAt = new Date().toISOString();
+      try {
+        fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify([], null, 2), "utf-8");
+      } catch (e) {}
+    }
+    if (Array.isArray(incoming.grades)) db.grades = incoming.grades;
+    if (Array.isArray(incoming.attendance)) db.attendance = incoming.attendance;
+    if (Array.isArray(incoming.dailyAttendance)) db.dailyAttendance = incoming.dailyAttendance;
+    if (Array.isArray(incoming.bills)) db.bills = incoming.bills;
+    if (Array.isArray(incoming.feePayments)) db.feePayments = incoming.feePayments;
+    if (Array.isArray(incoming.feeStructures)) db.feeStructures = incoming.feeStructures;
+    if (Array.isArray(incoming.dailyCollections)) db.dailyCollections = incoming.dailyCollections;
+    if (Array.isArray(incoming.inventory)) db.inventory = incoming.inventory;
+    if (Array.isArray(incoming.bookStock)) db.bookStock = incoming.bookStock;
+    if (Array.isArray(incoming.bookSales)) db.bookSales = incoming.bookSales;
+    if (Array.isArray(incoming.jhsMockExams)) db.jhsMockExams = incoming.jhsMockExams;
+    if (Array.isArray(incoming.deletedStudentIds)) db.deletedStudentIds = incoming.deletedStudentIds;
+    if (Array.isArray(incoming.deletedTeacherIds)) db.deletedTeacherIds = incoming.deletedTeacherIds;
+
+    saveServerDatabase(db);
+    console.log(`[Global Master Sync] Full database synchronized. Version: ${db.version}`);
+
+    return res.status(200).json({
+      status: "success",
+      version: db.version,
+      lastUpdated: db.lastUpdated
+    });
+  });
+
+  // ==========================================
+  // SPECIFIC ENTITY PERSISTENCE ENDPOINTS
+  // ==========================================
+
+  // Config: GET & POST
+  app.get("/api/config", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.config, version: db.version });
+  });
+
+  app.post("/api/config", (req, res) => {
+    const config = req.body?.config || req.body;
+    if (!config) return res.status(400).json({ status: "error", message: "Missing config" });
+    const db = loadServerDatabase();
+    db.config = config;
+    saveServerDatabase(db, "config", config);
+    return res.status(200).json({ status: "success", version: db.version });
+  });
+
+  // Teachers: GET & POST
+  app.get("/api/teachers", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.teachers || [], count: (db.teachers || []).length, version: db.version });
+  });
+
+  app.post("/api/teachers", (req, res) => {
+    const teachers = req.body?.teachers || req.body;
+    if (!Array.isArray(teachers)) return res.status(400).json({ status: "error", message: "Expected teachers array" });
+    const db = loadServerDatabase();
+    db.teachers = teachers;
+    saveServerDatabase(db, "teachers", teachers);
+    return res.status(200).json({ status: "success", count: teachers.length, version: db.version });
+  });
+
+  // Grades: GET & POST
+  app.get("/api/grades", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.grades || [], count: (db.grades || []).length, version: db.version });
+  });
+
+  app.post("/api/grades", (req, res) => {
+    const grades = req.body?.grades || req.body;
+    if (!Array.isArray(grades)) return res.status(400).json({ status: "error", message: "Expected grades array" });
+    const db = loadServerDatabase();
+    
+    // Merge grades intelligently by composite key (studentId + subjectId + term + academicYear)
+    const gradeMap = new Map<string, any>();
+    (db.grades || []).forEach(g => {
+      const key = `${g.studentId}_${g.subjectId}_${g.term}_${g.academicYear || ''}`;
+      gradeMap.set(key, g);
+    });
+    grades.forEach(g => {
+      const key = `${g.studentId}_${g.subjectId}_${g.term}_${g.academicYear || ''}`;
+      gradeMap.set(key, g);
+    });
+
+    db.grades = Array.from(gradeMap.values());
+    saveServerDatabase(db, "grades", db.grades);
+    return res.status(200).json({ status: "success", count: db.grades.length, version: db.version });
+  });
+
+  // Attendance: GET & POST
+  app.get("/api/attendance", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.attendance || [], count: (db.attendance || []).length, version: db.version });
+  });
+
+  app.post("/api/attendance", (req, res) => {
+    const attendance = req.body?.attendance || req.body;
+    if (!Array.isArray(attendance)) return res.status(400).json({ status: "error", message: "Expected attendance array" });
+    const db = loadServerDatabase();
+
+    const attMap = new Map<string, any>();
+    (db.attendance || []).forEach(a => {
+      const key = `${a.studentId}_${a.term}_${a.academicYear || ''}`;
+      attMap.set(key, a);
+    });
+    attendance.forEach(a => {
+      const key = `${a.studentId}_${a.term}_${a.academicYear || ''}`;
+      attMap.set(key, a);
+    });
+
+    db.attendance = Array.from(attMap.values());
+    saveServerDatabase(db, "attendance", db.attendance);
+    return res.status(200).json({ status: "success", count: db.attendance.length, version: db.version });
+  });
+
+  // Daily Attendance: GET & POST
+  app.get("/api/daily-attendance", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.dailyAttendance || [], version: db.version });
+  });
+
+  app.post("/api/daily-attendance", (req, res) => {
+    const records = req.body?.dailyAttendance || req.body;
+    if (!Array.isArray(records)) return res.status(400).json({ status: "error", message: "Expected array" });
+    const db = loadServerDatabase();
+    db.dailyAttendance = records;
+    saveServerDatabase(db, "dailyAttendance", records);
+    return res.status(200).json({ status: "success", version: db.version });
+  });
+
+  // Bills: GET & POST
+  app.get("/api/bills", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.bills || [], count: (db.bills || []).length, version: db.version });
+  });
+
+  app.post("/api/bills", (req, res) => {
+    const bills = req.body?.bills || req.body;
+    if (!Array.isArray(bills)) return res.status(400).json({ status: "error", message: "Expected bills array" });
+    const db = loadServerDatabase();
+    db.bills = bills;
+    saveServerDatabase(db, "bills", bills);
+    return res.status(200).json({ status: "success", count: bills.length, version: db.version });
+  });
+
+  // Fee Payments: GET & POST
+  app.get("/api/fee-payments", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.feePayments || [], count: (db.feePayments || []).length, version: db.version });
+  });
+
+  app.post("/api/fee-payments", (req, res) => {
+    const feePayments = req.body?.feePayments || req.body;
+    if (!Array.isArray(feePayments)) return res.status(400).json({ status: "error", message: "Expected feePayments array" });
+    const db = loadServerDatabase();
+    db.feePayments = feePayments;
+    saveServerDatabase(db, "feePayments", feePayments);
+    return res.status(200).json({ status: "success", count: feePayments.length, version: db.version });
+  });
+
+  // Fee Structures: GET & POST
+  app.get("/api/fee-structures", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.feeStructures || [], version: db.version });
+  });
+
+  app.post("/api/fee-structures", (req, res) => {
+    const structures = req.body?.feeStructures || req.body;
+    if (!Array.isArray(structures)) return res.status(400).json({ status: "error", message: "Expected feeStructures array" });
+    const db = loadServerDatabase();
+    db.feeStructures = structures;
+    saveServerDatabase(db, "feeStructures", structures);
+    return res.status(200).json({ status: "success", version: db.version });
+  });
+
+  // Inventory: GET & POST
+  app.get("/api/inventory", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.inventory || [], version: db.version });
+  });
+
+  app.post("/api/inventory", (req, res) => {
+    const inventory = req.body?.inventory || req.body;
+    if (!Array.isArray(inventory)) return res.status(400).json({ status: "error", message: "Expected inventory array" });
+    const db = loadServerDatabase();
+    db.inventory = inventory;
+    saveServerDatabase(db, "inventory", inventory);
+    return res.status(200).json({ status: "success", version: db.version });
+  });
+
+  // Book Stock: GET & POST
+  app.get("/api/book-stock", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.bookStock || [], version: db.version });
+  });
+
+  app.post("/api/book-stock", (req, res) => {
+    const bookStock = req.body?.bookStock || req.body;
+    if (!Array.isArray(bookStock)) return res.status(400).json({ status: "error", message: "Expected bookStock array" });
+    const db = loadServerDatabase();
+    db.bookStock = bookStock;
+    saveServerDatabase(db, "bookStock", bookStock);
+    return res.status(200).json({ status: "success", version: db.version });
+  });
+
+  // JHS Mock Exams: GET & POST
+  app.get("/api/jhs-mock-exams", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.jhsMockExams || [], version: db.version });
+  });
+
+  app.post("/api/jhs-mock-exams", (req, res) => {
+    const exams = req.body?.jhsMockExams || req.body;
+    if (!Array.isArray(exams)) return res.status(400).json({ status: "error", message: "Expected jhsMockExams array" });
+    const db = loadServerDatabase();
+    db.jhsMockExams = exams;
+    saveServerDatabase(db, "jhsMockExams", exams);
+    return res.status(200).json({ status: "success", version: db.version });
   });
 
   // Dedicated Service Worker and Manifest routes with appropriate headers

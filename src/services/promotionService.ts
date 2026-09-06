@@ -832,6 +832,24 @@ export function restoreStudentsFromTerminalReport(
   restoredCount: number;
   terminalReportCount: number;
 } {
+  // Defensive guard: If roster has been explicitly cleared or current list is empty without forced baseline, do not restore
+  if (!options?.forceSeedBaseline) {
+    if (typeof window !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true') {
+      return {
+        restoredStudents: [],
+        restoredCount: 0,
+        terminalReportCount: 0
+      };
+    }
+    if (currentStudents.length === 0) {
+      return {
+        restoredStudents: [],
+        restoredCount: 0,
+        terminalReportCount: 0
+      };
+    }
+  }
+
   // 1. Gather historical terminal assessment records from localStorage
   let historicalTerminalRecords: any[] = [];
   try {

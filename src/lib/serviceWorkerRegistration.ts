@@ -4,19 +4,29 @@
  * preventing data loss on unstable mobile networks.
  */
 
-// Install global listener to catch and handle any browser-level ServiceWorker script fetch errors
+// Install global listeners to catch and handle any browser-level ServiceWorker script fetch errors
 if (typeof window !== 'undefined') {
+  const isSwError = (msg: string) =>
+    msg.includes('ServiceWorker') ||
+    msg.includes('sw.js') ||
+    msg.includes('An unknown error occurred when fetching the script') ||
+    msg.includes('Failed to update a ServiceWorker');
+
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event.reason;
     const msg = String(reason?.message || reason || '');
-    if (
-      msg.includes('ServiceWorker') ||
-      msg.includes('sw.js') ||
-      msg.includes('An unknown error occurred when fetching the script')
-    ) {
+    if (isSwError(msg)) {
       // Prevent browser console uncaught error escalation
       event.preventDefault();
-      console.debug('[SW Safeguard] Handled background service worker event:', msg);
+      console.debug('[SW Safeguard] Handled background service worker rejection:', msg);
+    }
+  });
+
+  window.addEventListener('error', (event) => {
+    const msg = String(event?.message || '');
+    if (isSwError(msg)) {
+      event.preventDefault();
+      console.debug('[SW Safeguard] Handled background service worker error:', msg);
     }
   });
 }

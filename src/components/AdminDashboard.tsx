@@ -16,7 +16,8 @@ import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryMo
 import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, fetchSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents } from '../lib/supabase';
+import { globalSyncEngine } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
@@ -760,18 +761,10 @@ export default function AdminDashboard({
   const handleConfirmClearAllStudents = async () => {
     setIsClearingRoster(true);
     try {
-      // 1. Immediately reset in-memory student state and selections
-      setStudents([]);
-      setSelectedStudentId('');
-      if (setGrades) setGrades([]);
-      if (setAttendance) setAttendance([]);
-
-      // 2. Safely call dedicated clear function for Supabase, server, and local storage
-      await clearAllSupabaseStudents();
-
+      // 1. Immediately flag cleared in localStorage and cache to prevent sync guard from rehydrating
+      localStorage.setItem('ea_students_cleared', 'true');
       localStorage.setItem('ea_students', JSON.stringify([]));
       localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
-      localStorage.setItem('ea_students_cleared', 'true');
       if (setGrades) {
         localStorage.setItem('ea_grades', JSON.stringify([]));
         localStorage.setItem('mock_supabase_ea_grades', JSON.stringify([]));
@@ -780,6 +773,29 @@ export default function AdminDashboard({
         localStorage.setItem('ea_attendance', JSON.stringify([]));
         localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify([]));
       }
+
+      // 2. Immediately reset in-memory student state and selections
+      setStudents([]);
+      setSelectedStudentId('');
+      if (setGrades) setGrades([]);
+      if (setAttendance) setAttendance([]);
+
+      // 3. Immediately close modal and notify user so UI feedback is instant
+      setShowClearRosterModal(false);
+
+      // 4. Safely call dedicated clear function for Supabase, server, and local storage
+      await clearAllSupabaseStudents();
+
+      // 5. Broadcast to globalSyncEngine so all devices and SSE subscribers receive 0 students
+      globalSyncEngine.pushMasterServerSync({
+        students: [],
+        grades: [],
+        attendance: [],
+        bills: [],
+        dailyAttendance: [],
+        jhsMockExams: [],
+        rosterCleared: true
+      }).catch(() => {});
 
       if (onPushToSupabase) {
         onPushToSupabase([], config, undefined, [], [], []).catch(() => {});
@@ -1124,8 +1140,10 @@ export default function AdminDashboard({
   };
 
   // 2. STUDENT DIRECTORY LOGIC
-  const handleAddOrEditStudent = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddOrEditStudent = async (e?: React.FormEvent) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
     if (!studentForm.name || !studentForm.name.trim()) {
       setStudentFormError('Please fill out the pupil\'s full name.');
       return;
@@ -1221,6 +1239,7 @@ export default function AdminDashboard({
         setStudentLevelFilter(finalLevel);
       }
       setStudentSearch('');
+      setSelectedStudentId(savedStudent.id);
 
       // 4. Update local storage synchronously and remove any cleared state
       try {
@@ -1230,7 +1249,12 @@ export default function AdminDashboard({
         window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'admit_student', student: savedStudent } }));
       } catch (e) {}
 
-      // 5. Background sync without blocking user interaction
+      // 5. Global sync engine push for instantaneous cross-browser and cross-device sync
+      globalSyncEngine.pushMasterServerSync({
+        students: updatedStudentsList
+      }).catch(() => {});
+
+      // 6. Background sync without blocking user interaction
       saveSingleSupabaseStudent(savedStudent).catch(err => {
         console.warn('Instant student admission sync notice:', err);
       });
@@ -2948,7 +2972,7 @@ export default function AdminDashboard({
                   </button>
                 </div>
 
-                <form onSubmit={handleAddOrEditStudent} className="space-y-4 text-sm">
+                <form onSubmit={handleAddOrEditStudent} noValidate className="space-y-4 text-sm">
                   {/* Passport Size Photograph Upload */}
                   <div className="p-3 bg-mauve-50/70 border border-mauve-200 rounded-xl space-y-2">
                     <label className="text-xs font-semibold text-mauve-800 block flex justify-between items-center">
@@ -2995,7 +3019,7 @@ export default function AdminDashboard({
                               const file = e.target.files?.[0];
                               if (file) {
                                 if (file.size > 2 * 1024 * 1024) {
-                                  alert('Image size exceeds 2MB limit.');
+                                  setStudentFormError('Image size exceeds 2MB limit.');
                                   return;
                                 }
                                 setIsUploadingStudentPhoto(true);
@@ -3004,12 +3028,17 @@ export default function AdminDashboard({
                                   const uploadedUrl = await uploadStudentPhotoToSupabase(file, tempId);
                                   setStudentForm((prev) => ({ ...prev, photoUrl: uploadedUrl }));
                                 } catch (err) {
-                                  console.warn('Fallback to reader base64:', err);
-                                  const reader = new FileReader();
-                                  reader.onloadend = () => {
-                                    setStudentForm((prev) => ({ ...prev, photoUrl: reader.result as string }));
-                                  };
-                                  reader.readAsDataURL(file);
+                                  console.warn('Fallback to compressed reader base64:', err);
+                                  try {
+                                    const { dataUrl } = await compressPassportPhoto(file);
+                                    setStudentForm((prev) => ({ ...prev, photoUrl: dataUrl }));
+                                  } catch (compErr) {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => {
+                                      setStudentForm((prev) => ({ ...prev, photoUrl: reader.result as string }));
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
                                 } finally {
                                   setIsUploadingStudentPhoto(false);
                                 }
@@ -3053,7 +3082,6 @@ export default function AdminDashboard({
                     </label>
                     <input
                       type="text"
-                      required
                       placeholder="e.g. EA/J1/2026/005 or EA/P4/2026/001"
                       value={studentForm.rollNumber}
                       onChange={(e) => {
@@ -3181,6 +3209,12 @@ export default function AdminDashboard({
                       id="confirm-student-admission-btn"
                       type="submit"
                       disabled={isSubmittingStudent}
+                      onClick={(e) => {
+                        if (!studentForm.name || !studentForm.name.trim()) {
+                          setStudentFormError("Please fill out the pupil's full name.");
+                          e.preventDefault();
+                        }
+                      }}
                       className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl transition cursor-pointer text-center shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                       {isSubmittingStudent ? (
@@ -3623,11 +3657,17 @@ export default function AdminDashboard({
                                   const uploadedUrl = await uploadTeacherPhotoToSupabase(file, tempId);
                                   setTeacherForm(prev => ({ ...prev, profilePicture: uploadedUrl }));
                                 } catch (err) {
-                                  const reader = new FileReader();
-                                  reader.onloadend = () => {
-                                    setTeacherForm(prev => ({ ...prev, profilePicture: reader.result as string }));
-                                  };
-                                  reader.readAsDataURL(file);
+                                  console.warn('Fallback to compressed reader base64:', err);
+                                  try {
+                                    const { dataUrl } = await compressPassportPhoto(file);
+                                    setTeacherForm(prev => ({ ...prev, profilePicture: dataUrl }));
+                                  } catch (compErr) {
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => {
+                                      setTeacherForm(prev => ({ ...prev, profilePicture: reader.result as string }));
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
                                 } finally {
                                   setIsUploadingTeacherPhoto(false);
                                 }

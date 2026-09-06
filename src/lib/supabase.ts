@@ -2,6 +2,7 @@ import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabas
 import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord, BookStockItem, BookSaleRecord } from '../types';
 import { DEFAULT_INVENTORY_DATA, DEFAULT_BOOK_STOCK_ITEMS, DEFAULT_BOOK_SALES } from '../data/mockData';
 import { isDemoStudent } from '../data/demoPupils';
+import { fetchServerEntity, saveServerEntity, globalSyncEngine } from './globalSync';
 
 // Helper to retrieve credentials from env or localStorage
 export function getSupabaseCredentials() {
@@ -1257,7 +1258,15 @@ function handleDatabaseError(error: any, contextMessage: string): Error {
 // 1. SYNC CONFIG
 export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
   const client = getSupabaseClient();
-  if (!client) return null;
+  if (!client) {
+    const serverConfig = await fetchServerEntity<ReportConfig>('/config');
+    if (serverConfig) {
+      localStorage.setItem('ea_config', JSON.stringify(serverConfig));
+      return serverConfig;
+    }
+    const cached = localStorage.getItem('mock_supabase_ea_config') || localStorage.getItem('ea_config');
+    return cached ? JSON.parse(cached) : null;
+  }
   try {
     // 1. Query most recently updated config row
     const { data: rows, error: selectErr } = await client
@@ -1277,6 +1286,11 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
     }
 
     if (!data) {
+      const serverConfig = await fetchServerEntity<ReportConfig>('/config');
+      if (serverConfig) {
+        localStorage.setItem('ea_config', JSON.stringify(serverConfig));
+        return serverConfig;
+      }
       if (selectErr && isMissingTableOrConnectionError(selectErr)) {
         const cached = localStorage.getItem('mock_supabase_ea_config') || localStorage.getItem('ea_config');
         return cached ? JSON.parse(cached) : null;
@@ -1311,6 +1325,11 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
       updatedAt: data.updated_at || undefined
     };
   } catch (err: any) {
+    const serverConfig = await fetchServerEntity<ReportConfig>('/config');
+    if (serverConfig) {
+      localStorage.setItem('ea_config', JSON.stringify(serverConfig));
+      return serverConfig;
+    }
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_config') || localStorage.getItem('ea_config');
       return cached ? JSON.parse(cached) : null;
@@ -1326,6 +1345,9 @@ export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean>
   // Always persist to local storage immediately
   localStorage.setItem('mock_supabase_ea_config', JSON.stringify(configWithTimestamp));
   localStorage.setItem('ea_config', JSON.stringify(configWithTimestamp));
+
+  // Persist to central server database and broadcast to other devices
+  saveServerEntity('/config', configWithTimestamp).catch(e => console.warn('[Server Sync Config Notice]', e));
 
   const client = getSupabaseClient();
   if (!client) return true;
@@ -1521,9 +1543,8 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
 
   const getMergedFallback = async (): Promise<Student[] | null> => {
     // If the roster was explicitly cleared by user, do not resurrect from server or fallback
-    if (localStorage.getItem('ea_students_cleared') === 'true') {
-      const cached = localStorage.getItem('ea_students');
-      if (!cached || cached === '[]') return [];
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true') {
+      return [];
     }
 
     const serverResult = await fetchFromServer();
@@ -1565,18 +1586,28 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     return await getMergedFallback();
   }
   try {
+    let lastRosterClearedAt: string | null = null;
+
     // 1. Sync remote tombstones from ea_deleted_records and ea_sync_logs to ensure global deletion propagation
     try {
       const { data: delRecords } = await client
         .from('ea_deleted_records')
         .select('*')
-        .eq('record_type', 'STUDENT')
+        .in('record_type', ['STUDENT', 'ROSTER_CLEAR'])
         .order('deleted_at', { ascending: false })
         .limit(200);
       if (delRecords && Array.isArray(delRecords)) {
         delRecords.forEach((row: any) => {
-          const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
-          recordDeletedStudentId(row.record_id || details.id, row.roll_number || details.rollNumber, row.name || details.studentName);
+          if (row.record_type === 'ROSTER_CLEAR') {
+            const rowTime = row.deleted_at || (row.details ? (typeof row.details === 'string' ? JSON.parse(row.details)?.clearedAt : row.details?.clearedAt) : null);
+            if (rowTime && (!lastRosterClearedAt || new Date(rowTime) > new Date(lastRosterClearedAt))) {
+              lastRosterClearedAt = rowTime;
+            }
+            localStorage.setItem('ea_students_cleared', 'true');
+          } else {
+            const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
+            recordDeletedStudentId(row.record_id || details.id, row.roll_number || details.rollNumber, row.name || details.studentName);
+          }
         });
       }
     } catch (delErr) {}
@@ -1585,16 +1616,24 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       const { data: logs } = await client
         .from('ea_sync_logs')
         .select('*')
-        .eq('action_type', 'DELETE_STUDENT')
+        .in('action_type', ['DELETE_STUDENT', 'CLEAR_STUDENTS'])
         .order('timestamp', { ascending: false })
         .limit(200);
       if (logs && Array.isArray(logs)) {
         logs.forEach((log: any) => {
-          const details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {});
-          const id = details.id || details.studentId;
-          const rollNumber = details.rollNumber;
-          const studentName = details.studentName || details.name;
-          recordDeletedStudentId(id, rollNumber, studentName);
+          if (log.action_type === 'CLEAR_STUDENTS' || log.action === 'CLEAR_STUDENTS') {
+            const logTime = log.timestamp;
+            if (logTime && (!lastRosterClearedAt || new Date(logTime) > new Date(lastRosterClearedAt))) {
+              lastRosterClearedAt = logTime;
+            }
+            localStorage.setItem('ea_students_cleared', 'true');
+          } else {
+            const details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {});
+            const id = details.id || details.studentId;
+            const rollNumber = details.rollNumber;
+            const studentName = details.studentName || details.name;
+            recordDeletedStudentId(id, rollNumber, studentName);
+          }
         });
       }
     } catch (logErr) {}
@@ -1602,14 +1641,35 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     const { data, error } = await client.from('ea_students').select('*');
     if (error) {
       console.warn('[Fetch Students] Supabase query error, falling back to server/cache:', error.message || error);
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true') {
+        return [];
+      }
       return await getMergedFallback();
     }
+
     if (!data || data.length === 0) {
-      const fallback = await getMergedFallback();
-      if (fallback && fallback.length > 0) return fallback;
+      // Cloud database authoritatively has 0 student records: ensure local cache is cleared and do not resurrect
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ea_students_cleared', 'true');
+        localStorage.setItem('ea_students', JSON.stringify([]));
+        localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
+      }
       return [];
     }
-    const mapped = data.map(item => ({
+
+    // Filter out any stale rows in Supabase that predate the last roster clear
+    const activeRows = data.filter(item => {
+      if (lastRosterClearedAt) {
+        const itemTime = item.updated_at || item.created_at;
+        if (itemTime && new Date(itemTime) <= new Date(lastRosterClearedAt)) {
+          client.from('ea_students').delete().eq('id', item.id).then(() => {});
+          return false;
+        }
+      }
+      return true;
+    });
+
+    const mapped = activeRows.map(item => ({
       id: item.id,
       name: item.name || '',
       rollNumber: item.roll_number || '',
@@ -1630,6 +1690,22 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     }
 
     const cleanMapped = filterDeleted(mapped);
+
+    if (cleanMapped.length === 0) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ea_students_cleared', 'true');
+        localStorage.setItem('ea_students', JSON.stringify([]));
+        localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
+      }
+      return [];
+    }
+
+    // Real active students exist; safely update cache and reset cleared flag
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('ea_students_cleared');
+      localStorage.setItem('ea_students', JSON.stringify(cleanMapped));
+      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanMapped));
+    }
 
     // Keep server / CDN synchronized in background with latest Supabase roster
     if (cleanMapped.length > 0) {
@@ -1769,8 +1845,11 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
 }
 
 export async function saveSupabaseStudents(students: Student[]): Promise<boolean> {
-  // Defensive check: Never wipe database or local storage with empty students list if existing data exists
+  // Defensive check: When empty array is passed
   if (!Array.isArray(students) || students.length === 0) {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true') {
+      return await clearAllSupabaseStudents();
+    }
     let existingCount = 0;
     try {
       const cached = localStorage.getItem('ea_students');
@@ -1783,7 +1862,7 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
       console.warn(`[Supabase Student Sync Guard] Blocked attempt to save empty student list while local memory/cache holds ${existingCount} students.`);
       return false;
     }
-    return true;
+    return await clearAllSupabaseStudents();
   }
 
   // Un-tombstone all active students
@@ -1810,6 +1889,7 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
 
   // Sync to Server / CDN API
   try {
+    saveServerEntity('/students', validStudents).catch(() => {});
     await fetch('/api/students', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1876,36 +1956,115 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
 // Dedicated function to safely and completely clear all student records across storage, server, and Supabase
 export async function clearAllSupabaseStudents(): Promise<boolean> {
   try {
-    // 1. Set explicit cleared flag to prevent resurrection during sync
+    // 1. Set explicit cleared flag and wipe student-related local storage caches
     try {
       localStorage.setItem('ea_students_cleared', 'true');
       localStorage.setItem('ea_students', JSON.stringify([]));
       localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
+      localStorage.setItem('ea_grades', JSON.stringify([]));
+      localStorage.setItem('mock_supabase_ea_grades', JSON.stringify([]));
+      localStorage.setItem('ea_attendance', JSON.stringify([]));
+      localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify([]));
+      localStorage.setItem('ea_bills', JSON.stringify([]));
+      localStorage.setItem('mock_supabase_ea_bills', JSON.stringify([]));
+      localStorage.setItem('ea_daily_attendance', JSON.stringify([]));
+      localStorage.setItem('ea_jhs_mock_records', JSON.stringify([]));
+      localStorage.setItem('ea_jhs_mock_exams', JSON.stringify([]));
+      localStorage.setItem('mock_supabase_ea_jhs_mock_exams', JSON.stringify([]));
+      localStorage.setItem('ea_jhs_terminal_assessment_history', JSON.stringify([]));
+      localStorage.setItem('ea_pre_promotion_students', JSON.stringify([]));
+      localStorage.removeItem('ea_students_seeded');
+      localStorage.removeItem('ea_roster_initialized');
     } catch (e) {}
 
-    // 2. Clear server cache via POST and DELETE /api/students/clear
+    // 2. Clear server cache via POST and DELETE /api/students/clear and master sync
     try {
+      saveServerEntity('/students', []).catch(() => {});
+      saveServerEntity('/grades', []).catch(() => {});
+      saveServerEntity('/attendance', []).catch(() => {});
+      saveServerEntity('/bills', []).catch(() => {});
       await fetch('/api/students/clear', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       }).catch(() => {});
+      await fetch('/api/students', {
+        method: 'DELETE'
+      }).catch(() => {});
+      await fetch('/api/sync/all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          students: [],
+          grades: [],
+          attendance: [],
+          bills: [],
+          dailyAttendance: [],
+          jhsMockExams: [],
+          rosterCleared: true
+        })
+      }).catch(() => {});
     } catch (e) {}
 
-    // 3. Clear remote Supabase table if client is configured
+    // 3. Clear remote Supabase tables if client is configured
     const client = getSupabaseClient();
     if (client) {
+      // Gather current IDs to register individual tombstones
+      try {
+        const { data: currentRows } = await client.from('ea_students').select('id, roll_number, name');
+        if (currentRows && Array.isArray(currentRows) && currentRows.length > 0) {
+          currentRows.forEach((r: any) => {
+            if (r.id) recordDeletedStudentId(r.id, r.roll_number, r.name);
+          });
+          const allIds = currentRows.map((r: any) => r.id).filter(Boolean);
+          for (let i = 0; i < allIds.length; i += 50) {
+            const chunk = allIds.slice(i, i + 50);
+            await client.from('ea_students').delete().in('id', chunk);
+          }
+        }
+      } catch (e) {
+        console.warn('Supabase fetch/batch delete students warning:', e);
+      }
+
+      // Comprehensive delete across student and student-related tables
+      try {
+        await client.from('ea_students').delete().not('id', 'is', null);
+      } catch (e) {}
       try {
         await client.from('ea_students').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      } catch (e) {
-        console.warn('Supabase delete all students error:', e);
-      }
+      } catch (e) {}
+      try {
+        await client.from('ea_grades').delete().not('id', 'is', null);
+      } catch (e) {}
+      try {
+        await client.from('ea_attendance').delete().not('id', 'is', null);
+      } catch (e) {}
+      try {
+        await client.from('ea_bills').delete().not('id', 'is', null);
+      } catch (e) {}
+      try {
+        await client.from('ea_jhs_mock_exams').delete().not('id', 'is', null);
+      } catch (e) {}
+
+      // Insert global ROSTER_CLEAR tombstone in ea_deleted_records
+      try {
+        await client.from('ea_deleted_records').upsert([{
+          id: `ROSTER_CLEAR_${Date.now()}`,
+          record_type: 'ROSTER_CLEAR',
+          record_id: 'ALL_STUDENTS',
+          details: JSON.stringify({ clearedAt: new Date().toISOString() }),
+          deleted_at: new Date().toISOString()
+        }]);
+      } catch (e) {}
+
+      // Insert clear action log in ea_sync_logs
       try {
         await client.from('ea_sync_logs').insert([{
           action: 'CLEAR_STUDENTS',
+          action_type: 'CLEAR_STUDENTS',
           description: 'All pupil records cleared from admissions directory.',
           performed_by: 'Admin',
           status: 'SUCCESS',
-          details: { timestamp: new Date().toISOString() },
+          details: { clearedAt: new Date().toISOString() },
           timestamp: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }]);
@@ -1914,7 +2073,24 @@ export async function clearAllSupabaseStudents(): Promise<boolean> {
 
     broadcastGlobalSync('ea_students', { action: 'CLEAR_ALL', count: 0 });
     broadcastSync('students', [], 'delete');
+    broadcastSync('grades', [], 'delete');
+    broadcastSync('attendance', [], 'delete');
+    broadcastSync('bills', [], 'delete');
     window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'clear_all' } }));
+    window.dispatchEvent(new Event('ea_grades_updated'));
+    window.dispatchEvent(new Event('ea_attendance_updated'));
+    window.dispatchEvent(new Event('ea_bills_updated'));
+
+    globalSyncEngine.pushMasterServerSync({
+      students: [],
+      grades: [],
+      attendance: [],
+      bills: [],
+      dailyAttendance: [],
+      jhsMockExams: [],
+      rosterCleared: true
+    }).catch(() => {});
+
     return true;
   } catch (err) {
     console.error('Failed to clear all students:', err);
@@ -1932,6 +2108,11 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
 
   const client = getSupabaseClient();
   if (!client) {
+    const serverTeachers = await fetchServerEntity<User[]>('/teachers');
+    if (serverTeachers && serverTeachers.length > 0) {
+      localStorage.setItem('ea_teachers', JSON.stringify(serverTeachers));
+      return filterDeleted(serverTeachers);
+    }
     const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
     if (cached) {
       try {
@@ -1944,6 +2125,11 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
   try {
     const { data, error } = await client.from('ea_teachers').select('*');
     if (error) {
+      const serverTeachers = await fetchServerEntity<User[]>('/teachers');
+      if (serverTeachers && serverTeachers.length > 0) {
+        localStorage.setItem('ea_teachers', JSON.stringify(serverTeachers));
+        return filterDeleted(serverTeachers);
+      }
       if (isMissingTableOrConnectionError(error)) {
         const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
         if (cached) {
@@ -1956,7 +2142,14 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
       }
       return null;
     }
-    if (!data) return null;
+    if (!data || data.length === 0) {
+      const serverTeachers = await fetchServerEntity<User[]>('/teachers');
+      if (serverTeachers && serverTeachers.length > 0) {
+        localStorage.setItem('ea_teachers', JSON.stringify(serverTeachers));
+        return filterDeleted(serverTeachers);
+      }
+      return null;
+    }
     const mapped = data.map(item => ({
       id: item.id,
       name: item.name || '',
@@ -1984,6 +2177,11 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
 
     return filterDeleted(mapped);
   } catch (err: any) {
+    const serverTeachers = await fetchServerEntity<User[]>('/teachers');
+    if (serverTeachers && serverTeachers.length > 0) {
+      localStorage.setItem('ea_teachers', JSON.stringify(serverTeachers));
+      return filterDeleted(serverTeachers);
+    }
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
       if (cached) {
@@ -2001,6 +2199,9 @@ export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
   // Always persist to local cache immediately to guarantee offline/local persistence
   localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(teachers));
   localStorage.setItem('ea_teachers', JSON.stringify(teachers));
+
+  // Persist to central server database and broadcast to other devices
+  saveServerEntity('/teachers', teachers).catch(e => console.warn('[Server Sync Teachers Notice]', e));
 
   const client = getSupabaseClient();
   if (!client) return true;
@@ -2302,17 +2503,37 @@ export async function deleteSupabaseTeacher(id: string, email?: string, name?: s
 // 4. SYNC GRADES
 export async function fetchSupabaseGrades(): Promise<Grade[] | null> {
   const client = getSupabaseClient();
-  if (!client) return null;
+  if (!client) {
+    const serverGrades = await fetchServerEntity<Grade[]>('/grades');
+    if (serverGrades && serverGrades.length > 0) {
+      localStorage.setItem('ea_grades', JSON.stringify(serverGrades));
+      return serverGrades;
+    }
+    const cached = localStorage.getItem('mock_supabase_ea_grades') || localStorage.getItem('ea_grades');
+    return cached ? JSON.parse(cached) : null;
+  }
   try {
     const { data, error } = await client.from('ea_grades').select('*');
     if (error) {
+      const serverGrades = await fetchServerEntity<Grade[]>('/grades');
+      if (serverGrades && serverGrades.length > 0) {
+        localStorage.setItem('ea_grades', JSON.stringify(serverGrades));
+        return serverGrades;
+      }
       if (isMissingTableOrConnectionError(error)) {
         const cached = localStorage.getItem('mock_supabase_ea_grades') || localStorage.getItem('ea_grades');
         return cached ? JSON.parse(cached) : null;
       }
       return null;
     }
-    if (!data) return null;
+    if (!data || data.length === 0) {
+      const serverGrades = await fetchServerEntity<Grade[]>('/grades');
+      if (serverGrades && serverGrades.length > 0) {
+        localStorage.setItem('ea_grades', JSON.stringify(serverGrades));
+        return serverGrades;
+      }
+      return null;
+    }
     return data.map(item => {
       const rawNurseryRem = (item.nursery_remark || item.nurseryRemark || '').toString().trim().toUpperCase();
       const remUpper = (item.remarks || '').toString().trim().toUpperCase();
@@ -2346,6 +2567,11 @@ export async function fetchSupabaseGrades(): Promise<Grade[] | null> {
       };
     });
   } catch (err: any) {
+    const serverGrades = await fetchServerEntity<Grade[]>('/grades');
+    if (serverGrades && serverGrades.length > 0) {
+      localStorage.setItem('ea_grades', JSON.stringify(serverGrades));
+      return serverGrades;
+    }
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_grades') || localStorage.getItem('ea_grades');
       return cached ? JSON.parse(cached) : null;
@@ -2358,6 +2584,9 @@ export async function saveSupabaseGrades(grades: Grade[]): Promise<boolean> {
   // Always persist to local cache immediately to guarantee offline/local persistence
   localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(grades));
   localStorage.setItem('ea_grades', JSON.stringify(grades));
+
+  // Persist to central server database and broadcast to other devices
+  saveServerEntity('/grades', grades).catch(e => console.warn('[Server Sync Grades Notice]', e));
 
   const client = getSupabaseClient();
   if (!client) return true;
@@ -2394,17 +2623,37 @@ export async function saveSupabaseGrades(grades: Grade[]): Promise<boolean> {
 // 5. SYNC ATTENDANCE
 export async function fetchSupabaseAttendance(): Promise<Attendance[] | null> {
   const client = getSupabaseClient();
-  if (!client) return null;
+  if (!client) {
+    const serverAttendance = await fetchServerEntity<Attendance[]>('/attendance');
+    if (serverAttendance && serverAttendance.length > 0) {
+      localStorage.setItem('ea_attendance', JSON.stringify(serverAttendance));
+      return serverAttendance;
+    }
+    const cached = localStorage.getItem('mock_supabase_ea_attendance') || localStorage.getItem('ea_attendance');
+    return cached ? JSON.parse(cached) : null;
+  }
   try {
     const { data, error } = await client.from('ea_attendance').select('*');
     if (error) {
+      const serverAttendance = await fetchServerEntity<Attendance[]>('/attendance');
+      if (serverAttendance && serverAttendance.length > 0) {
+        localStorage.setItem('ea_attendance', JSON.stringify(serverAttendance));
+        return serverAttendance;
+      }
       if (isMissingTableOrConnectionError(error)) {
         const cached = localStorage.getItem('mock_supabase_ea_attendance') || localStorage.getItem('ea_attendance');
         return cached ? JSON.parse(cached) : null;
       }
       return null;
     }
-    if (!data) return null;
+    if (!data || data.length === 0) {
+      const serverAttendance = await fetchServerEntity<Attendance[]>('/attendance');
+      if (serverAttendance && serverAttendance.length > 0) {
+        localStorage.setItem('ea_attendance', JSON.stringify(serverAttendance));
+        return serverAttendance;
+      }
+      return null;
+    }
     return data.map(item => ({
       studentId: item.student_id,
       term: item.term || 'Term 1',
@@ -2416,6 +2665,11 @@ export async function fetchSupabaseAttendance(): Promise<Attendance[] | null> {
       updatedAt: item.updated_at,
     }));
   } catch (err: any) {
+    const serverAttendance = await fetchServerEntity<Attendance[]>('/attendance');
+    if (serverAttendance && serverAttendance.length > 0) {
+      localStorage.setItem('ea_attendance', JSON.stringify(serverAttendance));
+      return serverAttendance;
+    }
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_attendance') || localStorage.getItem('ea_attendance');
       return cached ? JSON.parse(cached) : null;
@@ -2428,6 +2682,9 @@ export async function saveSupabaseAttendance(attendance: Attendance[]): Promise<
   // Always persist to local cache immediately to guarantee offline/local persistence
   localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
   localStorage.setItem('ea_attendance', JSON.stringify(attendance));
+
+  // Persist to central server database and broadcast to other devices
+  saveServerEntity('/attendance', attendance).catch(e => console.warn('[Server Sync Attendance Notice]', e));
 
   const client = getSupabaseClient();
   if (!client) return true;
@@ -2457,17 +2714,37 @@ export async function saveSupabaseAttendance(attendance: Attendance[]): Promise<
 // 6. SYNC STUDENT BILLS
 export async function fetchSupabaseBills(): Promise<StudentBill[] | null> {
   const client = getSupabaseClient();
-  if (!client) return null;
+  if (!client) {
+    const serverBills = await fetchServerEntity<StudentBill[]>('/bills');
+    if (serverBills && serverBills.length > 0) {
+      localStorage.setItem('ea_bills', JSON.stringify(serverBills));
+      return serverBills;
+    }
+    const cached = localStorage.getItem('mock_supabase_ea_bills') || localStorage.getItem('ea_bills');
+    return cached ? JSON.parse(cached) : null;
+  }
   try {
     const { data, error } = await client.from('ea_bills').select('*');
     if (error) {
+      const serverBills = await fetchServerEntity<StudentBill[]>('/bills');
+      if (serverBills && serverBills.length > 0) {
+        localStorage.setItem('ea_bills', JSON.stringify(serverBills));
+        return serverBills;
+      }
       if (isMissingTableOrConnectionError(error)) {
         const cached = localStorage.getItem('mock_supabase_ea_bills') || localStorage.getItem('ea_bills');
         return cached ? JSON.parse(cached) : null;
       }
       return null;
     }
-    if (!data) return null;
+    if (!data || data.length === 0) {
+      const serverBills = await fetchServerEntity<StudentBill[]>('/bills');
+      if (serverBills && serverBills.length > 0) {
+        localStorage.setItem('ea_bills', JSON.stringify(serverBills));
+        return serverBills;
+      }
+      return null;
+    }
     return data.map(item => ({
       studentId: item.student_id,
       arrears: item.arrears || '0.00',
@@ -2483,6 +2760,11 @@ export async function fetchSupabaseBills(): Promise<StudentBill[] | null> {
       updatedAt: item.updated_at,
     }));
   } catch (err: any) {
+    const serverBills = await fetchServerEntity<StudentBill[]>('/bills');
+    if (serverBills && serverBills.length > 0) {
+      localStorage.setItem('ea_bills', JSON.stringify(serverBills));
+      return serverBills;
+    }
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_bills') || localStorage.getItem('ea_bills');
       return cached ? JSON.parse(cached) : null;
@@ -2494,6 +2776,9 @@ export async function fetchSupabaseBills(): Promise<StudentBill[] | null> {
 export async function saveSupabaseBills(bills: StudentBill[]): Promise<boolean> {
   localStorage.setItem('mock_supabase_ea_bills', JSON.stringify(bills));
   localStorage.setItem('ea_bills', JSON.stringify(bills));
+
+  // Persist to central server database and broadcast to other devices
+  saveServerEntity('/bills', bills).catch(e => console.warn('[Server Sync Bills Notice]', e));
 
   const client = getSupabaseClient();
   if (!client) return true;
@@ -2561,6 +2846,11 @@ export async function fetchSupabaseFeePayments(): Promise<FeePayment[] | null> {
 
   const client = getSupabaseClient();
   if (!client) {
+    const serverPayments = await fetchServerEntity<FeePayment[]>('/fee-payments');
+    if (serverPayments && serverPayments.length > 0) {
+      localStorage.setItem('ea_fee_payments', JSON.stringify(serverPayments));
+      return filterDeleted(serverPayments);
+    }
     const cached = localStorage.getItem('mock_supabase_ea_fee_payments') || localStorage.getItem('ea_fee_payments');
     if (cached) {
       try {
@@ -2573,6 +2863,11 @@ export async function fetchSupabaseFeePayments(): Promise<FeePayment[] | null> {
   try {
     const { data, error } = await client.from('ea_fee_payments').select('*');
     if (error) {
+      const serverPayments = await fetchServerEntity<FeePayment[]>('/fee-payments');
+      if (serverPayments && serverPayments.length > 0) {
+        localStorage.setItem('ea_fee_payments', JSON.stringify(serverPayments));
+        return filterDeleted(serverPayments);
+      }
       if (isMissingTableOrConnectionError(error)) {
         const cached = localStorage.getItem('mock_supabase_ea_fee_payments') || localStorage.getItem('ea_fee_payments');
         if (cached) {
@@ -2585,7 +2880,14 @@ export async function fetchSupabaseFeePayments(): Promise<FeePayment[] | null> {
       }
       return null;
     }
-    if (!data) return null;
+    if (!data || data.length === 0) {
+      const serverPayments = await fetchServerEntity<FeePayment[]>('/fee-payments');
+      if (serverPayments && serverPayments.length > 0) {
+        localStorage.setItem('ea_fee_payments', JSON.stringify(serverPayments));
+        return filterDeleted(serverPayments);
+      }
+      return null;
+    }
     const mapped = data.map(item => ({
       id: item.id || item.receipt_number || String(Math.random()),
       receiptNumber: item.receipt_number || '',
@@ -2620,6 +2922,11 @@ export async function fetchSupabaseFeePayments(): Promise<FeePayment[] | null> {
 
     return filterDeleted(mapped);
   } catch (err: any) {
+    const serverPayments = await fetchServerEntity<FeePayment[]>('/fee-payments');
+    if (serverPayments && serverPayments.length > 0) {
+      localStorage.setItem('ea_fee_payments', JSON.stringify(serverPayments));
+      return filterDeleted(serverPayments);
+    }
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_fee_payments') || localStorage.getItem('ea_fee_payments');
       if (cached) {
@@ -2690,6 +2997,9 @@ export async function forceResyncSupabaseFeePayments(): Promise<{ success: boole
 export async function saveSupabaseFeePayments(payments: FeePayment[]): Promise<boolean> {
   localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(payments));
   localStorage.setItem('ea_fee_payments', JSON.stringify(payments));
+
+  // Persist to central server database and broadcast to other devices
+  saveServerEntity('/fee-payments', payments).catch(e => console.warn('[Server Sync Fee Payments Notice]', e));
 
   const client = getSupabaseClient();
   if (!client) return true;
