@@ -16,7 +16,7 @@ import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryMo
 import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, fetchSupabaseBookStock, removeDeletedStudentId } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, fetchSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents } from '../lib/supabase';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
@@ -333,6 +333,12 @@ export default function AdminDashboard({
   const [showPromotionModal, setShowPromotionModal] = useState(false);
   const [promotionSuccessMsg, setPromotionSuccessMsg] = useState('');
   const [promotionSearchQuery, setPromotionSearchQuery] = useState('');
+
+  // Clear Roster & Student Form states
+  const [showClearRosterModal, setShowClearRosterModal] = useState(false);
+  const [isClearingRoster, setIsClearingRoster] = useState(false);
+  const [studentFormError, setStudentFormError] = useState('');
+  const [isSubmittingStudent, setIsSubmittingStudent] = useState(false);
 
   // Grade Data Recovery and Local Backup states
   const [backupRestoreMsg, setBackupRestoreMsg] = useState('');
@@ -747,34 +753,46 @@ export default function AdminDashboard({
     setTimeout(() => setPromotionSuccessMsg(''), 10000);
   };
 
-  const handleClearAllStudents = async () => {
-    if (!confirm('Are you sure you want to clear all enrolled pupils? This will reset the student registry to 0 pupils across all classes.')) {
-      return;
-    }
-    for (const s of students) {
-      await deleteSupabaseStudent(s.id, s.rollNumber, s.name);
-    }
-    setStudents([]);
-    if (setGrades) setGrades([]);
-    if (setAttendance) setAttendance([]);
-    localStorage.setItem('ea_students', JSON.stringify([]));
-    localStorage.setItem('ea_grades', JSON.stringify([]));
-    localStorage.setItem('ea_attendance', JSON.stringify([]));
-    localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
-    localStorage.setItem('mock_supabase_ea_grades', JSON.stringify([]));
-    localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify([]));
-    localStorage.setItem('ea_has_initialized', 'true');
+  const handleClearAllStudents = () => {
+    setShowClearRosterModal(true);
+  };
 
-    const creds = getSupabaseCredentials();
-    if (creds.isConfigured) {
-      saveSupabaseStudents([]).catch(err => console.warn('Supabase students clear error', err));
-      saveSupabaseGrades([]).catch(err => console.warn('Supabase grades clear error', err));
-      saveSupabaseAttendance([]).catch(err => console.warn('Supabase attendance clear error', err));
-      onPushToSupabase?.([], config, undefined, [], [], []);
-    }
+  const handleConfirmClearAllStudents = async () => {
+    setIsClearingRoster(true);
+    try {
+      // 1. Immediately reset in-memory student state and selections
+      setStudents([]);
+      setSelectedStudentId('');
+      if (setGrades) setGrades([]);
+      if (setAttendance) setAttendance([]);
 
-    setPromotionSuccessMsg('All pupil records cleared. Total enrolled pupils is now 0.');
-    setTimeout(() => setPromotionSuccessMsg(''), 8000);
+      // 2. Safely call dedicated clear function for Supabase, server, and local storage
+      await clearAllSupabaseStudents();
+
+      localStorage.setItem('ea_students', JSON.stringify([]));
+      localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
+      localStorage.setItem('ea_students_cleared', 'true');
+      if (setGrades) {
+        localStorage.setItem('ea_grades', JSON.stringify([]));
+        localStorage.setItem('mock_supabase_ea_grades', JSON.stringify([]));
+      }
+      if (setAttendance) {
+        localStorage.setItem('ea_attendance', JSON.stringify([]));
+        localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify([]));
+      }
+
+      if (onPushToSupabase) {
+        onPushToSupabase([], config, undefined, [], [], []).catch(() => {});
+      }
+
+      setPromotionSuccessMsg('All pupil records successfully cleared. Total enrolled pupils is now 0.');
+      setTimeout(() => setPromotionSuccessMsg(''), 8000);
+    } catch (err) {
+      console.error('Failed to clear students roster:', err);
+    } finally {
+      setIsClearingRoster(false);
+      setShowClearRosterModal(false);
+    }
   };
 
   // Deletion confirmation states
@@ -1108,103 +1126,132 @@ export default function AdminDashboard({
   // 2. STUDENT DIRECTORY LOGIC
   const handleAddOrEditStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!studentForm.name || !studentForm.rollNumber) {
-      alert('Please fill out Name and Roll Number');
+    if (!studentForm.name || !studentForm.name.trim()) {
+      setStudentFormError('Please fill out the pupil\'s full name.');
       return;
     }
+    setStudentFormError('');
+    setIsSubmittingStudent(true);
 
-    // Auto-resolve class from Roll Number / ID if formatted (e.g. EA/J1/2026/005 -> JHS 1)
-    const resolved = resolveClassAndLevelFromStudentId(studentForm.rollNumber, studentForm.level);
-    const finalClassName = studentForm.className || resolved.className;
-    const finalLevel = studentForm.level || resolved.level;
-
-    // Check if the roll number is already used by another pupil (avoid collision)
-    let finalRollNumber = studentForm.rollNumber.trim();
-    const collision = students.some(
-      s => (!editingStudent || s.id !== editingStudent.id) &&
-        s.rollNumber && s.rollNumber.trim().toUpperCase() === finalRollNumber.toUpperCase()
-    );
-    if (collision) {
-      finalRollNumber = getAutoRollNumber(finalLevel, finalClassName, students);
-    }
-
-    const nowIso = new Date().toISOString();
-    let updatedStudentsList: Student[];
-    let savedStudent: Student;
-
-    if (editingStudent) {
-      // Edit Student
-      savedStudent = {
-        ...editingStudent,
-        ...studentForm,
-        rollNumber: finalRollNumber,
-        className: finalClassName,
-        level: finalLevel,
-        updated_at: nowIso,
-        updatedAt: nowIso
-      };
-      updatedStudentsList = students.map(s => s.id === editingStudent.id ? savedStudent : s);
-    } else {
-      // Add Student
-      const newId = `st-${Date.now()}`;
-      savedStudent = {
-        id: newId,
-        name: studentForm.name.trim(),
-        rollNumber: finalRollNumber,
-        level: finalLevel,
-        className: finalClassName,
-        guardianName: studentForm.guardianName || '',
-        guardianEmail: studentForm.guardianEmail || '',
-        guardianPhone: studentForm.guardianPhone || '',
-        photoUrl: studentForm.photoUrl || '',
-        updated_at: nowIso,
-        updatedAt: nowIso
-      };
-      updatedStudentsList = [...students, savedStudent];
-    }
-
-    // Ensure deduplication preserves all unique records
-    updatedStudentsList = deduplicateStudents(updatedStudentsList);
-
-    // Clear any tombstone records for this student ID, roll number, and name
-    removeDeletedStudentId(savedStudent.id, savedStudent.rollNumber, savedStudent.name);
-
-    setStudents(updatedStudentsList);
     try {
-      localStorage.setItem('ea_students', JSON.stringify(updatedStudentsList));
-      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updatedStudentsList));
-    } catch (e) {}
+      // Auto-resolve class from Roll Number / ID if formatted (e.g. EA/J1/2026/005 -> JHS 1)
+      const resolved = resolveClassAndLevelFromStudentId(studentForm.rollNumber || '', studentForm.level);
+      const finalClassName = studentForm.className || resolved.className || 'Primary 1';
+      const finalLevel = studentForm.level || resolved.level || 'PRIMARY';
 
-    // Instant pupil admission sync across Server / CDN and Supabase
-    try {
-      await saveSingleSupabaseStudent(savedStudent);
-    } catch (err) {
-      console.warn('Instant student admission sync error:', err);
+      // If roll number is empty, auto-generate one
+      let finalRollNumber = (studentForm.rollNumber || '').trim();
+      if (!finalRollNumber) {
+        finalRollNumber = getAutoRollNumber(finalLevel, finalClassName, students);
+      } else {
+        // Check if the roll number is already used by another pupil (avoid collision)
+        const collision = students.some(
+          s => (!editingStudent || s.id !== editingStudent.id) &&
+            s.rollNumber && s.rollNumber.trim().toUpperCase() === finalRollNumber.toUpperCase()
+        );
+        if (collision) {
+          finalRollNumber = getAutoRollNumber(finalLevel, finalClassName, students);
+        }
+      }
+
+      const nowIso = new Date().toISOString();
+      let updatedStudentsList: Student[];
+      let savedStudent: Student;
+
+      if (editingStudent) {
+        // Edit Student
+        savedStudent = {
+          ...editingStudent,
+          ...studentForm,
+          name: studentForm.name.trim(),
+          rollNumber: finalRollNumber,
+          className: finalClassName,
+          level: finalLevel,
+          updated_at: nowIso,
+          updatedAt: nowIso
+        };
+        updatedStudentsList = students.map(s => s.id === editingStudent.id ? savedStudent : s);
+      } else {
+        // Add Student
+        const newId = `st-${Date.now()}`;
+        savedStudent = {
+          id: newId,
+          name: studentForm.name.trim(),
+          rollNumber: finalRollNumber,
+          level: finalLevel,
+          className: finalClassName,
+          guardianName: studentForm.guardianName || '',
+          guardianEmail: studentForm.guardianEmail || '',
+          guardianPhone: studentForm.guardianPhone || '',
+          photoUrl: studentForm.photoUrl || '',
+          updated_at: nowIso,
+          updatedAt: nowIso
+        };
+        updatedStudentsList = [...students, savedStudent];
+      }
+
+      // Ensure deduplication preserves all unique records
+      updatedStudentsList = deduplicateStudents(updatedStudentsList);
+
+      // Clear any tombstone records for this student ID, roll number, and name
+      removeDeletedStudentId(savedStudent.id, savedStudent.rollNumber, savedStudent.name);
+
+      // 1. Immediately update in-memory state so the table updates right away
+      setStudents(updatedStudentsList);
+
+      // 2. Immediately exit the modal and reset form
+      setShowStudentModal(false);
+      setEditingStudent(null);
+      setStudentForm({
+        name: '',
+        rollNumber: '',
+        level: 'PRIMARY',
+        className: 'Primary 1',
+        guardianName: '',
+        guardianEmail: '',
+        guardianPhone: '',
+        photoUrl: ''
+      });
+
+      // 3. Reset or adjust filters so the newly admitted student is immediately visible in the table
+      if (studentClassFilter !== 'ALL' && studentClassFilter !== finalClassName) {
+        setStudentClassFilter(finalClassName);
+      }
+      if (studentLevelFilter !== 'ALL' && studentLevelFilter !== finalLevel) {
+        setStudentLevelFilter(finalLevel);
+      }
+      setStudentSearch('');
+
+      // 4. Update local storage synchronously and remove any cleared state
+      try {
+        localStorage.removeItem('ea_students_cleared');
+        localStorage.setItem('ea_students', JSON.stringify(updatedStudentsList));
+        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updatedStudentsList));
+        window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'admit_student', student: savedStudent } }));
+      } catch (e) {}
+
+      // 5. Background sync without blocking user interaction
+      saveSingleSupabaseStudent(savedStudent).catch(err => {
+        console.warn('Instant student admission sync notice:', err);
+      });
+
+      if (onPushToSupabase) {
+        onPushToSupabase(updatedStudentsList, config).catch(() => {});
+      }
+
+      // 6. Provide clear visual confirmation
+      setPromotionSuccessMsg(
+        editingStudent
+          ? `Pupil "${savedStudent.name}" updated successfully.`
+          : `Pupil "${savedStudent.name}" (${savedStudent.rollNumber}) admitted to ${savedStudent.className}. Student roster updated.`
+      );
+      setTimeout(() => setPromotionSuccessMsg(''), 8000);
+    } catch (err: any) {
+      console.error('Error admitting/updating student:', err);
+      setStudentFormError(err?.message || 'An unexpected error occurred while saving student.');
+    } finally {
+      setIsSubmittingStudent(false);
     }
-
-    // Global Supabase Sync
-    if (onPushToSupabase) {
-      onPushToSupabase(updatedStudentsList, config);
-    }
-
-    // Reset filters so newly admitted student is immediately visible in view
-    setStudentClassFilter(finalClassName);
-    setStudentLevelFilter(finalLevel);
-    setStudentSearch('');
-
-    // Reset Form
-    setStudentForm({
-      name: '',
-      rollNumber: '',
-      level: 'PRIMARY',
-      className: 'Primary 1',
-      guardianName: '',
-      guardianEmail: '',
-      guardianPhone: '',
-      photoUrl: ''
-    });
-    setEditingStudent(null);
-    setShowStudentModal(false);
   };
 
   const triggerEditStudent = (student: Student) => {
@@ -2568,16 +2615,20 @@ export default function AdminDashboard({
               >
                 <GraduationCap className="w-3.5 h-3.5" /> First Term Promotion Roll
               </button>
-              {students.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleClearAllStudents}
-                  className="bg-rose-700 hover:bg-rose-800 text-white font-bold px-3 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
-                  title="Clear all pupils and reset roster to 0 enrolled pupils"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Clear Roster (0)
-                </button>
-              )}
+              <button
+                id="clear-roster-btn"
+                type="button"
+                onClick={handleClearAllStudents}
+                disabled={students.length === 0}
+                className={`font-bold px-3 py-2 rounded transition flex items-center gap-1.5 text-xs uppercase tracking-wider ${
+                  students.length > 0
+                    ? 'bg-rose-700 hover:bg-rose-800 text-white cursor-pointer shadow-sm'
+                    : 'bg-mauve-200 text-mauve-600 cursor-not-allowed opacity-60'
+                }`}
+                title={students.length > 0 ? "Clear all pupils and reset roster to 0 enrolled pupils" : "Student roster is already empty (0 pupils)"}
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Clear Roster ({students.length})
+              </button>
               <button
                 onClick={() => {
                   setEditingStudent(null);
@@ -3106,20 +3157,40 @@ export default function AdminDashboard({
                     </div>
                   </div>
 
+                  {/* Error display */}
+                  {studentFormError && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2 animate-fadeIn">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{studentFormError}</span>
+                    </div>
+                  )}
+
                   {/* Actions */}
                   <div className="flex gap-2.5 pt-3 border-t border-mauve-100">
                     <button
                       type="button"
-                      onClick={() => setShowStudentModal(false)}
+                      onClick={() => {
+                        setStudentFormError('');
+                        setShowStudentModal(false);
+                      }}
                       className="flex-1 py-2.5 border border-mauve-200 hover:bg-mauve-50 text-mauve-600 rounded-xl transition cursor-pointer font-medium text-center"
                     >
                       Cancel
                     </button>
                     <button
+                      id="confirm-student-admission-btn"
                       type="submit"
-                      className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl transition cursor-pointer text-center shadow-md shadow-blue-600/20"
+                      disabled={isSubmittingStudent}
+                      className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl transition cursor-pointer text-center shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 disabled:opacity-50"
                     >
-                      {editingStudent ? 'Save Profile' : 'Confirm Admission'}
+                      {isSubmittingStudent ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Saving...</span>
+                        </>
+                      ) : (
+                        <span>{editingStudent ? 'Save Profile' : 'Confirm Admission'}</span>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -5309,6 +5380,66 @@ export default function AdminDashboard({
                 className="px-4 py-2 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 font-bold rounded-xl cursor-pointer"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CLEAR STUDENT ROSTER CONFIRMATION MODAL */}
+      {showClearRosterModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn no-print">
+          <div className="bg-white rounded-2xl border border-rose-200 w-full max-w-md p-6 shadow-2xl space-y-4 text-mauve-900">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-rose-100 text-rose-700 rounded-2xl shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-display font-extrabold text-mauve-950 text-base">
+                  Clear All Student Records?
+                </h4>
+                <p className="text-xs text-mauve-600 font-medium">
+                  Permanent student admissions directory reset
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-rose-50 border border-rose-200/80 rounded-xl space-y-1.5 text-xs text-rose-900 leading-relaxed">
+              <p className="font-bold">
+                ⚠️ You are about to clear all {students.length} currently enrolled pupil records.
+              </p>
+              <p className="text-[11px] text-rose-800">
+                This will reset the student registry across all classes (Nursery, Kindergarten, Primary, and JHS) to 0 enrolled pupils. This action immediately updates the local database, server cache, and admissions table.
+              </p>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-2 border-t border-mauve-100">
+              <button
+                type="button"
+                onClick={() => setShowClearRosterModal(false)}
+                disabled={isClearingRoster}
+                className="px-4 py-2.5 rounded-xl border border-mauve-200 hover:bg-mauve-100 text-mauve-700 font-bold text-xs cursor-pointer transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                id="confirm-clear-roster-btn"
+                type="button"
+                onClick={handleConfirmClearAllStudents}
+                disabled={isClearingRoster}
+                className="px-5 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-extrabold text-xs cursor-pointer transition shadow-md shadow-rose-700/20 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isClearingRoster ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Clearing Roster...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Yes, Clear All Pupils</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

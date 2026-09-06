@@ -1520,6 +1520,12 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
   };
 
   const getMergedFallback = async (): Promise<Student[] | null> => {
+    // If the roster was explicitly cleared by user, do not resurrect from server or fallback
+    if (localStorage.getItem('ea_students_cleared') === 'true') {
+      const cached = localStorage.getItem('ea_students');
+      if (!cached || cached === '[]') return [];
+    }
+
     const serverResult = await fetchFromServer();
     const cached = localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students');
     let localParsed: Student[] = [];
@@ -1648,6 +1654,9 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
 
   // 1. Immediately remove any tombstone locally and from memory
   removeDeletedStudentId(student.id, student.rollNumber, student.name);
+  try {
+    localStorage.removeItem('ea_students_cleared');
+  } catch (e) {}
 
   // 2. Immediately update local caches for zero latency
   try {
@@ -1760,17 +1769,39 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
 }
 
 export async function saveSupabaseStudents(students: Student[]): Promise<boolean> {
-  // Un-tombstone all active students
-  if (Array.isArray(students)) {
-    students.forEach(s => {
-      if (s && s.id) {
-        removeDeletedStudentId(s.id, s.rollNumber, s.name);
+  // Defensive check: Never wipe database or local storage with empty students list if existing data exists
+  if (!Array.isArray(students) || students.length === 0) {
+    let existingCount = 0;
+    try {
+      const cached = localStorage.getItem('ea_students');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) existingCount = parsed.length;
       }
-    });
+    } catch (e) {}
+    if (existingCount > 0) {
+      console.warn(`[Supabase Student Sync Guard] Blocked attempt to save empty student list while local memory/cache holds ${existingCount} students.`);
+      return false;
+    }
+    return true;
   }
+
+  // Un-tombstone all active students
+  students.forEach(s => {
+    if (s && s.id) {
+      removeDeletedStudentId(s.id, s.rollNumber, s.name);
+    }
+  });
 
   // Filter out any students that have been marked deleted or demo
   const validStudents = students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
+
+  if (validStudents.length === 0 && students.length > 0) {
+    console.warn(`[Supabase Student Sync Guard] All ${students.length} students were flagged as deleted/demo. Blocking destructive wipe.`);
+    return false;
+  }
+
+  console.log(`[Supabase Student Sync Diagnostic] saveSupabaseStudents: Pushing ${validStudents.length} students to Supabase (raw count: ${students.length})`);
 
   // Always persist to local cache immediately to guarantee offline/local persistence
   localStorage.setItem('mock_supabase_ea_students', JSON.stringify(validStudents));
@@ -1839,6 +1870,55 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
     broadcastGlobalSync('ea_students', { action: 'UPSERT', count: validStudents.length });
     broadcastSync('students', validStudents, 'update');
     return true;
+  }
+}
+
+// Dedicated function to safely and completely clear all student records across storage, server, and Supabase
+export async function clearAllSupabaseStudents(): Promise<boolean> {
+  try {
+    // 1. Set explicit cleared flag to prevent resurrection during sync
+    try {
+      localStorage.setItem('ea_students_cleared', 'true');
+      localStorage.setItem('ea_students', JSON.stringify([]));
+      localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
+    } catch (e) {}
+
+    // 2. Clear server cache via POST and DELETE /api/students/clear
+    try {
+      await fetch('/api/students/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }).catch(() => {});
+    } catch (e) {}
+
+    // 3. Clear remote Supabase table if client is configured
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        await client.from('ea_students').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      } catch (e) {
+        console.warn('Supabase delete all students error:', e);
+      }
+      try {
+        await client.from('ea_sync_logs').insert([{
+          action: 'CLEAR_STUDENTS',
+          description: 'All pupil records cleared from admissions directory.',
+          performed_by: 'Admin',
+          status: 'SUCCESS',
+          details: { timestamp: new Date().toISOString() },
+          timestamp: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }]);
+      } catch (e) {}
+    }
+
+    broadcastGlobalSync('ea_students', { action: 'CLEAR_ALL', count: 0 });
+    broadcastSync('students', [], 'delete');
+    window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'clear_all' } }));
+    return true;
+  } catch (err) {
+    console.error('Failed to clear all students:', err);
+    return false;
   }
 }
 
@@ -1988,11 +2068,9 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
   // 1. Immediately purge from local caches
   try {
     const isTargetStudent = (s: any) => {
-      if (s.id && s.id === id) return true;
-      if (rollNumber && s.rollNumber && s.rollNumber === rollNumber) return true;
-      if (normRoll && s.rollNumber && s.rollNumber.toUpperCase().replace(/[^A-Z0-9]/g, '') === normRoll) return true;
-      if (normName && s.name && s.name.toLowerCase().trim() === normName) return true;
-      return isStudentDeleted(s);
+      if (id && s.id && s.id === id) return true;
+      if (rollNumber && s.rollNumber && s.rollNumber.trim().toLowerCase() === rollNumber.trim().toLowerCase()) return true;
+      return false;
     };
 
     const cachedStudents = localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students');
@@ -2125,16 +2203,7 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
         await client.from('ea_students').delete().eq('id', id.trim());
       }
       if (rollNumber) {
-        await client.from('ea_students').delete().eq('roll_number', rollNumber);
         await client.from('ea_students').delete().eq('roll_number', rollNumber.trim());
-        await client.from('ea_students').delete().ilike('roll_number', rollNumber.trim());
-        await client.from('ea_students').delete().eq('id', rollNumber);
-      }
-      if (normRoll) {
-        await client.from('ea_students').delete().ilike('roll_number', `%${normRoll}%`);
-      }
-      if (studentName) {
-        await client.from('ea_students').delete().ilike('name', studentName.trim());
       }
 
       // Log deletion in ea_sync_logs and ea_deleted_records to sync across other client devices & sessions

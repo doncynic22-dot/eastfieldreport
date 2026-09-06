@@ -397,6 +397,28 @@ async function startServer() {
     });
   });
 
+  // POST /api/students/clear: Instantly wipe student roster from global server cache
+  app.post("/api/students/clear", (req, res) => {
+    saveServerStudents([]);
+    console.log(`[Global Student Sync] Student roster cleared to 0 on server.`);
+    return res.status(200).json({
+      status: "success",
+      count: 0,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // DELETE /api/students: Clear all students
+  app.delete("/api/students", (req, res) => {
+    saveServerStudents([]);
+    console.log(`[Global Student Sync] Student roster cleared to 0 on server via DELETE.`);
+    return res.status(200).json({
+      status: "success",
+      count: 0,
+      timestamp: new Date().toISOString()
+    });
+  });
+
   // POST /api/students: Bulk sync entire student roster
   app.post("/api/students", (req, res) => {
     const students = req.body?.students;
@@ -449,6 +471,30 @@ async function startServer() {
       status: "success",
       count: updated.length
     });
+  });
+
+  // Dedicated Service Worker and Manifest routes with appropriate headers
+  app.get("/sw.js", (req, res) => {
+    const swPath = path.join(process.cwd(), "public", "sw.js");
+    if (fs.existsSync(swPath)) {
+      res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Service-Worker-Allowed", "/");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      return res.sendFile(swPath);
+    }
+    return res.status(404).send("Service Worker not found");
+  });
+
+  app.get("/manifest.json", (req, res) => {
+    const manifestPath = path.join(process.cwd(), "public", "manifest.json");
+    if (fs.existsSync(manifestPath)) {
+      res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      return res.sendFile(manifestPath);
+    }
+    return res.status(404).send("Manifest not found");
   });
 
   // Vite middleware for development or static serving for production

@@ -4,23 +4,63 @@
  * preventing data loss on unstable mobile networks.
  */
 
+// Install global listener to catch and handle any browser-level ServiceWorker script fetch errors
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason;
+    const msg = String(reason?.message || reason || '');
+    if (
+      msg.includes('ServiceWorker') ||
+      msg.includes('sw.js') ||
+      msg.includes('An unknown error occurred when fetching the script')
+    ) {
+      // Prevent browser console uncaught error escalation
+      event.preventDefault();
+      console.debug('[SW Safeguard] Handled background service worker event:', msg);
+    }
+  });
+}
+
 export function registerServiceWorker() {
-  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+  if (typeof window === 'undefined') {
     return;
   }
 
+  // 1. Detect if running inside an iframe (e.g. AI Studio development preview)
+  const isInIframe = (() => {
+    try {
+      return window.self !== window.top;
+    } catch (e) {
+      return true;
+    }
+  })();
+
+  // In an iframe preview, third-party partitioned storage and sandboxing prevent
+  // service worker script fetching and updates. Clean up any active registrations
+  // to avoid iframe background update errors.
+  if (isInIframe) {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const reg of registrations) {
+          reg.unregister().catch(() => {});
+        }
+      }).catch(() => {});
+    }
+    return;
+  }
+
+  if (!('serviceWorker' in navigator)) {
+    return;
+  }
+
+  // 2. Only register in top-level window (standalone PWA or opened in new browser tab)
   window.addEventListener('load', () => {
     navigator.serviceWorker
-      .register('/sw.js')
+      .register('/sw.js', { scope: '/' })
       .then((registration) => {
         console.log('[SW Registration] Service worker registered successfully with scope:', registration.scope);
 
-        // Force an immediate update check against the server
-        try {
-          registration.update();
-        } catch (e) {}
-
-        // Check for updates to the service worker
+        // Check for updates to the service worker cleanly when an update is found
         registration.addEventListener('updatefound', () => {
           const installingWorker = registration.installing;
           if (installingWorker) {
@@ -37,19 +77,31 @@ export function registerServiceWorker() {
           }
         });
 
-        // Trigger immediate core database snapshot caching
+        // Trigger initial database snapshot caching for offline usage
         syncCoreDatabaseSnapshot();
+
+        // Check for updates gently when returning to tab, never immediately in registration callback
+        let lastCheckTime = Date.now();
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible' && Date.now() - lastCheckTime > 300000) {
+            lastCheckTime = Date.now();
+            try {
+              registration.update().catch((err) => {
+                console.debug('[SW Registration] Background update check safely bypassed:', err?.message || err);
+              });
+            } catch (e) {}
+          }
+        });
       })
       .catch((error) => {
-        console.warn('[SW Registration] Service worker registration failed:', error);
+        console.info('[SW Registration] Service worker registration bypassed:', error?.message || error);
       });
 
-    // Handle service worker controller change (e.g. after skipWaiting)
+    // Handle service worker controller change
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!refreshing) {
         refreshing = true;
-        // Optional: reload or notify client
       }
     });
   });
@@ -68,21 +120,19 @@ export function registerServiceWorker() {
   });
 
   // Set up periodic snapshot syncing every 30 seconds and on tab hide
-  if (typeof window !== 'undefined') {
-    setInterval(() => {
-      syncCoreDatabaseSnapshot();
-    }, 30000);
+  setInterval(() => {
+    syncCoreDatabaseSnapshot();
+  }, 30000);
 
-    window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') {
-        syncCoreDatabaseSnapshot();
-      }
-    });
-
-    window.addEventListener('beforeunload', () => {
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
       syncCoreDatabaseSnapshot();
-    });
-  }
+    }
+  });
+
+  window.addEventListener('beforeunload', () => {
+    syncCoreDatabaseSnapshot();
+  });
 }
 
 /**

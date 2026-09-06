@@ -183,11 +183,13 @@ export default function App() {
 
   // Pull all tables from Supabase with smart fallbacks and automatic seeding
   const handlePullFromSupabase = async () => {
+    isPullingRemoteRef.current = true;
     setIsSupabaseSyncing(true);
     try {
       const active = await checkSupabaseStatus();
       if (!active) {
         setIsSupabaseSyncing(false);
+        isPullingRemoteRef.current = false;
         return false;
       }
 
@@ -337,6 +339,17 @@ export default function App() {
           activeStudents = restoredStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
         }
         activeStudents = deduplicateStudents(activeStudents);
+
+        // Defensive check: If remote returned 0 students but local cache has students, protect local cache unless intentionally cleared
+        if (activeStudents.length === 0 && localStudents.length > 0) {
+          if (localStorage.getItem('ea_students_cleared') !== 'true') {
+            console.warn(`[Sync Guard] Remote pull returned 0 students while local cache holds ${localStudents.length}. Preserving local cache.`);
+            activeStudents = localStudents;
+          }
+        }
+
+        console.log(`[Supabase Student Sync Diagnostic] handlePullFromSupabase: Loaded ${activeStudents.length} students (remote cloud fetch: ${cleanStudents.length}, local cache was: ${localStudents.length})`);
+        lastSavedStudentsSigRef.current = activeStudents.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
         setStudents(activeStudents);
         localStorage.setItem('ea_students', JSON.stringify(activeStudents));
         localStorage.setItem('mock_supabase_ea_students', JSON.stringify(activeStudents));
@@ -350,6 +363,8 @@ export default function App() {
           cleanLocalStudents = restoredStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
         }
         cleanLocalStudents = deduplicateStudents(cleanLocalStudents);
+        console.log(`[Supabase Student Sync Diagnostic] handlePullFromSupabase (offline/failed): Retaining ${cleanLocalStudents.length} students from local cache.`);
+        lastSavedStudentsSigRef.current = cleanLocalStudents.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
         setStudents(cleanLocalStudents);
         localStorage.setItem('ea_students', JSON.stringify(cleanLocalStudents));
         localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanLocalStudents));
@@ -498,10 +513,16 @@ export default function App() {
       }
 
       setIsSupabaseSyncing(false);
+      setTimeout(() => {
+        isPullingRemoteRef.current = false;
+      }, 500);
       return true;
     } catch (e: any) {
       console.error('Failed pulling from Supabase:', e);
       setIsSupabaseSyncing(false);
+      setTimeout(() => {
+        isPullingRemoteRef.current = false;
+      }, 500);
       return false;
     }
   };
@@ -535,6 +556,7 @@ export default function App() {
         }
       })();
 
+      console.log(`[Supabase Student Sync Diagnostic] Manual Push: Pushing ${targetStudents.length} students to Supabase (in-memory state: ${students.length})`);
       const okConfig = await saveSupabaseConfig(targetConfig);
       const okStudents = await saveSupabaseStudents(targetStudents);
       const okTeachers = await saveSupabaseTeachers(targetTeachers);
@@ -601,9 +623,15 @@ export default function App() {
       cleanStudents = restoredStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
     }
 
-    setStudents(cleanStudents);
-    localStorage.setItem('ea_students', JSON.stringify(cleanStudents));
-    localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanStudents));
+    if (cleanStudents.length > 0) {
+      setStudents(cleanStudents);
+      localStorage.setItem('ea_students', JSON.stringify(cleanStudents));
+      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanStudents));
+      lastSavedStudentsSigRef.current = cleanStudents.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+      console.log(`[Supabase Student Sync Diagnostic] Initial mount: Loaded ${cleanStudents.length} students from local storage cache.`);
+    } else {
+      console.log('[Supabase Student Sync Diagnostic] Initial mount: Local storage cache holds 0 students. Deferring student population to cloud pull.');
+    }
     localStorage.setItem('ea_has_initialized', 'true');
 
     // Warm server-side student cache for global multi-browser sync
@@ -675,19 +703,26 @@ export default function App() {
       const creds = getSupabaseCredentials();
       if (creds.isConfigured) {
         setSyncStatus('syncing');
-        const ok = await checkSupabaseStatus();
-        if (ok) {
-          // Pull latest records to keep local states synced
-          const pullResult = await handlePullFromSupabase();
-          if (pullResult) {
-            setSyncStatus('synced');
+        isPullingRemoteRef.current = true;
+        try {
+          const ok = await checkSupabaseStatus();
+          if (ok) {
+            // Pull latest records to keep local states synced
+            const pullResult = await handlePullFromSupabase();
+            if (pullResult) {
+              setSyncStatus('synced');
+            } else {
+              setSyncStatus('error');
+              setLastSyncError('Initial pull from cloud failed. Verify tables exist.');
+            }
           } else {
             setSyncStatus('error');
-            setLastSyncError('Initial pull from cloud failed. Verify tables exist.');
+            setLastSyncError('Failed to verify cloud credentials.');
           }
-        } else {
-          setSyncStatus('error');
-          setLastSyncError('Failed to verify cloud credentials.');
+        } finally {
+          setTimeout(() => {
+            isPullingRemoteRef.current = false;
+          }, 500);
         }
       } else {
         setSyncStatus('offline');
@@ -702,10 +737,16 @@ export default function App() {
     if (!isInitialized || students.length === 0) return;
     const clean = deduplicateStudents(students);
     if (clean.length !== students.length) {
+      if (clean.length === 0 && students.length > 0) {
+        console.error('[Sync Guard] Deduplication produced 0 students from non-empty state. Aborting push to Supabase.');
+        return;
+      }
       console.warn(`[Eastfield Academy] Deduplicated ${students.length - clean.length} colliding student records.`);
+      console.log(`[Supabase Student Sync Diagnostic] Deduplication auto-sync: Pushing ${clean.length} students to Supabase (held in memory: ${students.length})`);
       setStudents(clean);
       localStorage.setItem('ea_students', JSON.stringify(clean));
       localStorage.setItem('mock_supabase_ea_students', JSON.stringify(clean));
+      lastSavedStudentsSigRef.current = clean.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
       const creds = getSupabaseCredentials();
       if (creds.isConfigured) {
         saveSupabaseStudents(clean).catch(err => console.warn('Supabase student deduplication sync error', err));
@@ -776,6 +817,7 @@ export default function App() {
 
       const creds = getSupabaseCredentials();
       if (creds.isConfigured) {
+        console.log(`[Supabase Student Sync Diagnostic] Auto-Promotion Sync: Pushing ${result.promotedStudents.length} students to Supabase (in-memory state was: ${students.length})`);
         saveSupabaseStudents(result.promotedStudents).catch(err => console.warn('Supabase student sync error', err));
         saveSupabaseConfig(updatedConfig).catch(err => console.warn('Supabase config sync error', err));
       }
@@ -794,14 +836,51 @@ export default function App() {
 
   useEffect(() => {
     if (!isInitialized) return;
+
+    // Check local storage cache count for defensive validation
+    let cachedCount = 0;
+    const cachedStr = localStorage.getItem('ea_students');
+    try {
+      if (cachedStr) {
+        const parsed = JSON.parse(cachedStr);
+        if (Array.isArray(parsed)) cachedCount = parsed.length;
+      }
+    } catch (e) {}
+
+    // Defensive check 1: Prevent wiping local cache or cloud with empty students state
+    if (students.length === 0) {
+      if (localStorage.getItem('ea_students_cleared') === 'true') {
+        localStorage.setItem('ea_students', JSON.stringify([]));
+        return;
+      }
+      if (cachedCount > 0) {
+        console.warn(`[Sync Guard] In-memory students state is 0, but local storage cache holds ${cachedCount} students. Blocking destructive overwrite and rehydrating state.`);
+        try {
+          const cached = JSON.parse(cachedStr!);
+          setStudents(cached);
+        } catch (e) {}
+        return;
+      }
+      console.warn('[Sync Guard] Both in-memory state and local cache have 0 students. Skipping push to Supabase to prevent wiping cloud database.');
+      return;
+    }
+
+    // Safely persist to local cache once verified non-empty
     localStorage.setItem('ea_students', JSON.stringify(students));
-    if (isPullingRemoteRef.current) return;
+
+    // Defensive check 2: Never push while pulling remote updates
+    if (isPullingRemoteRef.current) {
+      console.log(`[Supabase Student Sync Diagnostic] Remote pull in progress. Skipping auto-save (in-memory: ${students.length}, cache: ${cachedCount}).`);
+      return;
+    }
+
     const sig = students.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
     if (lastSavedStudentsSigRef.current === sig) return;
     lastSavedStudentsSigRef.current = sig;
 
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
+      console.log(`[Supabase Student Sync Diagnostic] Auto-sync: Pushing ${students.length} students to Supabase (in-memory: ${students.length}, local cache was: ${cachedCount})`);
       setSyncStatus('syncing');
       saveSupabaseStudents(students).then(ok => {
         if (ok) {
@@ -1028,6 +1107,13 @@ export default function App() {
         ]);
 
         if (remoteStudents && Array.isArray(remoteStudents)) {
+          if (localStorage.getItem('ea_students_cleared') === 'true') {
+            const locallySaved = localStorage.getItem('ea_students');
+            if (!locallySaved || locallySaved === '[]') {
+              setStudents([]);
+              return;
+            }
+          }
           setStudents(prev => {
             const deletedIds = new Set(getDeletedStudentIds().map(x => String(x).toLowerCase().trim()));
             const cleanRemote = remoteStudents.filter(s => s && s.id && !deletedIds.has(s.id.toLowerCase().trim()) && !isDemoStudent(s));
@@ -1324,10 +1410,23 @@ export default function App() {
         window.dispatchEvent(new Event('ea_book_stock_updated'));
       }
 
+      let activeForceStudents = students;
       if (remoteStudents && Array.isArray(remoteStudents)) {
-        const clean = remoteStudents.filter(s => !isStudentDeleted(s));
-        setStudents(clean);
-        localStorage.setItem('ea_students', JSON.stringify(clean));
+        if (localStorage.getItem('ea_students_cleared') === 'true') {
+          const locallySaved = localStorage.getItem('ea_students');
+          if (!locallySaved || locallySaved === '[]') {
+            setStudents([]);
+            localStorage.setItem('ea_students', JSON.stringify([]));
+          }
+        } else {
+          const clean = remoteStudents.filter(s => !isStudentDeleted(s));
+          if (clean.length > 0) {
+            activeForceStudents = clean;
+            lastSavedStudentsSigRef.current = clean.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+            setStudents(clean);
+            localStorage.setItem('ea_students', JSON.stringify(clean));
+          }
+        }
       }
       if (remoteTeachers && Array.isArray(remoteTeachers)) {
         setTeachers(remoteTeachers);
@@ -1346,10 +1445,12 @@ export default function App() {
         setAttendance(remoteAttendance);
       }
 
+      console.log(`[Supabase Student Sync Diagnostic] Force Sync: Pushing ${activeForceStudents.length} students to Supabase (in-memory closure had: ${students.length})`);
+
       // Bidirectional push of local states to guarantee parity
       await Promise.allSettled([
         saveSupabaseConfig(config),
-        saveSupabaseStudents(students),
+        ...(activeForceStudents.length > 0 ? [saveSupabaseStudents(activeForceStudents)] : []),
         saveSupabaseTeachers(teachers),
         saveSupabaseGrades(grades),
         saveSupabaseAttendance(attendance),
