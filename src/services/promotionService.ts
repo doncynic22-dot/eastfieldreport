@@ -1,6 +1,6 @@
 import { Student, AcademicLevel, ReportConfig, Grade } from '../types';
 import { INITIAL_STUDENTS } from '../data/mockData';
-import { getDeletedStudentIds } from '../lib/supabase';
+import { getDeletedStudentIds, isStudentDeleted } from '../lib/supabase';
 
 export interface PromotionRecord {
   oldStudentId: string;

@@ -30,7 +30,7 @@ function isDemoStudent(s: any): boolean {
 }
 
 function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
-  if (!s) return false;
+  if (!s || !s.id) return false;
   const db = dbCache || (fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, "utf-8")) : null);
   const allDeleted = new Set([
     ...(db?.deletedStudentIds || []),
@@ -38,15 +38,7 @@ function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
   ].map(x => String(x).toLowerCase().trim()));
   if (allDeleted.size === 0) return false;
 
-  if (s.id && allDeleted.has(String(s.id).toLowerCase().trim())) return true;
-  if (s.rollNumber) {
-    const r = String(s.rollNumber).toLowerCase().trim();
-    if (allDeleted.has(r)) return true;
-    const rClean = r.replace(/[^a-z0-9]/g, '');
-    if (allDeleted.has(rClean)) return true;
-  }
-  if (s.name && allDeleted.has(String(s.name).toLowerCase().trim())) return true;
-  return false;
+  return allDeleted.has(String(s.id).toLowerCase().trim());
 }
 
 function loadServerStudents(): any[] {
@@ -79,11 +71,6 @@ function saveServerStudents(students: any[]): boolean {
     if (clean.length === 0) {
       db.rosterCleared = true;
       db.rosterClearedAt = new Date().toISOString();
-      db.grades = [];
-      db.attendance = [];
-      db.bills = [];
-      db.dailyAttendance = [];
-      db.jhsMockExams = [];
     } else {
       db.rosterCleared = false;
     }
@@ -651,6 +638,16 @@ async function startServer() {
     }
 
     if (students.length === 0) {
+      const db = loadServerDatabase();
+      if (db.students && db.students.length > 0) {
+        console.warn(`[Server Students Sync Guard] Blocked empty students payload from overwriting ${db.students.length} existing server students.`);
+        return res.status(200).json({
+          status: "ignored",
+          count: db.students.length,
+          message: "Empty payload ignored to preserve existing recorded students",
+          timestamp: new Date().toISOString()
+        });
+      }
       saveServerStudents([]);
       return res.status(200).json({
         status: "success",

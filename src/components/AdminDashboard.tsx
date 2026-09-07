@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill, User } from '../types';
-import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History, Contact, PhoneCall, Briefcase, BadgeCheck, UserCheck, MapPin, IdCard, Zap, Eye, Database, RefreshCw, Library } from 'lucide-react';
+import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History, Contact, PhoneCall, Briefcase, BadgeCheck, UserCheck, MapPin, IdCard, Zap, Eye, Database, RefreshCw, Library, Copy, FileCode } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import FeesCollectionModule from './FeesCollectionModule';
 import FeesDashboard from './FeesDashboard';
@@ -16,7 +16,7 @@ import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryMo
 import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, setCustomSupabaseCredentials } from '../lib/supabase';
 import { globalSyncEngine } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
@@ -257,6 +257,25 @@ export default function AdminDashboard({
   const [teacherProfileLevelFilter, setTeacherProfileLevelFilter] = useState('ALL');
   const [viewingTeacherProfileModal, setViewingTeacherProfileModal] = useState<User | null>(null);
   const [selectedWorkstationTeacher, setSelectedWorkstationTeacher] = useState<User | null>(null);
+
+  // Fresh Database Table SQL and Custom Credentials States
+  const [showFreshTableSql, setShowFreshTableSql] = useState(false);
+  const [copiedSqlSuccess, setCopiedSqlSuccess] = useState(false);
+  const [customDbUrl, setCustomDbUrl] = useState(() => {
+    try {
+      return localStorage.getItem('ea_supabase_url') || '';
+    } catch (e) {
+      return '';
+    }
+  });
+  const [customDbKey, setCustomDbKey] = useState(() => {
+    try {
+      return localStorage.getItem('ea_supabase_anon_key') || '';
+    } catch (e) {
+      return '';
+    }
+  });
+  const [dbCredSuccessMsg, setDbCredSuccessMsg] = useState('');
 
   // Transcript Selector state
   const [selectedClass, setSelectedClass] = useState('Primary 4');
@@ -5184,6 +5203,162 @@ export default function AdminDashboard({
                     onChange={handleImportSystemBackup}
                   />
                 </label>
+              </div>
+            </div>
+
+            {/* FRESH DATABASE TABLE & POLICIES SETUP SECTION */}
+            <div className="mt-6 pt-6 border-t border-mauve-200 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700">
+                    <Database className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-mauve-950 flex items-center gap-2">
+                      Fresh Database Table Setup
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                        SQL Script with Assigned Policies
+                      </span>
+                    </h4>
+                    <p className="text-xs text-gray-500">
+                      Create or replace the <code className="font-mono font-bold text-mauve-900 bg-mauve-50 px-1 py-0.5 rounded">ea_students</code> table in Supabase with open access policies so pupil data is never blocked or wiped.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(FRESH_STUDENTS_TABLE_SQL);
+                        setCopiedSqlSuccess(true);
+                        setTimeout(() => setCopiedSqlSuccess(false), 4000);
+                      } catch (e) {
+                        setCopiedSqlSuccess(false);
+                      }
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                      copiedSqlSuccess
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-mauve-900 hover:bg-mauve-800 text-white'
+                    }`}
+                  >
+                    <CheckCircle2 className={`w-3.5 h-3.5 ${copiedSqlSuccess ? 'block' : 'hidden'}`} />
+                    <Copy className={`w-3.5 h-3.5 ${copiedSqlSuccess ? 'hidden' : 'block'}`} />
+                    <span>{copiedSqlSuccess ? 'Copied SQL Script!' : 'Copy SQL Script'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowFreshTableSql(!showFreshTableSql)}
+                    className="px-3 py-2 bg-mauve-100 hover:bg-mauve-200 text-mauve-900 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <FileCode className="w-3.5 h-3.5 text-mauve-700" />
+                    <span>{showFreshTableSql ? 'Hide SQL' : 'View SQL Query'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onPushToSupabase) {
+                        onPushToSupabase(students, config).then(() => {
+                          setPromotionSuccessMsg(`Successfully synchronized all ${students.length} pupil records to the database.`);
+                          setTimeout(() => setPromotionSuccessMsg(''), 6000);
+                        });
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                    title="Push all locally recorded students to the database"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Push All to Database</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* SQL Script Viewer */}
+              {showFreshTableSql && (
+                <div className="p-4 bg-slate-950 text-slate-100 rounded-xl border border-slate-800 space-y-2 animate-fadeIn">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span className="text-[11px] font-mono text-emerald-400 font-bold">
+                      Run this query in Supabase Console &gt; SQL Editor &gt; New Query &gt; Run
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(FRESH_STUDENTS_TABLE_SQL);
+                        setCopiedSqlSuccess(true);
+                        setTimeout(() => setCopiedSqlSuccess(false), 4000);
+                      }}
+                      className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>{copiedSqlSuccess ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                  <pre className="text-[11px] font-mono leading-relaxed overflow-x-auto p-2 text-emerald-300 max-h-72 select-all">
+                    {FRESH_STUDENTS_TABLE_SQL}
+                  </pre>
+                </div>
+              )}
+
+              {/* Supabase Connection Settings */}
+              <div className="p-4 bg-mauve-50/70 border border-mauve-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h5 className="text-xs font-bold text-mauve-950 uppercase tracking-wider flex items-center gap-1.5">
+                    <Database className="w-3.5 h-3.5 text-mauve-700" />
+                    Supabase Project Connection Credentials
+                  </h5>
+                  {dbCredSuccessMsg && (
+                    <span className="text-xs text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300">
+                      {dbCredSuccessMsg}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="text-[11px] font-semibold text-mauve-800 block mb-1">
+                      Project URL
+                    </label>
+                    <input
+                      type="text"
+                      value={customDbUrl}
+                      onChange={(e) => setCustomDbUrl(e.target.value)}
+                      placeholder="https://xyzcompany.supabase.co"
+                      className="w-full p-2 rounded-lg border border-mauve-300 bg-white font-mono text-xs focus:ring-2 focus:ring-mauve-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-mauve-800 block mb-1">
+                      Anon Public API Key
+                    </label>
+                    <input
+                      type="password"
+                      value={customDbKey}
+                      onChange={(e) => setCustomDbKey(e.target.value)}
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
+                      className="w-full p-2 rounded-lg border border-mauve-300 bg-white font-mono text-xs focus:ring-2 focus:ring-mauve-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomSupabaseCredentials(customDbUrl, customDbKey);
+                      setDbCredSuccessMsg('Database connection updated successfully.');
+                      if (onCheckSupabaseStatus) onCheckSupabaseStatus().catch(() => {});
+                      setTimeout(() => setDbCredSuccessMsg(''), 5000);
+                    }}
+                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Database Connection</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

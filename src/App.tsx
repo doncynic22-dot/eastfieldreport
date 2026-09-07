@@ -314,58 +314,50 @@ export default function App() {
 
         cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
-        const isCleared = localStorage.getItem('ea_students_cleared') === 'true';
-
-        let activeStudents: Student[] = [];
-
-        if (isCleared || cleanStudents.length === 0) {
-          // Roster was intentionally cleared or Supabase is genuinely empty
-          activeStudents = [];
-          localStorage.setItem('ea_students_cleared', 'true');
-        } else {
-          // Merge remote students with local cache non-destructively so newly admitted students are never lost
-          const studentMap = new Map<string, Student>();
-          cleanStudents.forEach(s => {
-            if (s && s.id) studentMap.set(s.id, s);
-          });
-          localStudents.forEach(s => {
-            if (s && s.id && !teacherIds.has(s.id) && !isStudentDeleted(s) && !isDemoStudent(s)) {
-              const existing = studentMap.get(s.id);
-              if (!existing) {
+        // Merge remote students with local cache non-destructively so newly admitted or recorded students are never lost
+        const studentMap = new Map<string, Student>();
+        cleanStudents.forEach(s => {
+          if (s && s.id) studentMap.set(s.id, s);
+        });
+        localStudents.forEach(s => {
+          if (s && s.id && !teacherIds.has(s.id) && !isStudentDeleted(s) && !isDemoStudent(s)) {
+            const existing = studentMap.get(s.id);
+            if (!existing) {
+              studentMap.set(s.id, s);
+            } else {
+              const localTime = (s as any).updated_at || (s as any).updatedAt ? new Date((s as any).updated_at || (s as any).updatedAt).getTime() : 0;
+              const remoteTime = (existing as any).updated_at || (existing as any).updatedAt ? new Date((existing as any).updated_at || (existing as any).updatedAt).getTime() : 0;
+              if (localTime >= remoteTime) {
                 studentMap.set(s.id, s);
-              } else {
-                const localTime = (s as any).updated_at || (s as any).updatedAt ? new Date((s as any).updated_at || (s as any).updatedAt).getTime() : 0;
-                const remoteTime = (existing as any).updated_at || (existing as any).updatedAt ? new Date((existing as any).updated_at || (existing as any).updatedAt).getTime() : 0;
-                if (localTime >= remoteTime) {
-                  studentMap.set(s.id, s);
-                }
               }
             }
-          });
+          }
+        });
 
-          activeStudents = Array.from(studentMap.values());
-          activeStudents = deduplicateStudents(activeStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s)));
-          if (activeStudents.length > 0) {
-            localStorage.removeItem('ea_students_cleared');
+        let activeStudents = Array.from(studentMap.values());
+        activeStudents = deduplicateStudents(activeStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s)));
+
+        if (activeStudents.length > 0) {
+          localStorage.removeItem('ea_students_cleared');
+          // If remote cloud was empty (e.g. newly created database tables), auto-sync recorded students to Supabase immediately!
+          if (cleanStudents.length === 0) {
+            console.log(`[Supabase Student Sync] Auto-syncing ${activeStudents.length} recorded students to new Supabase table...`);
+            saveSupabaseStudents(activeStudents).catch(e => console.warn("Failed auto-syncing students to new table:", e));
           }
         }
 
-        console.log(`[Supabase Student Sync Diagnostic] handlePullFromSupabase: Loaded ${activeStudents.length} students (remote cloud fetch: ${cleanStudents.length}, isCleared: ${isCleared})`);
+        console.log(`[Supabase Student Sync Diagnostic] handlePullFromSupabase: Loaded ${activeStudents.length} students (remote cloud fetch: ${cleanStudents.length})`);
         lastSavedStudentsSigRef.current = activeStudents.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
         setStudents(activeStudents);
         localStorage.setItem('ea_students', JSON.stringify(activeStudents));
         localStorage.setItem('mock_supabase_ea_students', JSON.stringify(activeStudents));
         localStorage.setItem('ea_has_initialized', 'true');
       } else {
-        const isCleared = localStorage.getItem('ea_students_cleared') === 'true';
-        let cleanLocalStudents: Student[] = [];
-        if (!isCleared) {
-          cleanLocalStudents = localStudents.filter(
-            s => !teacherIds.has(s.id)
-          ).filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
-          cleanLocalStudents = deduplicateStudents(cleanLocalStudents);
-        }
-        console.log(`[Supabase Student Sync Diagnostic] handlePullFromSupabase (offline/failed): Retaining ${cleanLocalStudents.length} students from local cache (isCleared: ${isCleared}).`);
+        let cleanLocalStudents = localStudents.filter(
+          s => !teacherIds.has(s.id)
+        ).filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
+        cleanLocalStudents = deduplicateStudents(cleanLocalStudents);
+        console.log(`[Supabase Student Sync Diagnostic] handlePullFromSupabase (offline/failed): Retaining ${cleanLocalStudents.length} students from local cache.`);
         lastSavedStudentsSigRef.current = cleanLocalStudents.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
         setStudents(cleanLocalStudents);
         localStorage.setItem('ea_students', JSON.stringify(cleanLocalStudents));
@@ -543,9 +535,27 @@ export default function App() {
       // Check status for UI indicator, but do not block server and local persistence
       await checkSupabaseStatus();
 
-      const isRosterCleared = localStorage.getItem('ea_students_cleared') === 'true';
+      if (customStudents && customStudents.length > 0) {
+        try {
+          localStorage.removeItem('ea_students_cleared');
+        } catch (e) {}
+      }
+
+      const isRosterCleared = (customStudents && customStudents.length > 0)
+        ? false
+        : (typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true');
+
       const targetConfig = customConfig || config;
-      const targetStudents = isRosterCleared ? [] : (customStudents !== undefined ? customStudents : students);
+      const targetStudents = (customStudents !== undefined)
+        ? customStudents
+        : (isRosterCleared ? [] : students);
+
+      if (targetStudents.length > 0) {
+        try {
+          localStorage.removeItem('ea_students_cleared');
+        } catch (e) {}
+      }
+
       const targetTeachers = customTeachers || teachers;
       const targetGrades = isRosterCleared ? [] : (customGrades !== undefined ? customGrades : grades);
       const targetAttendance = isRosterCleared ? [] : (customAttendance !== undefined ? customAttendance : attendance);
@@ -1253,17 +1263,16 @@ export default function App() {
         ]);
 
         if (remoteStudents && Array.isArray(remoteStudents)) {
-          if (localStorage.getItem('ea_students_cleared') === 'true') {
-            const locallySaved = localStorage.getItem('ea_students');
-            if (!locallySaved || locallySaved === '[]') {
-              setStudents([]);
-              return;
-            }
-          }
           setStudents(prev => {
             const deletedIds = new Set(getDeletedStudentIds().map(x => String(x).toLowerCase().trim()));
             const cleanRemote = remoteStudents.filter(s => s && s.id && !deletedIds.has(s.id.toLowerCase().trim()) && !isDemoStudent(s));
             const cleanPrev = prev.filter(s => s && s.id && !deletedIds.has(s.id.toLowerCase().trim()) && !isDemoStudent(s));
+
+            // If remote cloud was empty but we have existing students, push to remote Supabase
+            if (cleanRemote.length === 0 && cleanPrev.length > 0) {
+              saveSupabaseStudents(cleanPrev).catch(() => {});
+              return prev;
+            }
 
             // Build student map preserving any local newly added students
             const studentMap = new Map<string, Student>();
@@ -1290,6 +1299,11 @@ export default function App() {
             const mergedSig = merged.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
 
             if (prevSig !== mergedSig) {
+              if (merged.length > 0) {
+                try {
+                  localStorage.removeItem('ea_students_cleared');
+                } catch (e) {}
+              }
               localStorage.setItem('ea_students', JSON.stringify(merged));
               localStorage.setItem('mock_supabase_ea_students', JSON.stringify(merged));
               return merged;
@@ -1558,20 +1572,21 @@ export default function App() {
 
       let activeForceStudents = students;
       if (remoteStudents && Array.isArray(remoteStudents)) {
-        if (localStorage.getItem('ea_students_cleared') === 'true') {
-          const locallySaved = localStorage.getItem('ea_students');
-          if (!locallySaved || locallySaved === '[]') {
-            setStudents([]);
-            localStorage.setItem('ea_students', JSON.stringify([]));
+        const clean = remoteStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
+        const studentMap = new Map<string, Student>();
+        clean.forEach(s => studentMap.set(s.id, s));
+        students.forEach(s => {
+          if (s && s.id && !studentMap.has(s.id) && !isStudentDeleted(s) && !isDemoStudent(s)) {
+            studentMap.set(s.id, s);
           }
-        } else {
-          const clean = remoteStudents.filter(s => !isStudentDeleted(s));
-          if (clean.length > 0) {
-            activeForceStudents = clean;
-            lastSavedStudentsSigRef.current = clean.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
-            setStudents(clean);
-            localStorage.setItem('ea_students', JSON.stringify(clean));
-          }
+        });
+        const merged = deduplicateStudents(Array.from(studentMap.values()));
+        if (merged.length > 0) {
+          activeForceStudents = merged;
+          lastSavedStudentsSigRef.current = merged.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+          setStudents(merged);
+          localStorage.removeItem('ea_students_cleared');
+          localStorage.setItem('ea_students', JSON.stringify(merged));
         }
       }
       if (remoteTeachers && Array.isArray(remoteTeachers)) {

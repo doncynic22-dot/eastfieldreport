@@ -312,6 +312,107 @@ export function getSupabaseClient(): SupabaseClient | null {
   return supabaseClientInstance;
 }
 
+export function setCustomSupabaseCredentials(url: string, key: string): boolean {
+  try {
+    if (url && key) {
+      localStorage.setItem('ea_supabase_url', url.trim());
+      localStorage.setItem('ea_supabase_anon_key', key.trim());
+    } else {
+      localStorage.removeItem('ea_supabase_url');
+      localStorage.removeItem('ea_supabase_anon_key');
+    }
+    if (globalRealtimeChannel) {
+      try {
+        supabaseClientInstance?.removeChannel(globalRealtimeChannel);
+      } catch (e) {}
+      globalRealtimeChannel = null;
+      isRealtimeSubscribed = false;
+    }
+    supabaseClientInstance = null;
+    currentClientUrl = '';
+    currentClientKey = '';
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+export const FRESH_STUDENTS_TABLE_SQL = `-- =========================================================================
+-- EASTFIELD ACADEMY: FRESH 'ea_students' TABLE WITH ASSIGNED POLICIES
+-- Run this in your Supabase SQL Editor (SQL Editor -> New Query -> Run)
+-- =========================================================================
+
+-- 1. Drop existing table if replacing fresh
+DROP TABLE IF EXISTS public.ea_students CASCADE;
+
+-- 2. Re-create the Pupils / Students Table
+CREATE TABLE public.ea_students (
+  id VARCHAR PRIMARY KEY,
+  name VARCHAR NOT NULL,
+  roll_number VARCHAR NOT NULL,
+  level VARCHAR NOT NULL DEFAULT 'PRIMARY',
+  class_name VARCHAR NOT NULL,
+  guardian_name VARCHAR NOT NULL DEFAULT '',
+  guardian_email VARCHAR NOT NULL DEFAULT '',
+  guardian_phone VARCHAR DEFAULT '',
+  photo_url TEXT DEFAULT '',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 3. Create high-speed lookup indexes
+CREATE INDEX IF NOT EXISTS idx_ea_students_class ON public.ea_students (class_name);
+CREATE INDEX IF NOT EXISTS idx_ea_students_roll ON public.ea_students (roll_number);
+
+-- 4. Enable Row Level Security (RLS)
+ALTER TABLE public.ea_students ENABLE ROW LEVEL SECURITY;
+
+-- 5. Create Permissive Assigned Policies for 'anon', 'authenticated', and 'service_role'
+-- (Ensures new students added from the web app client or admin portal never get blocked or rejected)
+DROP POLICY IF EXISTS "Allow public read access to ea_students" ON public.ea_students;
+CREATE POLICY "Allow public read access to ea_students"
+ON public.ea_students FOR SELECT
+TO anon, authenticated, service_role
+USING (true);
+
+DROP POLICY IF EXISTS "Allow public insert access to ea_students" ON public.ea_students;
+CREATE POLICY "Allow public insert access to ea_students"
+ON public.ea_students FOR INSERT
+TO anon, authenticated, service_role
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public update access to ea_students" ON public.ea_students;
+CREATE POLICY "Allow public update access to ea_students"
+ON public.ea_students FOR UPDATE
+TO anon, authenticated, service_role
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public delete access to ea_students" ON public.ea_students;
+CREATE POLICY "Allow public delete access to ea_students"
+ON public.ea_students FOR DELETE
+TO anon, authenticated, service_role
+USING (true);
+
+-- 6. Grant Table Permissions to All Roles
+GRANT ALL ON TABLE public.ea_students TO anon;
+GRANT ALL ON TABLE public.ea_students TO authenticated;
+GRANT ALL ON TABLE public.ea_students TO service_role;
+
+-- 7. Add to Realtime Publication for Live Cross-Device Sync
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'ea_students'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.ea_students;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+`;
+
 // SQL Script for setting up tables in Supabase Console
 export const SUPABASE_SQL_REPAIR = `-- DATABASE SYNC REPAIR SCRIPT (MIGRATION)
 -- Execute this SQL script in your Supabase SQL Editor to add missing columns and reload the schema cache.
@@ -1424,7 +1525,13 @@ export function getDeletedStudentIds(): string[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        return parsed.filter(x => typeof x === 'string' && x.trim());
+        return parsed.filter(x => {
+          if (typeof x !== 'string' || !x.trim()) return false;
+          const clean = x.trim().toLowerCase();
+          // Exclude roll numbers with slashes and multi-word names so only true student IDs are tracked
+          if (clean.includes('/') || clean.includes(' ') || clean.startsWith('ea/')) return false;
+          return true;
+        });
       }
     }
   } catch (e) {}
@@ -1432,37 +1539,15 @@ export function getDeletedStudentIds(): string[] {
 }
 
 export function recordDeletedStudentId(id: string, rollNumber?: string, studentName?: string): void {
-  if (!id && !rollNumber && !studentName) return;
+  if (!id) return;
   try {
     const current = getDeletedStudentIds();
     const currentLower = new Set(current.map(x => String(x).toLowerCase().trim()));
     const toAdd: string[] = [];
 
-    if (id) {
-      const cleanId = id.trim().toLowerCase();
-      if (cleanId && !currentLower.has(cleanId)) {
-        toAdd.push(cleanId);
-        currentLower.add(cleanId);
-      }
-    }
-    if (rollNumber) {
-      const cleanRoll = rollNumber.trim().toLowerCase();
-      if (cleanRoll && !currentLower.has(cleanRoll)) {
-        toAdd.push(cleanRoll);
-        currentLower.add(cleanRoll);
-      }
-      const alphanumRoll = cleanRoll.replace(/[^a-z0-9]/g, '');
-      if (alphanumRoll && !currentLower.has(alphanumRoll)) {
-        toAdd.push(alphanumRoll);
-        currentLower.add(alphanumRoll);
-      }
-    }
-    if (studentName) {
-      const cleanName = studentName.trim().toLowerCase();
-      if (cleanName && !currentLower.has(cleanName)) {
-        toAdd.push(cleanName);
-        currentLower.add(cleanName);
-      }
+    const cleanId = id.trim().toLowerCase();
+    if (cleanId && !currentLower.has(cleanId)) {
+      toAdd.push(cleanId);
     }
 
     if (toAdd.length > 0) {
@@ -1472,23 +1557,12 @@ export function recordDeletedStudentId(id: string, rollNumber?: string, studentN
 }
 
 export function isStudentDeleted(student?: { id?: string; rollNumber?: string; name?: string } | null): boolean {
-  if (!student) return false;
+  if (!student || !student.id) return false;
   const deleted = getDeletedStudentIds();
   if (deleted.length === 0) return false;
   const deletedSet = new Set(deleted.map(x => String(x).toLowerCase().trim()));
   
-  if (student.id && deletedSet.has(String(student.id).toLowerCase().trim())) return true;
-  if (student.rollNumber) {
-    const r = String(student.rollNumber).toLowerCase().trim();
-    if (deletedSet.has(r)) return true;
-    const rClean = r.replace(/[^a-z0-9]/g, '');
-    if (deletedSet.has(rClean)) return true;
-  }
-  if (student.name) {
-    const n = String(student.name).toLowerCase().trim();
-    if (deletedSet.has(n)) return true;
-  }
-  return false;
+  return deletedSet.has(String(student.id).toLowerCase().trim());
 }
 
 export function removeDeletedStudentId(id?: string, rollNumber?: string, studentName?: string): void {
@@ -1597,11 +1671,6 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
   };
 
   const getMergedFallback = async (): Promise<Student[] | null> => {
-    // If the roster was explicitly cleared by user, do not resurrect from server or fallback
-    if (typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true') {
-      return [];
-    }
-
     const serverResult = await fetchFromServer();
     const cached = localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students');
     let localParsed: Student[] = [];
@@ -1658,7 +1727,6 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
             if (rowTime && (!lastRosterClearedAt || new Date(rowTime) > new Date(lastRosterClearedAt))) {
               lastRosterClearedAt = rowTime;
             }
-            localStorage.setItem('ea_students_cleared', 'true');
           } else {
             const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
             recordDeletedStudentId(row.record_id || details.id, row.roll_number || details.rollNumber, row.name || details.studentName);
@@ -1681,7 +1749,6 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
             if (logTime && (!lastRosterClearedAt || new Date(logTime) > new Date(lastRosterClearedAt))) {
               lastRosterClearedAt = logTime;
             }
-            localStorage.setItem('ea_students_cleared', 'true');
           } else {
             const details = typeof log.details === 'string' ? JSON.parse(log.details) : (log.details || {});
             const id = details.id || details.studentId;
@@ -1696,35 +1763,27 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     const { data, error } = await client.from('ea_students').select('*');
     if (error) {
       console.warn('[Fetch Students] Supabase query error, falling back to server/cache:', error.message || error);
-      if (typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true') {
-        return [];
-      }
       return await getMergedFallback();
     }
 
     if (!data || data.length === 0) {
-      // Cloud database authoritatively has 0 student records: ensure local cache is cleared and do not resurrect
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('ea_students_cleared', 'true');
-        localStorage.setItem('ea_students', JSON.stringify([]));
-        localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
+      // Remote Supabase table has 0 records (e.g. freshly created or reset database)
+      // Never wipe out recorded students: retrieve existing records and auto-sync them to Supabase
+      const existing = await getMergedFallback();
+      if (existing && existing.length > 0) {
+        console.log(`[Fetch Students] Fresh empty table detected in Supabase. Preserving ${existing.length} recorded students and uploading to new table...`);
+        saveSupabaseStudents(existing).catch(err => console.warn('[Auto-sync to Supabase]', err));
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem('ea_students_cleared');
+          localStorage.setItem('ea_students', JSON.stringify(existing));
+          localStorage.setItem('mock_supabase_ea_students', JSON.stringify(existing));
+        }
+        return existing;
       }
       return [];
     }
 
-    // Filter out any stale rows in Supabase that predate the last roster clear
-    const activeRows = data.filter(item => {
-      if (lastRosterClearedAt) {
-        const itemTime = item.updated_at || item.created_at;
-        if (itemTime && new Date(itemTime) <= new Date(lastRosterClearedAt)) {
-          client.from('ea_students').delete().eq('id', item.id).then(() => {});
-          return false;
-        }
-      }
-      return true;
-    });
-
-    const mapped = activeRows.map(item => ({
+    const mapped = data.map(item => ({
       id: item.id,
       name: item.name || '',
       rollNumber: item.roll_number || '',
@@ -1736,49 +1795,52 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       photoUrl: item.photo_url || '',
     }));
 
-    // If Supabase returned records that are marked deleted in tombstone registry, purge them from remote DB in background
-    const recordsToPurge = mapped.filter(s => isStudentDeleted(s));
-    if (recordsToPurge.length > 0) {
-      const purgeIds = recordsToPurge.map(s => s.id).filter(Boolean);
-      for (let i = 0; i < purgeIds.length; i += 50) {
-        const chunk = purgeIds.slice(i, i + 50);
-        client.from('ea_students').delete().in('id', chunk).then(() => {}).catch(() => {});
-      }
-      for (const st of recordsToPurge) {
-        deleteSupabaseStudent(st.id, st.rollNumber, st.name).catch(() => {});
-      }
-    }
-
     const cleanMapped = filterDeleted(mapped);
 
-    if (cleanMapped.length === 0) {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('ea_students_cleared', 'true');
-        localStorage.setItem('ea_students', JSON.stringify([]));
-        localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
+    // Merge with any local or server recorded students so un-synced or freshly added students are never wiped
+    const studentMap = new Map<string, Student>();
+    cleanMapped.forEach(s => {
+      if (s && s.id) studentMap.set(s.id, s);
+    });
+
+    const fallback = await getMergedFallback();
+    if (fallback && fallback.length > 0) {
+      let hasMissing = false;
+      const missingToUpload: Student[] = [];
+      fallback.forEach(s => {
+        if (s && s.id && !studentMap.has(s.id) && !isStudentDeleted(s)) {
+          studentMap.set(s.id, s);
+          missingToUpload.push(s);
+          hasMissing = true;
+        }
+      });
+      if (hasMissing && missingToUpload.length > 0) {
+        saveSupabaseStudents(missingToUpload).catch(err => console.warn('[Auto-upload missing students to Supabase]', err));
       }
-      return [];
     }
 
-    // Real active students exist; safely update cache and reset cleared flag
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem('ea_students_cleared');
-      localStorage.setItem('ea_students', JSON.stringify(cleanMapped));
-      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanMapped));
+    const finalStudents = Array.from(studentMap.values());
+
+    if (finalStudents.length > 0) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('ea_students_cleared');
+        localStorage.setItem('ea_students', JSON.stringify(finalStudents));
+        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(finalStudents));
+      }
     }
 
     // Keep server / CDN synchronized in background with latest Supabase roster
-    if (cleanMapped.length > 0) {
+    if (finalStudents.length > 0) {
       try {
         fetch('/api/students', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ students: cleanMapped })
+          body: JSON.stringify({ students: finalStudents })
         }).catch(() => {});
       } catch (e) {}
     }
 
-    return cleanMapped;
+    return finalStudents;
   } catch (err: any) {
     return await getMergedFallback();
   }
@@ -1981,30 +2043,6 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
       }
     }
     
-    // Prune all rows in Supabase that are tombstoned
-    try {
-      const deletedIds = getDeletedStudentIds();
-      if (deletedIds.length > 0) {
-        const deletedSet = new Set(deletedIds.map(x => String(x).toLowerCase().trim()));
-        const { data: remoteRows } = await client.from('ea_students').select('id, roll_number, name');
-        if (remoteRows && Array.isArray(remoteRows)) {
-          const idsToDelete = remoteRows.filter((r: any) => {
-            if (r.id && deletedSet.has(String(r.id).toLowerCase().trim())) return true;
-            if (r.roll_number && (deletedSet.has(String(r.roll_number).toLowerCase().trim()) || deletedSet.has(String(r.roll_number).toLowerCase().replace(/[^a-z0-9]/g, '')))) return true;
-            if (r.name && deletedSet.has(String(r.name).toLowerCase().trim())) return true;
-            return false;
-          }).map((r: any) => r.id);
-
-          for (let i = 0; i < idsToDelete.length; i += 50) {
-            const chunk = idsToDelete.slice(i, i + 50);
-            await client.from('ea_students').delete().in('id', chunk);
-          }
-        }
-      }
-    } catch (pruneErr) {
-      console.warn('Student prune notice:', pruneErr);
-    }
-
     broadcastGlobalSync('ea_students', { action: 'UPSERT', count: validStudents.length });
     broadcastSync('students', validStudents, 'update');
 
@@ -2593,7 +2631,18 @@ export async function fetchSupabaseGrades(): Promise<Grade[] | null> {
       const serverGrades = await fetchServerEntity<Grade[]>('/grades');
       if (serverGrades && serverGrades.length > 0) {
         localStorage.setItem('ea_grades', JSON.stringify(serverGrades));
+        saveSupabaseGrades(serverGrades).catch(() => {});
         return serverGrades;
+      }
+      const cached = localStorage.getItem('mock_supabase_ea_grades') || localStorage.getItem('ea_grades');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            saveSupabaseGrades(parsed).catch(() => {});
+            return parsed;
+          }
+        } catch (e) {}
       }
       return null;
     }
@@ -2713,7 +2762,18 @@ export async function fetchSupabaseAttendance(): Promise<Attendance[] | null> {
       const serverAttendance = await fetchServerEntity<Attendance[]>('/attendance');
       if (serverAttendance && serverAttendance.length > 0) {
         localStorage.setItem('ea_attendance', JSON.stringify(serverAttendance));
+        saveSupabaseAttendance(serverAttendance).catch(() => {});
         return serverAttendance;
+      }
+      const cached = localStorage.getItem('mock_supabase_ea_attendance') || localStorage.getItem('ea_attendance');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            saveSupabaseAttendance(parsed).catch(() => {});
+            return parsed;
+          }
+        } catch (e) {}
       }
       return null;
     }
@@ -2804,7 +2864,18 @@ export async function fetchSupabaseBills(): Promise<StudentBill[] | null> {
       const serverBills = await fetchServerEntity<StudentBill[]>('/bills');
       if (serverBills && serverBills.length > 0) {
         localStorage.setItem('ea_bills', JSON.stringify(serverBills));
+        saveSupabaseBills(serverBills).catch(() => {});
         return serverBills;
+      }
+      const cached = localStorage.getItem('mock_supabase_ea_bills') || localStorage.getItem('ea_bills');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            saveSupabaseBills(parsed).catch(() => {});
+            return parsed;
+          }
+        } catch (e) {}
       }
       return null;
     }
