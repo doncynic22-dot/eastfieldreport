@@ -17,7 +17,8 @@ import {
   deleteSupabaseBookStockItem,
   fetchSupabaseBookSales,
   saveSupabaseBookSales,
-  deleteSupabaseBookSale
+  deleteSupabaseBookSale,
+  FRESH_BOOK_STOCK_TABLE_SQL
 } from '../lib/supabase';
 import BookReceiptModal from './books/BookReceiptModal';
 import BookStockItemModal from './books/BookStockItemModal';
@@ -50,7 +51,10 @@ import {
   BarChart3,
   ChevronDown,
   ChevronUp,
-  X
+  X,
+  Database,
+  Copy,
+  FileCode
 } from 'lucide-react';
 
 interface BookInventoryModuleProps {
@@ -110,6 +114,11 @@ export default function BookInventoryModule({
     type: 'success' | 'info' | 'error';
     message: string;
   } | null>(null);
+
+  // SQL Table Schema Modal State
+  const [showSqlModal, setShowSqlModal] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+  const [isPushingToDb, setIsPushingToDb] = useState(false);
 
   useEffect(() => {
     if (toastNotification) {
@@ -563,6 +572,17 @@ export default function BookInventoryModule({
 
             <button
               type="button"
+              onClick={() => setShowSqlModal(true)}
+              className="px-3.5 py-2.5 bg-violet-800 hover:bg-violet-700 text-white font-bold text-xs rounded-xl transition flex items-center gap-2 shadow border border-violet-400/40 cursor-pointer"
+              title="View SQL table definitions and setup guide for Supabase"
+              id="header-sql-table-btn"
+            >
+              <Database className="w-4 h-4 text-amber-300" />
+              <span>SQL Query</span>
+            </button>
+
+            <button
+              type="button"
               onClick={loadData}
               disabled={isLoading}
               className="p-2.5 bg-violet-900/60 hover:bg-violet-800 text-white border border-violet-400/40 rounded-xl transition cursor-pointer shadow"
@@ -778,7 +798,7 @@ export default function BookInventoryModule({
           <div className="p-4 sm:p-5 bg-gradient-to-r from-[#260850] via-[#1f0642] to-[#260850] rounded-2xl border-2 border-violet-500/40 space-y-3.5 shadow-xl">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-black text-white mr-1 uppercase tracking-wider">Category:</span>
-              {(['All', 'Textbook', 'Customised Exercise Book', 'Customised Textbook'] as const).map((cat) => (
+              {(['All', 'Textbook', 'Exercise Book', 'Customised Exercise Book', 'Customised Textbook'] as const).map((cat) => (
                 <button
                   key={cat}
                   type="button"
@@ -1309,7 +1329,7 @@ export default function BookInventoryModule({
       {showStockModal && (
         <BookStockItemModal
           initialItem={editingItem}
-          categories={['Textbook', 'Customised Exercise Book', 'Customised Textbook']}
+          categories={['Textbook', 'Exercise Book', 'Customised Exercise Book', 'Customised Textbook']}
           onSave={handleSaveStockItem}
           onClose={() => {
             setShowStockModal(false);
@@ -1371,6 +1391,120 @@ export default function BookInventoryModule({
                 className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl transition cursor-pointer text-xs shadow-lg shadow-rose-950/50 border border-rose-400/40"
               >
                 {isSaving ? 'Deleting...' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SQL TABLE DEFINITION & SUPABASE SETUP MODAL */}
+      {showSqlModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#180433] border-2 border-amber-400/80 rounded-2xl w-full max-w-3xl shadow-2xl p-6 text-white space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-violet-500/30 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-400/20 rounded-xl border border-amber-400/40 text-amber-300">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">
+                    Textbook &amp; Exercise Book SQL Schema
+                  </h3>
+                  <p className="text-xs text-violet-300">
+                    Tables <code className="text-amber-300 bg-black/40 px-1 py-0.5 rounded font-mono">ea_book_stock</code> &amp; <code className="text-amber-300 bg-black/40 px-1 py-0.5 rounded font-mono">ea_book_sales</code> for Global Realtime Sync
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSqlModal(false)}
+                className="p-1.5 hover:bg-violet-800 rounded-lg transition text-violet-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-violet-950/70 border border-violet-500/40 rounded-xl text-xs space-y-2">
+              <div className="font-black text-amber-300 flex items-center gap-1.5">
+                <span>Quick Setup Instructions (Takes 30 seconds):</span>
+              </div>
+              <ol className="list-decimal list-inside space-y-1 text-violet-200">
+                <li>Copy the SQL script below using the <strong className="text-white">Copy SQL Query</strong> button.</li>
+                <li>Go to your <strong className="text-white">Supabase Dashboard</strong> and open the <strong className="text-white">SQL Editor</strong>.</li>
+                <li>Paste the script and click <strong className="text-emerald-400">Run</strong>.</li>
+                <li>Both tables will be created with real-time replication and tombstone deletion enabled.</li>
+              </ol>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono text-emerald-400 font-bold flex items-center gap-1">
+                <FileCode className="w-3.5 h-3.5" />
+                Complete SQL Query (PostgreSQL / Supabase):
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(FRESH_BOOK_STOCK_TABLE_SQL);
+                      setCopiedSql(true);
+                      setTimeout(() => setCopiedSql(false), 3500);
+                    } catch (e) {
+                      setCopiedSql(false);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow ${
+                    copiedSql
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                  }`}
+                >
+                  {copiedSql ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedSql ? 'Copied to Clipboard!' : 'Copy SQL Script'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 overflow-y-auto flex-1 font-mono text-[11px] text-emerald-300 select-all leading-relaxed max-h-60">
+              <pre>{FRESH_BOOK_STOCK_TABLE_SQL}</pre>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-violet-500/30">
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsPushingToDb(true);
+                  try {
+                    await saveSupabaseBookStock(stockItems);
+                    if (salesRecords.length > 0) {
+                      await saveSupabaseBookSales(salesRecords);
+                    }
+                    setToastNotification({
+                      type: 'success',
+                      message: `Successfully pushed ${stockItems.length} inventory items and ${salesRecords.length} sales to the database!`
+                    });
+                  } catch (e) {
+                    setToastNotification({
+                      type: 'error',
+                      message: 'Sync attempt completed. Verify table exists in Supabase.'
+                    });
+                  } finally {
+                    setIsPushingToDb(false);
+                  }
+                }}
+                disabled={isPushingToDb}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition cursor-pointer text-xs flex items-center gap-1.5 shadow"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isPushingToDb ? 'animate-spin' : ''}`} />
+                <span>{isPushingToDb ? 'Pushing to DB...' : 'Push Current Inventory to DB'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowSqlModal(false)}
+                className="px-4 py-2 bg-violet-900 hover:bg-violet-800 text-white font-bold rounded-xl transition cursor-pointer text-xs border border-violet-400/30"
+              >
+                Close
               </button>
             </div>
           </div>

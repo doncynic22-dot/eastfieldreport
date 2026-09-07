@@ -16,7 +16,7 @@ import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryMo
 import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials } from '../lib/supabase';
 import { globalSyncEngine } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
@@ -276,7 +276,7 @@ export default function AdminDashboard({
     }
   });
   const [dbCredSuccessMsg, setDbCredSuccessMsg] = useState('');
-  const [selectedSqlTab, setSelectedSqlTab] = useState<'teachers' | 'students' | 'repair'>('teachers');
+  const [selectedSqlTab, setSelectedSqlTab] = useState<'teachers' | 'students' | 'repair' | 'books'>('teachers');
   const [staffSyncMsg, setStaffSyncMsg] = useState('');
   const [isSyncingStaff, setIsSyncingStaff] = useState(false);
 
@@ -5327,7 +5327,9 @@ export default function AdminDashboard({
                         ? FRESH_TEACHERS_TABLE_SQL
                         : selectedSqlTab === 'students'
                           ? FRESH_STUDENTS_TABLE_SQL
-                          : SUPABASE_SQL_REPAIR;
+                          : selectedSqlTab === 'books'
+                            ? FRESH_BOOK_STOCK_TABLE_SQL
+                            : SUPABASE_SQL_REPAIR;
                       try {
                         await navigator.clipboard.writeText(sqlToCopy);
                         setCopiedSqlSuccess(true);
@@ -5366,6 +5368,26 @@ export default function AdminDashboard({
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${isSyncingStaff ? 'animate-spin' : ''}`} />
                       <span>Push Staff to DB</span>
+                    </button>
+                  ) : selectedSqlTab === 'books' ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const books = await fetchSupabaseBookStock();
+                          await saveSupabaseBookStock(books);
+                          setPromotionSuccessMsg(`Successfully synchronized all ${books.length} textbook & exercise book records to the database.`);
+                          setTimeout(() => setPromotionSuccessMsg(''), 6000);
+                        } catch (e) {
+                          setPromotionSuccessMsg('Book stock push attempted. Verify table exists in Supabase.');
+                          setTimeout(() => setPromotionSuccessMsg(''), 6000);
+                        }
+                      }}
+                      className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                      title="Push all textbook and exercise book records to the database"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Push Books to DB</span>
                     </button>
                   ) : (
                     <button
@@ -5418,6 +5440,19 @@ export default function AdminDashboard({
 
                 <button
                   type="button"
+                  onClick={() => setSelectedSqlTab('books')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    selectedSqlTab === 'books'
+                      ? 'bg-mauve-900 text-white shadow-xs'
+                      : 'text-mauve-700 hover:bg-mauve-200/60'
+                  }`}
+                >
+                  <Library className="w-3.5 h-3.5" />
+                  <span>3. Textbooks &amp; Exercise Books (ea_book_stock)</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setSelectedSqlTab('repair')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
                     selectedSqlTab === 'repair'
@@ -5426,7 +5461,7 @@ export default function AdminDashboard({
                   }`}
                 >
                   <Wrench className="w-3.5 h-3.5" />
-                  <span>3. Full Database Schema &amp; Migration</span>
+                  <span>4. Full Database Schema &amp; Migration</span>
                 </button>
               </div>
 
@@ -5437,6 +5472,7 @@ export default function AdminDashboard({
                     <span className="text-[11px] font-mono text-emerald-400 font-bold">
                       {selectedSqlTab === 'teachers' && 'Staff Table & Auth Query: Run in Supabase SQL Editor'}
                       {selectedSqlTab === 'students' && 'Students Table Query: Run in Supabase SQL Editor'}
+                      {selectedSqlTab === 'books' && 'Textbooks & Exercise Books Query: Run in Supabase SQL Editor'}
                       {selectedSqlTab === 'repair' && 'Full Database Migration: Run in Supabase SQL Editor'}
                     </span>
                     <button
@@ -5446,7 +5482,9 @@ export default function AdminDashboard({
                           ? FRESH_TEACHERS_TABLE_SQL
                           : selectedSqlTab === 'students'
                             ? FRESH_STUDENTS_TABLE_SQL
-                            : SUPABASE_SQL_REPAIR;
+                            : selectedSqlTab === 'books'
+                              ? FRESH_BOOK_STOCK_TABLE_SQL
+                              : SUPABASE_SQL_REPAIR;
                         await navigator.clipboard.writeText(sqlToCopy);
                         setCopiedSqlSuccess(true);
                         setTimeout(() => setCopiedSqlSuccess(false), 4000);
@@ -5460,6 +5498,7 @@ export default function AdminDashboard({
                   <pre className="text-[11px] font-mono leading-relaxed overflow-x-auto p-2 text-emerald-300 max-h-72 select-all">
                     {selectedSqlTab === 'teachers' && FRESH_TEACHERS_TABLE_SQL}
                     {selectedSqlTab === 'students' && FRESH_STUDENTS_TABLE_SQL}
+                    {selectedSqlTab === 'books' && FRESH_BOOK_STOCK_TABLE_SQL}
                     {selectedSqlTab === 'repair' && SUPABASE_SQL_REPAIR}
                   </pre>
                 </div>

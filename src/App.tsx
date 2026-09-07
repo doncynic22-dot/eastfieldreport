@@ -44,6 +44,7 @@ import {
   isStudentDeleted,
   getDeletedStudentIds,
   recordDeletedStudentId,
+  recordDeletedBookStockId,
   subscribeToGlobalRealtime,
   broadcastSync
 } from './lib/supabase';
@@ -781,6 +782,16 @@ export default function App() {
             localStorage.setItem('ea_fee_payments', JSON.stringify(master.feePayments));
             window.dispatchEvent(new Event('storage'));
           }
+          if (Array.isArray(master.bookStock) && master.bookStock.length > 0) {
+            localStorage.setItem('ea_book_stock_items', JSON.stringify(master.bookStock));
+            localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(master.bookStock));
+            window.dispatchEvent(new Event('ea_book_stock_updated'));
+          }
+          if (Array.isArray(master.bookSales) && master.bookSales.length > 0) {
+            localStorage.setItem('ea_book_sales_records', JSON.stringify(master.bookSales));
+            localStorage.setItem('mock_supabase_ea_book_sales', JSON.stringify(master.bookSales));
+            window.dispatchEvent(new Event('ea_book_sales_updated'));
+          }
         }
       } catch (err) {
         console.warn('[GlobalSync] Master database background sync notice:', err);
@@ -831,6 +842,16 @@ export default function App() {
         if (Array.isArray(p.feePayments)) {
           localStorage.setItem('ea_fee_payments', JSON.stringify(p.feePayments));
           window.dispatchEvent(new Event('storage'));
+        }
+        if (Array.isArray(p.bookStock)) {
+          localStorage.setItem('ea_book_stock_items', JSON.stringify(p.bookStock));
+          localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(p.bookStock));
+          window.dispatchEvent(new Event('ea_book_stock_updated'));
+        }
+        if (Array.isArray(p.bookSales)) {
+          localStorage.setItem('ea_book_sales_records', JSON.stringify(p.bookSales));
+          localStorage.setItem('mock_supabase_ea_book_sales', JSON.stringify(p.bookSales));
+          window.dispatchEvent(new Event('ea_book_sales_updated'));
         }
       } else if (entity === 'students') {
         if (Array.isArray(payload)) {
@@ -897,6 +918,25 @@ export default function App() {
       } else if (entity === 'fee-payments' && Array.isArray(payload)) {
         localStorage.setItem('ea_fee_payments', JSON.stringify(payload));
         window.dispatchEvent(new Event('storage'));
+      } else if (entity === 'book_stock' || entity === 'ea_book_stock') {
+        if (Array.isArray(payload)) {
+          localStorage.setItem('ea_book_stock_items', JSON.stringify(payload));
+          localStorage.setItem('mock_supabase_ea_book_stock', JSON.stringify(payload));
+          window.dispatchEvent(new Event('ea_book_stock_updated'));
+        } else if (payload && typeof payload === 'object') {
+          if (payload.action === 'DELETE' && payload.id) {
+            recordDeletedBookStockId(payload.id);
+          }
+          window.dispatchEvent(new Event('ea_book_stock_updated'));
+        }
+      } else if (entity === 'book_sales' || entity === 'ea_book_sales') {
+        if (Array.isArray(payload)) {
+          localStorage.setItem('ea_book_sales_records', JSON.stringify(payload));
+          localStorage.setItem('mock_supabase_ea_book_sales', JSON.stringify(payload));
+          window.dispatchEvent(new Event('ea_book_sales_updated'));
+        } else {
+          window.dispatchEvent(new Event('ea_book_sales_updated'));
+        }
       }
     });
 

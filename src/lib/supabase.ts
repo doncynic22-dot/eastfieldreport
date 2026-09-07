@@ -541,6 +541,133 @@ END $$;
 NOTIFY pgrst, 'reload schema';
 `;
 
+export const FRESH_BOOK_STOCK_TABLE_SQL = `-- =========================================================================
+-- EASTFIELD ACADEMY: 'ea_book_stock' & 'ea_book_sales' TABLES & SYNC SETUP
+-- Run this in your Supabase SQL Editor (SQL Editor -> New Query -> Run)
+-- Supports Textbooks, Exercise Books, and Customised Academy Stationery
+-- =========================================================================
+
+-- 1. Create or Ensure ea_book_stock Table Exists
+CREATE TABLE IF NOT EXISTS public.ea_book_stock (
+  id VARCHAR PRIMARY KEY,
+  title VARCHAR NOT NULL,
+  category VARCHAR NOT NULL DEFAULT 'Textbook',
+  publication VARCHAR NOT NULL DEFAULT 'General',
+  subject_type VARCHAR NOT NULL DEFAULT 'General',
+  target_class VARCHAR DEFAULT 'All Classes',
+  unit_price NUMERIC(12,2) DEFAULT 0,
+  cost_price NUMERIC(12,2) DEFAULT 0,
+  quantity_in_stock INTEGER DEFAULT 0,
+  quantity_sold INTEGER DEFAULT 0,
+  quantity_remaining INTEGER DEFAULT 0,
+  low_stock_threshold INTEGER DEFAULT 20,
+  shelf_location VARCHAR,
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Ensure all columns exist if table was already partially created
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS title VARCHAR;
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS category VARCHAR DEFAULT 'Textbook';
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS publication VARCHAR DEFAULT 'General';
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS subject_type VARCHAR DEFAULT 'General';
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS target_class VARCHAR DEFAULT 'All Classes';
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS unit_price NUMERIC(12,2) DEFAULT 0;
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS cost_price NUMERIC(12,2) DEFAULT 0;
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS quantity_in_stock INTEGER DEFAULT 0;
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS quantity_sold INTEGER DEFAULT 0;
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS quantity_remaining INTEGER DEFAULT 0;
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS low_stock_threshold INTEGER DEFAULT 20;
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS shelf_location VARCHAR;
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+ALTER TABLE public.ea_book_stock ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+-- 2. Create or Ensure ea_book_sales Table Exists (Receipts & Sales Ledger)
+CREATE TABLE IF NOT EXISTS public.ea_book_sales (
+  id VARCHAR PRIMARY KEY,
+  receipt_number VARCHAR NOT NULL,
+  buyer_name VARCHAR NOT NULL,
+  buyer_type VARCHAR DEFAULT 'Parent',
+  student_id VARCHAR,
+  class_name VARCHAR,
+  contact_number VARCHAR,
+  items JSONB DEFAULT '[]'::jsonb NOT NULL,
+  subtotal NUMERIC(12,2) DEFAULT 0,
+  discount NUMERIC(12,2) DEFAULT 0,
+  total_amount NUMERIC(12,2) DEFAULT 0,
+  payment_method VARCHAR DEFAULT 'Cash',
+  payment_reference VARCHAR,
+  sale_date VARCHAR NOT NULL,
+  sale_time VARCHAR,
+  recorded_by VARCHAR,
+  remarks TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS receipt_number VARCHAR;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS buyer_name VARCHAR;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS buyer_type VARCHAR DEFAULT 'Parent';
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS student_id VARCHAR;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS class_name VARCHAR;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS contact_number VARCHAR;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS items JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS subtotal NUMERIC(12,2) DEFAULT 0;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS discount NUMERIC(12,2) DEFAULT 0;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS total_amount NUMERIC(12,2) DEFAULT 0;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR DEFAULT 'Cash';
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS payment_reference VARCHAR;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS sale_date VARCHAR;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS sale_time VARCHAR;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS recorded_by VARCHAR;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS remarks TEXT;
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+ALTER TABLE public.ea_book_sales ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+-- 3. Indexes for Instant Filtering & Multi-Browser Search
+CREATE INDEX IF NOT EXISTS idx_ea_book_stock_category ON public.ea_book_stock (category);
+CREATE INDEX IF NOT EXISTS idx_ea_book_stock_title ON public.ea_book_stock (title);
+CREATE INDEX IF NOT EXISTS idx_ea_book_stock_subject ON public.ea_book_stock (subject_type);
+CREATE INDEX IF NOT EXISTS idx_ea_book_stock_class ON public.ea_book_stock (target_class);
+CREATE INDEX IF NOT EXISTS idx_ea_book_sales_receipt ON public.ea_book_sales (receipt_number);
+CREATE INDEX IF NOT EXISTS idx_ea_book_sales_date ON public.ea_book_sales (sale_date);
+
+-- 4. Disable RLS & Grant Unrestricted API Access for Seamless Frontend Sync
+ALTER TABLE public.ea_book_stock DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_book_sales DISABLE ROW LEVEL SECURITY;
+
+GRANT ALL ON TABLE public.ea_book_stock TO anon, authenticated, service_role;
+GRANT ALL ON TABLE public.ea_book_sales TO anon, authenticated, service_role;
+
+-- 5. Enable Realtime Publications for Instant Multi-Device Synchronization
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'ea_book_stock'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.ea_book_stock;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'ea_book_sales'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.ea_book_sales;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+ALTER TABLE public.ea_book_stock REPLICA IDENTITY FULL;
+ALTER TABLE public.ea_book_sales REPLICA IDENTITY FULL;
+
+-- 6. Reload PostgREST API Schema Cache
+NOTIFY pgrst, 'reload schema';
+`;
+
 // SQL Script for setting up tables in Supabase Console
 export const SUPABASE_SQL_REPAIR = `-- DATABASE SYNC REPAIR SCRIPT (MIGRATION)
 -- Execute this SQL script in your Supabase SQL Editor to add missing columns and reload the schema cache.
@@ -4389,11 +4516,27 @@ export async function saveSupabaseBookStock(items: BookStockItem[], deletedIds?:
     broadcastGlobalSync('ea_book_stock', { action: 'UPSERT', count: cleanItems.length });
     broadcastSync('book_stock', cleanItems, 'update');
 
+    // Dual-sync to Master Node server database
+    try {
+      fetch(`/api/book-stock?_t=${Date.now()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookStock: cleanItems })
+      }).catch(() => {});
+    } catch (e) {}
+
     return true;
   } catch (err) {
     console.warn('saveSupabaseBookStock exception:', err);
     broadcastGlobalSync('ea_book_stock', { action: 'UPSERT', count: cleanItems.length });
     broadcastSync('book_stock', cleanItems, 'update');
+    try {
+      fetch(`/api/book-stock?_t=${Date.now()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookStock: cleanItems })
+      }).catch(() => {});
+    } catch (e) {}
     return true;
   }
 }
@@ -4485,6 +4628,15 @@ export async function deleteSupabaseBookStockItem(id: string, title?: string): P
   // 5. Broadcast globally across Realtime channel and Cross-Tab BroadcastChannel
   broadcastGlobalSync('ea_book_stock', { id: cleanId, title, action: 'DELETE' });
   broadcastSync('book_stock', { id: cleanId, title }, 'delete');
+
+  // 6. Push deletion to Master Node server
+  try {
+    fetch(`/api/book-stock/${encodeURIComponent(cleanId)}?_t=${Date.now()}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: cleanId, title })
+    }).catch(() => {});
+  } catch (e) {}
 
   return true;
 }
@@ -4655,9 +4807,26 @@ export async function saveSupabaseBookSales(sales: BookSaleRecord[], deletedIds?
     if (error) {
       console.warn('saveSupabaseBookSales error:', error);
     }
+
+    // Dual-sync to Master Node server database
+    try {
+      fetch(`/api/book-sales?_t=${Date.now()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookSales: cleanSales })
+      }).catch(() => {});
+    } catch (e) {}
+
     return true;
   } catch (err) {
     console.warn('saveSupabaseBookSales exception:', err);
+    try {
+      fetch(`/api/book-sales?_t=${Date.now()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookSales: cleanSales })
+      }).catch(() => {});
+    } catch (e) {}
     return true;
   }
 }
@@ -4703,6 +4872,15 @@ export async function deleteSupabaseBookSale(id: string): Promise<boolean> {
       console.warn('deleteSupabaseBookSale exception:', e);
     }
   }
+
+  // Push deletion to Master Node server
+  try {
+    fetch(`/api/book-sales/${encodeURIComponent(cleanId)}?_t=${Date.now()}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: cleanId })
+    }).catch(() => {});
+  } catch (e) {}
 
   return true;
 }

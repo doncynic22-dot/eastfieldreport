@@ -249,7 +249,7 @@ export interface SyncAuditLog {
   updatedAt?: string;
 }
 
-export type BookStockCategory = 'Textbook' | 'Customised Exercise Book' | 'Customised Textbook';
+export type BookStockCategory = 'Textbook' | 'Exercise Book' | 'Customised Exercise Book' | 'Customised Textbook';
 
 export interface BookStockItem {
   id: string;

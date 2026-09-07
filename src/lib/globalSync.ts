@@ -20,6 +20,9 @@ export interface GlobalSyncPayload {
   feePayments?: FeePayment[];
   inventory?: any[];
   bookStock?: any[];
+  bookSales?: any[];
+  deletedBookStockIds?: string[];
+  deletedBookSaleIds?: string[];
   jhsMockExams?: any[];
   deletedStudentIds?: string[];
   deletedTeacherIds?: string[];

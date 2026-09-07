@@ -211,7 +211,7 @@ export default function BookStockItemModal({
               <Layers className="w-4 h-4 text-amber-300" />
               <span>Stock Category *</span>
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {categories.map((cat) => (
                 <button
                   key={cat}

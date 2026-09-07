@@ -102,6 +102,8 @@ interface ServerDatabase {
   jhsMockExams: any[];
   deletedStudentIds: string[];
   deletedTeacherIds: string[];
+  deletedBookStockIds?: string[];
+  deletedBookSaleIds?: string[];
   rosterCleared?: boolean;
   rosterClearedAt?: string;
 }
@@ -164,7 +166,9 @@ function getDefaultDatabase(): ServerDatabase {
     bookSales: [],
     jhsMockExams: [],
     deletedStudentIds: [],
-    deletedTeacherIds: []
+    deletedTeacherIds: [],
+    deletedBookStockIds: [],
+    deletedBookSaleIds: []
   };
 }
 
@@ -897,7 +901,18 @@ async function startServer() {
     if (Array.isArray(incoming.feeStructures)) db.feeStructures = incoming.feeStructures;
     if (Array.isArray(incoming.dailyCollections)) db.dailyCollections = incoming.dailyCollections;
     if (Array.isArray(incoming.inventory)) db.inventory = incoming.inventory;
-    if (Array.isArray(incoming.bookStock)) db.bookStock = incoming.bookStock;
+    if (Array.isArray(incoming.deletedBookStockIds)) {
+      if (!db.deletedBookStockIds) db.deletedBookStockIds = [];
+      incoming.deletedBookStockIds.forEach((id: string) => {
+        if (id && !db.deletedBookStockIds!.includes(id)) {
+          db.deletedBookStockIds!.push(id);
+        }
+      });
+    }
+    if (Array.isArray(incoming.bookStock)) {
+      const activeDeleted = new Set((db.deletedBookStockIds || []).map(id => String(id).toLowerCase()));
+      db.bookStock = incoming.bookStock.filter((b: any) => b && b.id && !activeDeleted.has(String(b.id).trim().toLowerCase()));
+    }
     if (Array.isArray(incoming.bookSales)) db.bookSales = incoming.bookSales;
     if (Array.isArray(incoming.jhsMockExams)) db.jhsMockExams = incoming.jhsMockExams;
 
@@ -1077,7 +1092,7 @@ async function startServer() {
     return res.status(200).json({ status: "success", version: db.version });
   });
 
-  // Book Stock: GET & POST
+  // Book Stock: GET, POST & DELETE
   app.get("/api/book-stock", (req, res) => {
     const db = loadServerDatabase();
     return res.status(200).json({ status: "success", data: db.bookStock || [], version: db.version });
@@ -1087,9 +1102,55 @@ async function startServer() {
     const bookStock = req.body?.bookStock || req.body;
     if (!Array.isArray(bookStock)) return res.status(400).json({ status: "error", message: "Expected bookStock array" });
     const db = loadServerDatabase();
-    db.bookStock = bookStock;
-    saveServerDatabase(db, "bookStock", bookStock);
+    const activeDeleted = new Set((db.deletedBookStockIds || []).map(id => String(id).toLowerCase()));
+    db.bookStock = bookStock.filter(b => b && b.id && !activeDeleted.has(String(b.id).trim().toLowerCase()));
+    saveServerDatabase(db, "book_stock", db.bookStock);
     return res.status(200).json({ status: "success", version: db.version });
+  });
+
+  app.delete("/api/book-stock/:id", (req, res) => {
+    const rawId = req.params.id;
+    if (!rawId) return res.status(400).json({ status: "error", message: "ID is required" });
+    const targetId = decodeURIComponent(rawId).trim();
+    const targetIdLower = targetId.toLowerCase();
+    const db = loadServerDatabase();
+    if (!db.deletedBookStockIds) db.deletedBookStockIds = [];
+    if (!db.deletedBookStockIds.includes(targetId)) {
+      db.deletedBookStockIds.push(targetId);
+    }
+    db.bookStock = (db.bookStock || []).filter(
+      (b: any) => b && b.id && String(b.id).trim().toLowerCase() !== targetIdLower
+    );
+    saveServerDatabase(db, "book_stock", { action: 'DELETE', id: targetId });
+    return res.status(200).json({ status: "success", version: db.version, deletedId: targetId });
+  });
+
+  // Book Sales: GET, POST & DELETE
+  app.get("/api/book-sales", (req, res) => {
+    const db = loadServerDatabase();
+    return res.status(200).json({ status: "success", data: db.bookSales || [], version: db.version });
+  });
+
+  app.post("/api/book-sales", (req, res) => {
+    const bookSales = req.body?.bookSales || req.body;
+    if (!Array.isArray(bookSales)) return res.status(400).json({ status: "error", message: "Expected bookSales array" });
+    const db = loadServerDatabase();
+    db.bookSales = bookSales;
+    saveServerDatabase(db, "book_sales", bookSales);
+    return res.status(200).json({ status: "success", version: db.version });
+  });
+
+  app.delete("/api/book-sales/:id", (req, res) => {
+    const rawId = req.params.id;
+    if (!rawId) return res.status(400).json({ status: "error", message: "ID is required" });
+    const targetId = decodeURIComponent(rawId).trim();
+    const targetIdLower = targetId.toLowerCase();
+    const db = loadServerDatabase();
+    db.bookSales = (db.bookSales || []).filter(
+      (s: any) => s && s.id && String(s.id).trim().toLowerCase() !== targetIdLower
+    );
+    saveServerDatabase(db, "book_sales", { action: 'DELETE', id: targetId });
+    return res.status(200).json({ status: "success", version: db.version, deletedId: targetId });
   });
 
   // JHS Mock Exams: GET & POST
