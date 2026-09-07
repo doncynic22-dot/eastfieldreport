@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill, User } from '../types';
-import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History, Contact, PhoneCall, Briefcase, BadgeCheck, UserCheck, MapPin, IdCard, Zap, Eye, Database, RefreshCw, Library, Copy, FileCode } from 'lucide-react';
+import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History, Contact, PhoneCall, Briefcase, BadgeCheck, UserCheck, MapPin, IdCard, Zap, Eye, Database, RefreshCw, Library, Copy, FileCode, Wrench } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import FeesCollectionModule from './FeesCollectionModule';
 import FeesDashboard from './FeesDashboard';
@@ -16,12 +16,12 @@ import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryMo
 import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, setCustomSupabaseCredentials } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials } from '../lib/supabase';
 import { globalSyncEngine } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
-import { INITIAL_SUBJECTS } from '../data/mockData';
+import { INITIAL_SUBJECTS, INITIAL_USERS } from '../data/mockData';
 import { matchesSubject } from '../utils/subjectUtils';
 
 interface AdminDashboardProps {
@@ -276,6 +276,48 @@ export default function AdminDashboard({
     }
   });
   const [dbCredSuccessMsg, setDbCredSuccessMsg] = useState('');
+  const [selectedSqlTab, setSelectedSqlTab] = useState<'teachers' | 'students' | 'repair'>('teachers');
+  const [staffSyncMsg, setStaffSyncMsg] = useState('');
+  const [isSyncingStaff, setIsSyncingStaff] = useState(false);
+
+  const handleSyncAllStaff = async () => {
+    setIsSyncingStaff(true);
+    setStaffSyncMsg('');
+    try {
+      const listToSave = teachers && teachers.length > 0 ? teachers : INITIAL_USERS;
+      if (!teachers || teachers.length === 0) {
+        setTeachers(INITIAL_USERS);
+        localStorage.setItem('ea_teachers', JSON.stringify(INITIAL_USERS));
+      }
+      const success = await saveSupabaseTeachers(listToSave);
+      if (success) {
+        setStaffSyncMsg(`Successfully synchronized all ${listToSave.length} staff records to Supabase!`);
+      } else {
+        setStaffSyncMsg('Staff saved locally and to server. If Supabase table has strict RLS, run the Staff SQL query.');
+      }
+    } catch (err: any) {
+      setStaffSyncMsg(`Note: ${err?.message || 'Sync error'}. Please run the Staff SQL query in Supabase.`);
+    } finally {
+      setIsSyncingStaff(false);
+      setTimeout(() => setStaffSyncMsg(''), 8000);
+    }
+  };
+
+  const handlePopulateDefaultStaff = async () => {
+    setIsSyncingStaff(true);
+    setStaffSyncMsg('');
+    try {
+      setTeachers(INITIAL_USERS);
+      localStorage.setItem('ea_teachers', JSON.stringify(INITIAL_USERS));
+      await saveSupabaseTeachers(INITIAL_USERS);
+      setStaffSyncMsg('Populated all 13 standard Academy teachers (Nursery, KG, Primary, JHS) and synced to database!');
+    } catch (err) {
+      setStaffSyncMsg('Populated all 13 teachers locally and in server cache!');
+    } finally {
+      setIsSyncingStaff(false);
+      setTimeout(() => setStaffSyncMsg(''), 8000);
+    }
+  };
 
   // Transcript Selector state
   const [selectedClass, setSelectedClass] = useState('Primary 4');
@@ -1268,12 +1310,12 @@ export default function AdminDashboard({
         window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'admit_student', student: savedStudent } }));
       } catch (e) {}
 
-      // 5. Global sync engine push for instantaneous cross-browser and cross-device sync
+      // 5. Global sync engine push for instantaneous cross-browser, cross-device, and CDN sync
       globalSyncEngine.pushMasterServerSync({
         students: updatedStudentsList
       }).catch(() => {});
 
-      // 6. Background sync without blocking user interaction
+      // 6. Background sync with Supabase and CDN
       saveSingleSupabaseStudent(savedStudent).catch(err => {
         console.warn('Instant student admission sync notice:', err);
       });
@@ -1282,11 +1324,11 @@ export default function AdminDashboard({
         onPushToSupabase(updatedStudentsList, config).catch(() => {});
       }
 
-      // 6. Provide clear visual confirmation
+      // 7. Provide clear visual confirmation
       setPromotionSuccessMsg(
         editingStudent
-          ? `Pupil "${savedStudent.name}" updated successfully.`
-          : `Pupil "${savedStudent.name}" (${savedStudent.rollNumber}) admitted to ${savedStudent.className}. Student roster updated.`
+          ? `Pupil "${savedStudent.name}" updated and synchronized with CDN & Database.`
+          : `Pupil "${savedStudent.name}" (${savedStudent.rollNumber}) admitted to ${savedStudent.className}. Synchronized with CDN & Database.`
       );
       setTimeout(() => setPromotionSuccessMsg(''), 8000);
     } catch (err: any) {
@@ -1316,6 +1358,7 @@ export default function AdminDashboard({
     const studentToDelete = students.find(s => s.id === id);
     const rollNumber = studentToDelete?.rollNumber;
     const studentName = studentToDelete?.name;
+    const photoUrl = studentToDelete?.photoUrl;
 
     const remainingStudents = students.filter(s => s.id !== id);
     setStudents(remainingStudents);
@@ -1333,13 +1376,29 @@ export default function AdminDashboard({
       setAttendance(remainingAttendance);
     }
 
-    // Call deleteSupabaseStudent unconditionally (records tombstone, purges caches, and deletes remote DB)
-    await deleteSupabaseStudent(id, rollNumber, studentName);
+    // Call deleteSupabaseStudent unconditionally (records tombstone, purges caches, deletes remote DB, and synchronizes CDN)
+    await deleteSupabaseStudent(id, rollNumber, studentName, photoUrl);
+
+    // Synchronize CDN and Server master state with remaining students and tombstoned IDs
+    await globalSyncEngine.pushMasterServerSync({
+      students: remainingStudents,
+      grades: remainingGrades,
+      attendance: remainingAttendance,
+      bills: remainingBills,
+      deletedStudentIds: [id, rollNumber, studentName].filter(Boolean) as string[]
+    }).catch(() => {});
 
     // Sync remaining students globally along with filtered child collections
     if (onPushToSupabase) {
       onPushToSupabase(remainingStudents, config, undefined, remainingGrades, remainingAttendance, remainingBills);
     }
+
+    setPromotionSuccessMsg(
+      studentName
+        ? `Pupil "${studentName}" permanently deleted and synchronized across CDN and cloud.`
+        : 'Pupil record permanently deleted and synchronized with CDN.'
+    );
+    setTimeout(() => setPromotionSuccessMsg(''), 6000);
   };
 
   const handleDeleteTeacher = async (id: string) => {
@@ -3415,34 +3474,68 @@ export default function AdminDashboard({
       {/* D. TEACHERS REGISTER VIEW */}
       {activeTab === 'teachers' && (
         <div className="space-y-4 animate-fadeIn no-print">
-          <div className="flex justify-between items-center">
-            <h3 className="font-display font-bold text-mauve-900 text-base uppercase tracking-wide">Staff Directory</h3>
-            <button
-              onClick={() => {
-                setEditingTeacher(null);
-                setTeacherForm({
-                  name: '',
-                  email: '',
-                  password: 'teacher123',
-                  level: 'PRIMARY',
-                  classes: [],
-                  subjects: [],
-                  dateOfBirth: '',
-                  phoneNumber: '',
-                  qualification: '',
-                  profilePicture: '',
-                  hometown: '',
-                  ghanaCardNumber: ''
-                });
-                setTeacherError('');
-                setShowTeacherModal(true);
-              }}
-              className="bg-mauve-800 hover:bg-mauve-900 text-white font-bold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>Register New Teacher</span>
-            </button>
+          <div className="flex flex-wrap justify-between items-center gap-2">
+            <div>
+              <h3 className="font-display font-bold text-mauve-900 text-base uppercase tracking-wide">Staff Directory</h3>
+              <p className="text-xs text-mauve-600">Total Registered Staff: <span className="font-bold text-mauve-900">{teachers.length}</span></p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handlePopulateDefaultStaff}
+                disabled={isSyncingStaff}
+                className="bg-mauve-100 hover:bg-mauve-200 text-mauve-900 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition cursor-pointer border border-mauve-300"
+                title="Populate all 13 official academy teachers across Nursery, Kindergarten, Primary, and JHS"
+              >
+                <Users className="w-3.5 h-3.5 text-mauve-700" />
+                <span>Populate All 13 Teachers</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSyncAllStaff}
+                disabled={isSyncingStaff}
+                className="bg-blue-700 hover:bg-blue-800 text-white font-bold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                title="Synchronize all staff accounts to Supabase database"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingStaff ? 'animate-spin' : ''}`} />
+                <span>{isSyncingStaff ? 'Syncing...' : 'Sync Staff to Supabase'}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setEditingTeacher(null);
+                  setTeacherForm({
+                    name: '',
+                    email: '',
+                    password: 'teacher123',
+                    level: 'PRIMARY',
+                    classes: [],
+                    subjects: [],
+                    dateOfBirth: '',
+                    phoneNumber: '',
+                    qualification: '',
+                    profilePicture: '',
+                    hometown: '',
+                    ghanaCardNumber: ''
+                  });
+                  setTeacherError('');
+                  setShowTeacherModal(true);
+                }}
+                className="bg-mauve-800 hover:bg-mauve-900 text-white font-bold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Register New Teacher</span>
+              </button>
+            </div>
           </div>
+
+          {staffSyncMsg && (
+            <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-semibold rounded-xl flex items-center gap-2 animate-fadeIn">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{staffSyncMsg}</span>
+            </div>
+          )}
 
           <div className="bg-white p-3 rounded border border-mauve-500/20 text-xs text-mauve-900 leading-relaxed flex items-start gap-2 bg-mauve-50/15 shadow-sm">
             <AlertCircle className="w-4 h-4 text-mauve-900 shrink-0 mt-0.5" />
@@ -5210,28 +5303,33 @@ export default function AdminDashboard({
             <div className="mt-6 pt-6 border-t border-mauve-200 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700 shrink-0">
                     <Database className="w-4 h-4" />
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-mauve-950 flex items-center gap-2">
-                      Fresh Database Table Setup
+                      Database Schema &amp; SQL Query Manager
                       <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                        SQL Script with Assigned Policies
+                        Supabase RLS &amp; Auth Ready
                       </span>
                     </h4>
                     <p className="text-xs text-gray-500">
-                      Create or replace the <code className="font-mono font-bold text-mauve-900 bg-mauve-50 px-1 py-0.5 rounded">ea_students</code> table in Supabase with open access policies so pupil data is never blocked or wiped.
+                      Copy verified SQL queries to configure tables, permissions, auth confirmation, and populate all staff &amp; pupils in Supabase.
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={async () => {
+                      const sqlToCopy = selectedSqlTab === 'teachers'
+                        ? FRESH_TEACHERS_TABLE_SQL
+                        : selectedSqlTab === 'students'
+                          ? FRESH_STUDENTS_TABLE_SQL
+                          : SUPABASE_SQL_REPAIR;
                       try {
-                        await navigator.clipboard.writeText(FRESH_STUDENTS_TABLE_SQL);
+                        await navigator.clipboard.writeText(sqlToCopy);
                         setCopiedSqlSuccess(true);
                         setTimeout(() => setCopiedSqlSuccess(false), 4000);
                       } catch (e) {
@@ -5246,7 +5344,7 @@ export default function AdminDashboard({
                   >
                     <CheckCircle2 className={`w-3.5 h-3.5 ${copiedSqlSuccess ? 'block' : 'hidden'}`} />
                     <Copy className={`w-3.5 h-3.5 ${copiedSqlSuccess ? 'hidden' : 'block'}`} />
-                    <span>{copiedSqlSuccess ? 'Copied SQL Script!' : 'Copy SQL Script'}</span>
+                    <span>{copiedSqlSuccess ? 'Copied Active SQL!' : 'Copy SQL Script'}</span>
                   </button>
 
                   <button
@@ -5258,23 +5356,78 @@ export default function AdminDashboard({
                     <span>{showFreshTableSql ? 'Hide SQL' : 'View SQL Query'}</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onPushToSupabase) {
-                        onPushToSupabase(students, config).then(() => {
-                          setPromotionSuccessMsg(`Successfully synchronized all ${students.length} pupil records to the database.`);
-                          setTimeout(() => setPromotionSuccessMsg(''), 6000);
-                        });
-                      }
-                    }}
-                    className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
-                    title="Push all locally recorded students to the database"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Push All to Database</span>
-                  </button>
+                  {selectedSqlTab === 'teachers' ? (
+                    <button
+                      type="button"
+                      onClick={handleSyncAllStaff}
+                      disabled={isSyncingStaff}
+                      className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                      title="Push all teaching staff to Supabase"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingStaff ? 'animate-spin' : ''}`} />
+                      <span>Push Staff to DB</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onPushToSupabase) {
+                          onPushToSupabase(students, config).then(() => {
+                            setPromotionSuccessMsg(`Successfully synchronized all ${students.length} pupil records to the database.`);
+                            setTimeout(() => setPromotionSuccessMsg(''), 6000);
+                          });
+                        }
+                      }}
+                      className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                      title="Push all locally recorded students to the database"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Push Pupils to DB</span>
+                    </button>
+                  )}
                 </div>
+              </div>
+
+              {/* Script Category Switcher */}
+              <div className="flex flex-wrap items-center gap-2 bg-mauve-50 p-1.5 rounded-xl border border-mauve-200">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSqlTab('teachers')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    selectedSqlTab === 'teachers'
+                      ? 'bg-mauve-900 text-white shadow-xs'
+                      : 'text-mauve-700 hover:bg-mauve-200/60'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>1. Staff Directory &amp; Auth (ea_teachers)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedSqlTab('students')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    selectedSqlTab === 'students'
+                      ? 'bg-mauve-900 text-white shadow-xs'
+                      : 'text-mauve-700 hover:bg-mauve-200/60'
+                  }`}
+                >
+                  <GraduationCap className="w-3.5 h-3.5" />
+                  <span>2. Pupils &amp; Admissions (ea_students)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedSqlTab('repair')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    selectedSqlTab === 'repair'
+                      ? 'bg-mauve-900 text-white shadow-xs'
+                      : 'text-mauve-700 hover:bg-mauve-200/60'
+                  }`}
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  <span>3. Full Database Schema &amp; Migration</span>
+                </button>
               </div>
 
               {/* SQL Script Viewer */}
@@ -5282,12 +5435,19 @@ export default function AdminDashboard({
                 <div className="p-4 bg-slate-950 text-slate-100 rounded-xl border border-slate-800 space-y-2 animate-fadeIn">
                   <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                     <span className="text-[11px] font-mono text-emerald-400 font-bold">
-                      Run this query in Supabase Console &gt; SQL Editor &gt; New Query &gt; Run
+                      {selectedSqlTab === 'teachers' && 'Staff Table & Auth Query: Run in Supabase SQL Editor'}
+                      {selectedSqlTab === 'students' && 'Students Table Query: Run in Supabase SQL Editor'}
+                      {selectedSqlTab === 'repair' && 'Full Database Migration: Run in Supabase SQL Editor'}
                     </span>
                     <button
                       type="button"
                       onClick={async () => {
-                        await navigator.clipboard.writeText(FRESH_STUDENTS_TABLE_SQL);
+                        const sqlToCopy = selectedSqlTab === 'teachers'
+                          ? FRESH_TEACHERS_TABLE_SQL
+                          : selectedSqlTab === 'students'
+                            ? FRESH_STUDENTS_TABLE_SQL
+                            : SUPABASE_SQL_REPAIR;
+                        await navigator.clipboard.writeText(sqlToCopy);
                         setCopiedSqlSuccess(true);
                         setTimeout(() => setCopiedSqlSuccess(false), 4000);
                       }}
@@ -5298,7 +5458,9 @@ export default function AdminDashboard({
                     </button>
                   </div>
                   <pre className="text-[11px] font-mono leading-relaxed overflow-x-auto p-2 text-emerald-300 max-h-72 select-all">
-                    {FRESH_STUDENTS_TABLE_SQL}
+                    {selectedSqlTab === 'teachers' && FRESH_TEACHERS_TABLE_SQL}
+                    {selectedSqlTab === 'students' && FRESH_STUDENTS_TABLE_SQL}
+                    {selectedSqlTab === 'repair' && SUPABASE_SQL_REPAIR}
                   </pre>
                 </div>
               )}

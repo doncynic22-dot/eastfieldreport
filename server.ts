@@ -128,13 +128,29 @@ function broadcastSse(type: string, entity: string, payload?: any) {
   }
 }
 
+const DEFAULT_SERVER_TEACHERS = [
+  { id: "tch-01", name: "Kojo Mensah (Nursery 1)", email: "nursery@eastfield.com", role: "TEACHER", password: "password123", level: "NURSERY", classes: ["Nursery 1"], subjects: ["sub-n-lit", "sub-n-num"] },
+  { id: "tch-n2", name: "Esi Agyeman (Nursery 2)", email: "nursery2@eastfield.com", role: "TEACHER", password: "password123", level: "NURSERY", classes: ["Nursery 2"], subjects: ["sub-n-cr", "sub-n-pho"] },
+  { id: "tch-k1", name: "Akosua Boakye (KG 1)", email: "kg1@eastfield.com", role: "TEACHER", password: "password123", level: "KINDERGARTEN", classes: ["Kindergarten 1"], subjects: ["sub-k-lit", "sub-k-num"] },
+  { id: "tch-k2", name: "Kofi Osei (KG 2)", email: "kg2@eastfield.com", role: "TEACHER", password: "password123", level: "KINDERGARTEN", classes: ["Kindergarten 2"], subjects: ["sub-k-owop", "sub-k-ca"] },
+  { id: "tch-02", name: "Ama Serwaa (Primary 1)", email: "primary@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 1"], subjects: ["sub-p-math", "sub-p-eng"] },
+  { id: "tch-p2", name: "Kwame Nkrumah (Primary 2)", email: "primary2@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 2"], subjects: ["sub-p-math", "sub-p-eng"] },
+  { id: "tch-p3", name: "Abena Darko (Primary 3)", email: "primary3@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 3"], subjects: ["sub-p-math", "sub-p-sci"] },
+  { id: "tch-p4", name: "Yaa Asantewaa (Primary 4)", email: "primary4@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 4"], subjects: ["sub-p-eng", "sub-p-soc"] },
+  { id: "tch-p5", name: "Kofi Addo (Primary 5)", email: "primary5@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 5"], subjects: ["sub-p-math", "sub-p-rme"] },
+  { id: "tch-p6", name: "Adwoa Mansa (Primary 6)", email: "primary6@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 6"], subjects: ["sub-p-eng", "sub-p-ict"] },
+  { id: "tch-03", name: "Kwesi Appiah", email: "jhs@eastfield.com", role: "TEACHER", password: "password123", level: "JHS", classes: [], subjects: ["sub-j-math", "sub-j-ca"] },
+  { id: "tch-04", name: "Abena Gyamfi", email: "jhs2@eastfield.com", role: "TEACHER", password: "password123", level: "JHS", classes: [], subjects: ["sub-j-eng", "sub-j-sci"] },
+  { id: "tch-05", name: "Yaw Asamoah", email: "jhs3@eastfield.com", role: "TEACHER", password: "password123", level: "JHS", classes: [], subjects: ["sub-j-soc", "sub-j-rme"] }
+];
+
 function getDefaultDatabase(): ServerDatabase {
   const existingStudents = loadServerStudents();
   return {
     version: 1,
     lastUpdated: new Date().toISOString(),
     config: null,
-    teachers: [],
+    teachers: DEFAULT_SERVER_TEACHERS,
     students: existingStudents,
     grades: [],
     attendance: [],
@@ -201,11 +217,11 @@ function saveServerDatabase(db: ServerDatabase, broadcastEntity?: string, payloa
       fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(db.students, null, 2), "utf-8");
     } catch (e) {}
 
-    // Broadcast update via SSE to all connected browsers & devices
+    // Broadcast update via SSE to all connected browsers, tabs & devices
     if (broadcastEntity) {
-      broadcastSse("UPDATE", broadcastEntity, payload);
+      broadcastSse("UPDATE", broadcastEntity, payload !== undefined ? payload : db[broadcastEntity as keyof ServerDatabase]);
     } else {
-      broadcastSse("SYNC_ALL", "all", null);
+      broadcastSse("SYNC_ALL", "all", payload !== undefined ? payload : db);
     }
     return true;
   } catch (err) {
@@ -525,10 +541,13 @@ async function startServer() {
 
   // GET /api/students: Fetch global list of admitted students with strict anti-caching headers
   app.get("/api/students", (req, res) => {
-    // Ensure CDNs, proxies, and browser caches never serve stale pupil rosters
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+    // Ensure CDNs, proxies, Cloudflare, and browser caches never serve stale pupil rosters
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Cloudflare-CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
 
     const students = loadServerStudents();
     const db = loadServerDatabase();
@@ -536,13 +555,21 @@ async function startServer() {
       status: "success",
       students,
       count: students.length,
+      version: db.version,
       deletedStudentIds: db.deletedStudentIds || [],
       timestamp: new Date().toISOString()
     });
   });
 
-  // POST /api/students/admit: Instantly admit or update a single pupil globally
+  // POST /api/students/admit: Instantly admit or update a single pupil globally with CDN synchronization
   app.post("/api/students/admit", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Cloudflare-CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+
     const student = req.body?.student;
     if (!student || (!student.id && !student.name)) {
       return res.status(400).json({ status: "error", message: "Invalid student payload" });
@@ -598,20 +625,30 @@ async function startServer() {
 
     db.rosterCleared = false;
     saveServerStudents(updatedList);
-    console.log(`[Global Student Sync] Pupil '${normalizedStudent.name}' admitted / updated. Total pupils: ${updatedList.length}`);
+    // Broadcast specific ADMIT event in addition to general update
+    broadcastSse("ADMIT", "students", { action: "ADMIT", student: normalizedStudent, count: updatedList.length });
+    console.log(`[Global Student Sync & CDN] Pupil '${normalizedStudent.name}' admitted / updated. Total pupils: ${updatedList.length}`);
 
     return res.status(200).json({
       status: "success",
       student: normalizedStudent,
       count: updatedList.length,
+      version: db.version,
       timestamp: new Date().toISOString()
     });
   });
 
-  // POST /api/students/clear: Instantly wipe student roster from global server cache
+  // POST /api/students/clear: Instantly wipe student roster from global server cache and CDN
   app.post("/api/students/clear", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Cloudflare-CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+
     saveServerStudents([]);
-    console.log(`[Global Student Sync] Student roster cleared to 0 on server.`);
+    console.log(`[Global Student Sync & CDN] Student roster cleared to 0 on server.`);
     return res.status(200).json({
       status: "success",
       count: 0,
@@ -621,8 +658,15 @@ async function startServer() {
 
   // DELETE /api/students: Clear all students
   app.delete("/api/students", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Cloudflare-CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+
     saveServerStudents([]);
-    console.log(`[Global Student Sync] Student roster cleared to 0 on server via DELETE.`);
+    console.log(`[Global Student Sync & CDN] Student roster cleared to 0 on server via DELETE.`);
     return res.status(200).json({
       status: "success",
       count: 0,
@@ -630,8 +674,15 @@ async function startServer() {
     });
   });
 
-  // POST /api/students: Bulk sync entire student roster
+  // POST /api/students: Bulk sync entire student roster with CDN
   app.post("/api/students", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Cloudflare-CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+
     const students = req.body?.students;
     if (!Array.isArray(students)) {
       return res.status(400).json({ status: "error", message: "Expected students array" });
@@ -663,12 +714,20 @@ async function startServer() {
     return res.status(200).json({
       status: "success",
       count: db.students.length,
+      version: db.version,
       timestamp: new Date().toISOString()
     });
   });
 
-  // DELETE /api/students/:id: Delete pupil from global server store
+  // DELETE /api/students/:id: Delete pupil from global server store & invalidate CDN cache
   app.delete("/api/students/:id", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Cloudflare-CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+
     const targetId = decodeURIComponent(req.params.id);
     const { rollNumber, studentName } = req.body || {};
 
@@ -712,11 +771,15 @@ async function startServer() {
     }
 
     saveServerStudents(updated);
-    console.log(`[Global Student Sync] Student ID '${targetId}' deleted. Remaining pupils: ${updated.length}`);
+    // Broadcast specific DELETE event across SSE
+    broadcastSse("DELETE", "students", { action: "DELETE", id: targetId, rollNumber, studentName, remainingCount: updated.length });
+    console.log(`[Global Student Sync & CDN] Student ID '${targetId}' permanently deleted. Remaining pupils: ${updated.length}`);
 
     return res.status(200).json({
       status: "success",
-      count: updated.length
+      count: updated.length,
+      version: db.version,
+      timestamp: new Date().toISOString()
     });
   });
 
@@ -870,7 +933,11 @@ async function startServer() {
   // Teachers: GET & POST
   app.get("/api/teachers", (req, res) => {
     const db = loadServerDatabase();
-    return res.status(200).json({ status: "success", data: db.teachers || [], count: (db.teachers || []).length, version: db.version });
+    if (!Array.isArray(db.teachers) || db.teachers.length === 0) {
+      db.teachers = DEFAULT_SERVER_TEACHERS;
+      saveServerDatabase(db, "teachers", DEFAULT_SERVER_TEACHERS);
+    }
+    return res.status(200).json({ status: "success", data: db.teachers, count: db.teachers.length, version: db.version });
   });
 
   app.post("/api/teachers", (req, res) => {

@@ -2,14 +2,14 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 function getSupabaseCredentials() {
   const defaultUrl = "https://tbzepahgztyjrnknpfqh.supabase.co";
-  const defaultKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiemVwYWhnenR5anJua25wZnFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MjcxNjYsImV4cCI6MjA5OTg0MjcwOX0.Jq87AWN9Hq-kABasG2TM4qc_ZTJXKqSH16BuHL9yEV4";
+  const defaultKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiemVwYWhnenR5anJua25wZnFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MjcxNjYsImV4cCI6MjEwMDIwMzE2Nn0.Jq87AWN9Hq-kABasG2TM4qc_ZTJXKqSH16BuHL9yEV4";
 
   // @ts-ignore
   const rawEnvUrl = import.meta.env?.VITE_SUPABASE_URL || import.meta.env?.SUPABASE_URL || (typeof process !== 'undefined' ? (process.env?.VITE_SUPABASE_URL || process.env?.SUPABASE_URL) : '') || '';
   // @ts-ignore
   const rawEnvKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || import.meta.env?.SUPABASE_ANON_KEY || (typeof process !== 'undefined' ? (process.env?.VITE_SUPABASE_ANON_KEY || process.env?.SUPABASE_ANON_KEY) : '') || '';
   const envUrl = (rawEnvUrl && !rawEnvUrl.includes('tigcnyawfhcxcdjqdfaf')) ? rawEnvUrl : '';
-  const envKey = (rawEnvUrl && !rawEnvUrl.includes('tigcnyawfhcxcdjqdfaf')) ? rawEnvKey : '';
+  const envKey = (rawEnvKey && !rawEnvKey.includes('tigcnyawfhcxcdjqdfaf') && !rawEnvKey.includes('2099842709')) ? rawEnvKey : '';
   
   let localUrl = '';
   let localKey = '';
@@ -17,11 +17,13 @@ function getSupabaseCredentials() {
     localUrl = localStorage.getItem('ea_supabase_url') || '';
     localKey = localStorage.getItem('ea_supabase_anon_key') || '';
     
-    // Automatically clear stale/paused old Supabase projects from localStorage
+    // Automatically clear stale/paused old Supabase projects or expired/corrupted keys from localStorage
     if (localUrl && (localUrl.includes('tigcnyawfhcxcdjqdfaf') || localUrl.trim() === '')) {
       localStorage.removeItem('ea_supabase_url');
-      localStorage.removeItem('ea_supabase_anon_key');
       localUrl = '';
+    }
+    if (localKey && (localKey.includes('2099842709') || localKey.includes('tigcnyawfhcxcdjqdfaf') || localKey.trim() === '')) {
+      localStorage.removeItem('ea_supabase_anon_key');
       localKey = '';
     }
   } catch (e) {

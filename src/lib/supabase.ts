@@ -2,19 +2,19 @@ import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabas
 import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord, BookStockItem, BookSaleRecord } from '../types';
 import { DEFAULT_INVENTORY_DATA, DEFAULT_BOOK_STOCK_ITEMS, DEFAULT_BOOK_SALES } from '../data/mockData';
 import { isDemoStudent } from '../data/demoPupils';
-import { fetchServerEntity, saveServerEntity, globalSyncEngine } from './globalSync';
+import { fetchServerEntity, saveServerEntity, globalSyncEngine, getAntiCacheHeaders, syncStudentAdditionToCDN, syncStudentDeletionToCDN } from './globalSync';
 
 // Helper to retrieve credentials from env or localStorage
 export function getSupabaseCredentials() {
   const defaultUrl = "https://tbzepahgztyjrnknpfqh.supabase.co";
-  const defaultKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiemVwYWhnenR5anJua25wZnFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MjcxNjYsImV4cCI6MjA5OTg0MjcwOX0.Jq87AWN9Hq-kABasG2TM4qc_ZTJXKqSH16BuHL9yEV4";
+  const defaultKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiemVwYWhnenR5anJua25wZnFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MjcxNjYsImV4cCI6MjEwMDIwMzE2Nn0.Jq87AWN9Hq-kABasG2TM4qc_ZTJXKqSH16BuHL9yEV4";
 
   // @ts-ignore
   const rawEnvUrl = import.meta.env?.VITE_SUPABASE_URL || import.meta.env?.SUPABASE_URL || (typeof process !== 'undefined' ? (process.env?.VITE_SUPABASE_URL || process.env?.SUPABASE_URL) : '') || '';
   // @ts-ignore
   const rawEnvKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || import.meta.env?.SUPABASE_ANON_KEY || (typeof process !== 'undefined' ? (process.env?.VITE_SUPABASE_ANON_KEY || process.env?.SUPABASE_ANON_KEY) : '') || '';
   const envUrl = (rawEnvUrl && !rawEnvUrl.includes('tigcnyawfhcxcdjqdfaf')) ? rawEnvUrl : '';
-  const envKey = (rawEnvUrl && !rawEnvUrl.includes('tigcnyawfhcxcdjqdfaf')) ? rawEnvKey : '';
+  const envKey = (rawEnvKey && !rawEnvKey.includes('tigcnyawfhcxcdjqdfaf') && !rawEnvKey.includes('2099842709')) ? rawEnvKey : '';
   
   let localUrl = '';
   let localKey = '';
@@ -22,11 +22,13 @@ export function getSupabaseCredentials() {
     localUrl = localStorage.getItem('ea_supabase_url') || '';
     localKey = localStorage.getItem('ea_supabase_anon_key') || '';
     
-    // Automatically clear stale/paused old Supabase projects from localStorage
+    // Automatically clear stale/paused old Supabase projects or expired/corrupted keys from localStorage
     if (localUrl && (localUrl.includes('tigcnyawfhcxcdjqdfaf') || localUrl.trim() === '')) {
       localStorage.removeItem('ea_supabase_url');
-      localStorage.removeItem('ea_supabase_anon_key');
       localUrl = '';
+    }
+    if (localKey && (localKey.includes('2099842709') || localKey.includes('tigcnyawfhcxcdjqdfaf') || localKey.trim() === '')) {
+      localStorage.removeItem('ea_supabase_anon_key');
       localKey = '';
     }
   } catch (e) {
@@ -411,6 +413,132 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
   NULL;
 END $$;
+`;
+
+export const FRESH_TEACHERS_TABLE_SQL = `-- =========================================================================
+-- EASTFIELD ACADEMY: 'ea_teachers' TABLE & AUTH SETUP WITH ASSIGNED POLICIES
+-- Run this in your Supabase SQL Editor (SQL Editor -> New Query -> Run)
+-- =========================================================================
+
+-- 1. Create or Ensure ea_teachers Table Exists
+CREATE TABLE IF NOT EXISTS public.ea_teachers (
+  id VARCHAR PRIMARY KEY,
+  name VARCHAR NOT NULL DEFAULT '',
+  email VARCHAR NOT NULL DEFAULT '',
+  role VARCHAR NOT NULL DEFAULT 'TEACHER',
+  password VARCHAR DEFAULT 'password123',
+  level VARCHAR NOT NULL DEFAULT 'PRIMARY',
+  classes JSONB DEFAULT '[]'::jsonb,
+  subjects JSONB DEFAULT '[]'::jsonb,
+  date_of_birth VARCHAR DEFAULT '',
+  phone_number VARCHAR DEFAULT '',
+  qualification VARCHAR DEFAULT '',
+  profile_picture TEXT DEFAULT '',
+  hometown VARCHAR DEFAULT '',
+  ghana_card_number VARCHAR DEFAULT '',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Ensure all columns exist
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS name VARCHAR DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS email VARCHAR DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS role VARCHAR DEFAULT 'TEACHER';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS password VARCHAR DEFAULT 'password123';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS level VARCHAR DEFAULT 'PRIMARY';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS classes JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS subjects JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS date_of_birth VARCHAR DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS phone_number VARCHAR DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS qualification VARCHAR DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS profile_picture TEXT DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS hometown VARCHAR DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS ghana_card_number VARCHAR DEFAULT '';
+ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+-- 2. Indexes for Fast Teacher Lookup & Login
+CREATE INDEX IF NOT EXISTS idx_ea_teachers_email ON public.ea_teachers (email);
+CREATE INDEX IF NOT EXISTS idx_ea_teachers_role ON public.ea_teachers (role);
+
+-- 3. Enable RLS and Configure Open Permissive Policies for anon, authenticated, and service_role
+ALTER TABLE public.ea_teachers ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read access to ea_teachers" ON public.ea_teachers;
+CREATE POLICY "Allow public read access to ea_teachers"
+ON public.ea_teachers FOR SELECT
+TO anon, authenticated, service_role
+USING (true);
+
+DROP POLICY IF EXISTS "Allow public insert access to ea_teachers" ON public.ea_teachers;
+CREATE POLICY "Allow public insert access to ea_teachers"
+ON public.ea_teachers FOR INSERT
+TO anon, authenticated, service_role
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public update access to ea_teachers" ON public.ea_teachers;
+CREATE POLICY "Allow public update access to ea_teachers"
+ON public.ea_teachers FOR UPDATE
+TO anon, authenticated, service_role
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public delete access to ea_teachers" ON public.ea_teachers;
+CREATE POLICY "Allow public delete access to ea_teachers"
+ON public.ea_teachers FOR DELETE
+TO anon, authenticated, service_role
+USING (true);
+
+-- 4. Grant Table Permissions to All Roles
+GRANT ALL ON TABLE public.ea_teachers TO anon;
+GRANT ALL ON TABLE public.ea_teachers TO authenticated;
+GRANT ALL ON TABLE public.ea_teachers TO service_role;
+
+-- 5. Auto-confirm any pending unconfirmed Auth users
+UPDATE auth.users
+SET email_confirmed_at = now()
+WHERE email_confirmed_at IS NULL;
+
+-- 6. Populate All Academy Teaching Staff (13 Teachers across Nursery, KG, Primary, JHS)
+INSERT INTO public.ea_teachers (id, name, email, role, password, level, classes, subjects, updated_at)
+VALUES
+  ('tch-01', 'Kojo Mensah (Nursery 1)', 'nursery@eastfield.com', 'TEACHER', 'password123', 'NURSERY', '["Nursery 1"]'::jsonb, '["sub-n-lit", "sub-n-num"]'::jsonb, now()),
+  ('tch-n2', 'Esi Agyeman (Nursery 2)', 'nursery2@eastfield.com', 'TEACHER', 'password123', 'NURSERY', '["Nursery 2"]'::jsonb, '["sub-n-cr", "sub-n-pho"]'::jsonb, now()),
+  ('tch-k1', 'Akosua Boakye (KG 1)', 'kg1@eastfield.com', 'TEACHER', 'password123', 'KINDERGARTEN', '["Kindergarten 1"]'::jsonb, '["sub-k-lit", "sub-k-num"]'::jsonb, now()),
+  ('tch-k2', 'Kofi Osei (KG 2)', 'kg2@eastfield.com', 'TEACHER', 'password123', 'KINDERGARTEN', '["Kindergarten 2"]'::jsonb, '["sub-k-owop", "sub-k-ca"]'::jsonb, now()),
+  ('tch-02', 'Ama Serwaa (Primary 1)', 'primary@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 1"]'::jsonb, '["sub-p-math", "sub-p-eng"]'::jsonb, now()),
+  ('tch-p2', 'Kwame Nkrumah (Primary 2)', 'primary2@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 2"]'::jsonb, '["sub-p-math", "sub-p-eng"]'::jsonb, now()),
+  ('tch-p3', 'Abena Darko (Primary 3)', 'primary3@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 3"]'::jsonb, '["sub-p-math", "sub-p-sci"]'::jsonb, now()),
+  ('tch-p4', 'Yaa Asantewaa (Primary 4)', 'primary4@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 4"]'::jsonb, '["sub-p-eng", "sub-p-soc"]'::jsonb, now()),
+  ('tch-p5', 'Kofi Addo (Primary 5)', 'primary5@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 5"]'::jsonb, '["sub-p-math", "sub-p-rme"]'::jsonb, now()),
+  ('tch-p6', 'Adwoa Mansa (Primary 6)', 'primary6@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 6"]'::jsonb, '["sub-p-eng", "sub-p-ict"]'::jsonb, now()),
+  ('tch-03', 'Kwesi Appiah', 'jhs@eastfield.com', 'TEACHER', 'password123', 'JHS', '[]'::jsonb, '["sub-j-math", "sub-j-ca"]'::jsonb, now()),
+  ('tch-04', 'Abena Gyamfi', 'jhs2@eastfield.com', 'TEACHER', 'password123', 'JHS', '[]'::jsonb, '["sub-j-eng", "sub-j-sci"]'::jsonb, now()),
+  ('tch-05', 'Yaw Asamoah', 'jhs3@eastfield.com', 'TEACHER', 'password123', 'JHS', '[]'::jsonb, '["sub-j-soc", "sub-j-rme"]'::jsonb, now())
+ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  email = EXCLUDED.email,
+  role = EXCLUDED.role,
+  password = EXCLUDED.password,
+  level = EXCLUDED.level,
+  classes = EXCLUDED.classes,
+  subjects = EXCLUDED.subjects,
+  updated_at = now();
+
+-- 7. Add to Realtime Publication for Live Cross-Device Sync
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'ea_teachers'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.ea_teachers;
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+-- 8. Refresh Schema Cache
+NOTIFY pgrst, 'reload schema';
 `;
 
 // SQL Script for setting up tables in Supabase Console
@@ -1767,18 +1895,11 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     }
 
     if (!data || data.length === 0) {
-      // Remote Supabase table has 0 records (e.g. freshly created or reset database)
-      // Never wipe out recorded students: retrieve existing records and auto-sync them to Supabase
-      const existing = await getMergedFallback();
-      if (existing && existing.length > 0) {
-        console.log(`[Fetch Students] Fresh empty table detected in Supabase. Preserving ${existing.length} recorded students and uploading to new table...`);
-        saveSupabaseStudents(existing).catch(err => console.warn('[Auto-sync to Supabase]', err));
-        if (typeof localStorage !== 'undefined') {
-          localStorage.removeItem('ea_students_cleared');
-          localStorage.setItem('ea_students', JSON.stringify(existing));
-          localStorage.setItem('mock_supabase_ea_students', JSON.stringify(existing));
-        }
-        return existing;
+      // Remote Supabase table has 0 records - update local caches to reflect clean empty roster
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ea_students', JSON.stringify([]));
+        localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
+        localStorage.setItem('ea_students_cleared', 'true');
       }
       return [];
     }
@@ -1797,50 +1918,18 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
 
     const cleanMapped = filterDeleted(mapped);
 
-    // Merge with any local or server recorded students so un-synced or freshly added students are never wiped
-    const studentMap = new Map<string, Student>();
-    cleanMapped.forEach(s => {
-      if (s && s.id) studentMap.set(s.id, s);
-    });
-
-    const fallback = await getMergedFallback();
-    if (fallback && fallback.length > 0) {
-      let hasMissing = false;
-      const missingToUpload: Student[] = [];
-      fallback.forEach(s => {
-        if (s && s.id && !studentMap.has(s.id) && !isStudentDeleted(s)) {
-          studentMap.set(s.id, s);
-          missingToUpload.push(s);
-          hasMissing = true;
-        }
-      });
-      if (hasMissing && missingToUpload.length > 0) {
-        saveSupabaseStudents(missingToUpload).catch(err => console.warn('[Auto-upload missing students to Supabase]', err));
-      }
-    }
-
-    const finalStudents = Array.from(studentMap.values());
-
-    if (finalStudents.length > 0) {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem('ea_students_cleared');
-        localStorage.setItem('ea_students', JSON.stringify(finalStudents));
-        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(finalStudents));
-      }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('ea_students_cleared');
+      localStorage.setItem('ea_students', JSON.stringify(cleanMapped));
+      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanMapped));
     }
 
     // Keep server / CDN synchronized in background with latest Supabase roster
-    if (finalStudents.length > 0) {
-      try {
-        fetch('/api/students', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ students: finalStudents })
-        }).catch(() => {});
-      } catch (e) {}
-    }
+    try {
+      saveServerEntity('/students', cleanMapped).catch(() => {});
+    } catch (e) {}
 
-    return finalStudents;
+    return cleanMapped;
   } catch (err: any) {
     return await getMergedFallback();
   }
@@ -1886,14 +1975,12 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
     window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'internal_save' } }));
   } catch (e) {}
 
-  // 3. Immediately dispatch to Server / CDN API
+  // 3. Immediately dispatch to Server / CDN API with anti-cache synchronization
   try {
-    await fetch('/api/students/admit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ student })
-    }).catch(e => console.warn('Sync /api/students/admit warning:', e));
-  } catch (e) {}
+    await syncStudentAdditionToCDN(student);
+  } catch (e) {
+    console.warn('syncStudentAdditionToCDN notice:', e);
+  }
 
   // 4. Upsert to Supabase Cloud Database
   const client = getSupabaseClient();
@@ -1967,32 +2054,16 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
 }
 
 export async function saveSupabaseStudents(students: Student[]): Promise<boolean> {
-  // Defensive check: When empty array is passed
+  // Defensive check: When empty array is passed, clear all student records across all layers
   if (!Array.isArray(students) || students.length === 0) {
-    if (typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true') {
-      return await clearAllSupabaseStudents();
-    }
-    let existingCount = 0;
-    try {
-      const cached = localStorage.getItem('ea_students');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) existingCount = parsed.length;
-      }
-    } catch (e) {}
-    if (existingCount > 0) {
-      console.warn(`[Supabase Student Sync Guard] Blocked attempt to save empty student list while local memory/cache holds ${existingCount} students.`);
-      return false;
-    }
     return await clearAllSupabaseStudents();
   }
 
   // Filter out any students that have been marked deleted or demo
   const validStudents = students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
-  if (validStudents.length === 0 && students.length > 0) {
-    console.warn(`[Supabase Student Sync Guard] All ${students.length} students were flagged as deleted/demo. Blocking destructive wipe.`);
-    return false;
+  if (validStudents.length === 0) {
+    return await clearAllSupabaseStudents();
   }
 
   console.log(`[Supabase Student Sync Diagnostic] saveSupabaseStudents: Pushing ${validStudents.length} students to Supabase (raw count: ${students.length})`);
@@ -2000,14 +2071,15 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
   // Always persist to local cache immediately to guarantee offline/local persistence
   localStorage.setItem('mock_supabase_ea_students', JSON.stringify(validStudents));
   localStorage.setItem('ea_students', JSON.stringify(validStudents));
+  localStorage.removeItem('ea_students_cleared');
   window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'internal_save' } }));
 
   // Sync to Server / CDN API
   try {
     saveServerEntity('/students', validStudents).catch(() => {});
-    await fetch('/api/students', {
+    await fetch(`/api/students?_t=${Date.now()}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAntiCacheHeaders(),
       body: JSON.stringify({ students: validStudents })
     }).catch(e => console.warn('Sync /api/students warning:', e));
   } catch (e) {}
@@ -2020,6 +2092,17 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
   }
 
   try {
+    // 1. Purge any deleted student IDs from Supabase to prevent stale records lingering
+    const deletedIds = getDeletedStudentIds();
+    if (deletedIds.length > 0) {
+      for (let i = 0; i < deletedIds.length; i += 50) {
+        const chunk = deletedIds.slice(i, i + 50);
+        try {
+          await client.from('ea_students').delete().in('id', chunk);
+        } catch (e) {}
+      }
+    }
+
     const payloads = validStudents.map(s => ({
       id: s.id,
       name: s.name,
@@ -2359,7 +2442,7 @@ export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
   }
 }
 
-export async function deleteSupabaseStudent(id: string, rollNumber?: string, studentName?: string): Promise<boolean> {
+export async function deleteSupabaseStudent(id: string, rollNumber?: string, studentName?: string, photoUrl?: string): Promise<boolean> {
   if (!id && !rollNumber && !studentName) return true;
   recordDeletedStudentId(id, rollNumber, studentName);
 
@@ -2482,17 +2565,44 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
 
   // 1.5 Sync deletion to Server / CDN API
   try {
-    fetch(`/api/students/${encodeURIComponent(id || rollNumber || 'unknown')}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rollNumber, studentName })
-    }).catch(err => console.warn('Server delete notify warning:', err));
-  } catch (e) {}
+    await syncStudentDeletionToCDN(id, rollNumber, studentName, photoUrl);
+  } catch (e) {
+    console.warn('syncStudentDeletionToCDN notice:', e);
+  }
 
-  // 2. Delete from Supabase remote database
+  // 2. Delete from Supabase remote database and purge CDN photo assets
   const client = getSupabaseClient();
   if (client) {
     try {
+      // Purge student photo from Supabase Storage CDN buckets
+      try {
+        const pathsToDelete: string[] = [];
+        if (photoUrl) {
+          if (photoUrl.includes('student-photos/')) {
+            const part = photoUrl.split('student-photos/')[1]?.split('?')[0];
+            if (part) pathsToDelete.push(`student-photos/${part}`);
+          }
+          if (photoUrl.includes('passport/')) {
+            const part = photoUrl.split('passport/')[1]?.split('?')[0];
+            if (part) pathsToDelete.push(`passport/${part}`);
+          }
+        }
+        const cleanId = id ? id.replace(/[^a-zA-Z0-9_-]/g, '_') : '';
+        if (cleanId) {
+          try {
+            const { data: eaList } = await client.storage.from('ea').list('student-photos', { search: cleanId });
+            if (Array.isArray(eaList)) {
+              eaList.forEach(f => pathsToDelete.push(`student-photos/${f.name}`));
+            }
+          } catch (e) {}
+        }
+        if (pathsToDelete.length > 0) {
+          const uniquePaths = Array.from(new Set(pathsToDelete));
+          await client.storage.from('ea').remove(uniquePaths).catch(() => {});
+          await client.storage.from('student-photos').remove(uniquePaths).catch(() => {});
+          console.log(`[Storage CDN Sync] Removed ${uniquePaths.length} photo assets for deleted pupil ${id}`);
+        }
+      } catch (photoErr) {}
       for (const k of studentKeys) {
         await client.from('ea_grades').delete().eq('student_id', k);
         await client.from('ea_attendance').delete().eq('student_id', k);

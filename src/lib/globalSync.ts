@@ -224,14 +224,84 @@ export const globalSyncEngine = new GlobalSyncManager();
 
 /**
  * Standard anti-CDN cache fetch options
+ * Ensures proxies, Cloudflare, Google Cloud CDN, and mobile browsers never serve stale cached responses
  */
 export function getAntiCacheHeaders(): Record<string, string> {
   return {
-    'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+    'Cache-Control': 'no-cache, no-store, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0',
     'Pragma': 'no-cache',
     'Expires': '0',
+    'CDN-Cache-Control': 'no-store',
+    'Cloudflare-CDN-Cache-Control': 'no-store',
+    'Surrogate-Control': 'no-store',
     'Content-Type': 'application/json'
   };
+}
+
+/**
+ * Explicit CDN & Server Synchronization when a pupil is added or updated
+ */
+export async function syncStudentAdditionToCDN(student: Student): Promise<boolean> {
+  if (!student || (!student.id && !student.name)) return false;
+  try {
+    const url = `/api/students/admit?_t=${Date.now()}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: getAntiCacheHeaders(),
+      body: JSON.stringify({ student })
+    });
+    if (res.ok) {
+      const json = await res.json().catch(() => ({}));
+      if (json.version) {
+        globalSyncEngine.setVersion(json.version);
+      }
+      console.log(`[CDN Sync Engine] Student admission synchronized with CDN & Server. ID: ${student.id}`);
+      window.dispatchEvent(new CustomEvent('ea_cdn_sync_complete', {
+        detail: { action: 'ADMIT', student, timestamp: new Date().toISOString() }
+      }));
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[CDN Sync Engine] syncStudentAdditionToCDN notice:', err);
+    return false;
+  }
+}
+
+/**
+ * Explicit CDN & Server Synchronization when a pupil is deleted
+ */
+export async function syncStudentDeletionToCDN(
+  id: string,
+  rollNumber?: string,
+  studentName?: string,
+  photoUrl?: string
+): Promise<boolean> {
+  if (!id && !rollNumber && !studentName) return true;
+  try {
+    const targetIdentifier = encodeURIComponent(id || rollNumber || 'unknown');
+    const url = `/api/students/${targetIdentifier}?_t=${Date.now()}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: getAntiCacheHeaders(),
+      body: JSON.stringify({ rollNumber, studentName, photoUrl })
+    });
+    if (res.ok) {
+      const json = await res.json().catch(() => ({}));
+      if (json.version) {
+        globalSyncEngine.setVersion(json.version);
+      }
+      console.log(`[CDN Sync Engine] Student deletion synchronized with CDN & Server. Target: ${id || rollNumber}`);
+      window.dispatchEvent(new CustomEvent('ea_cdn_sync_complete', {
+        detail: { action: 'DELETE', id, rollNumber, studentName, timestamp: new Date().toISOString() }
+      }));
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[CDN Sync Engine] syncStudentDeletionToCDN notice:', err);
+    return false;
+  }
 }
 
 /**
