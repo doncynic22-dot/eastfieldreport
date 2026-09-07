@@ -656,10 +656,15 @@ export function assignStudentsToCorrectClassesFromId(students: Student[]): Stude
  * Maps known students to baseline roster and recovers custom students from roll numbers/levels.
  */
 export function restoreAllStudentsToAdmittedLevels(students: Student[]): Student[] {
-  const deletedIds = new Set(getDeletedStudentIds().map(id => id.trim().toLowerCase()));
+  if (typeof window !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true') {
+    return [];
+  }
+  if (!Array.isArray(students) || students.length === 0) {
+    return [];
+  }
+
   const isDeleted = (id?: string, _roll?: string, _name?: string) => {
-    if (id && deletedIds.has(id.trim().toLowerCase())) return true;
-    return false;
+    return isStudentDeleted({ id, rollNumber: _roll, name: _name });
   };
 
   const initialFiltered = INITIAL_STUDENTS.filter(s => !isDeleted(s.id, s.rollNumber));

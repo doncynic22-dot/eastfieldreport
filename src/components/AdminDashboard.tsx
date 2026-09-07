@@ -1636,6 +1636,7 @@ export default function AdminDashboard({
 
   // Auto-heal students who are marked as "Graduated" / "Graduated JHS"
   useEffect(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true') return;
     if (students.length > 0) {
       const hasGraduated = students.some((s) => (s.className || '').toLowerCase().includes('graduated'));
       if (hasGraduated) {

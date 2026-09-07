@@ -344,12 +344,10 @@ export default function App() {
           });
 
           activeStudents = Array.from(studentMap.values());
+          activeStudents = deduplicateStudents(activeStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s)));
           if (activeStudents.length > 0) {
-            const { restoredStudents } = restoreStudentsFromTerminalReport(activeStudents, localGrades);
-            activeStudents = restoredStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
+            localStorage.removeItem('ea_students_cleared');
           }
-          activeStudents = deduplicateStudents(activeStudents);
-          localStorage.removeItem('ea_students_cleared');
         }
 
         console.log(`[Supabase Student Sync Diagnostic] handlePullFromSupabase: Loaded ${activeStudents.length} students (remote cloud fetch: ${cleanStudents.length}, isCleared: ${isCleared})`);
@@ -365,10 +363,6 @@ export default function App() {
           cleanLocalStudents = localStudents.filter(
             s => !teacherIds.has(s.id)
           ).filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
-          if (cleanLocalStudents.length > 0) {
-            const { restoredStudents } = restoreStudentsFromTerminalReport(cleanLocalStudents, localGrades);
-            cleanLocalStudents = restoredStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
-          }
           cleanLocalStudents = deduplicateStudents(cleanLocalStudents);
         }
         console.log(`[Supabase Student Sync Diagnostic] handlePullFromSupabase (offline/failed): Retaining ${cleanLocalStudents.length} students from local cache (isCleared: ${isCleared}).`);
@@ -638,12 +632,6 @@ export default function App() {
     if (!isCleared) {
       cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
       cleanStudents = deduplicateStudents(cleanStudents);
-
-      if (cleanStudents.length > 0) {
-        // Ensure students are restored with correct classes from terminal reports without repopulating deleted pupils
-        const { restoredStudents } = restoreStudentsFromTerminalReport(cleanStudents, []);
-        cleanStudents = restoredStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
-      }
     }
 
     if (cleanStudents.length > 0 && !isCleared) {

@@ -1424,34 +1424,71 @@ export function getDeletedStudentIds(): string[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        // Return only explicit student IDs; filter out any roll number patterns like EA/... or values with slashes
-        return parsed.filter(x => typeof x === 'string' && x.trim() && !x.includes('/') && !x.startsWith('EA'));
+        return parsed.filter(x => typeof x === 'string' && x.trim());
       }
     }
   } catch (e) {}
   return [];
 }
 
-export function recordDeletedStudentId(id: string, _rollNumber?: string, _studentName?: string): void {
-  if (!id) return;
+export function recordDeletedStudentId(id: string, rollNumber?: string, studentName?: string): void {
+  if (!id && !rollNumber && !studentName) return;
   try {
-    const cleanId = id.trim();
-    if (!cleanId || cleanId.includes('/') || cleanId.startsWith('EA')) return;
     const current = getDeletedStudentIds();
     const currentLower = new Set(current.map(x => String(x).toLowerCase().trim()));
-    if (!currentLower.has(cleanId.toLowerCase())) {
-      localStorage.setItem('ea_deleted_student_ids', JSON.stringify([...current, cleanId]));
+    const toAdd: string[] = [];
+
+    if (id) {
+      const cleanId = id.trim().toLowerCase();
+      if (cleanId && !currentLower.has(cleanId)) {
+        toAdd.push(cleanId);
+        currentLower.add(cleanId);
+      }
+    }
+    if (rollNumber) {
+      const cleanRoll = rollNumber.trim().toLowerCase();
+      if (cleanRoll && !currentLower.has(cleanRoll)) {
+        toAdd.push(cleanRoll);
+        currentLower.add(cleanRoll);
+      }
+      const alphanumRoll = cleanRoll.replace(/[^a-z0-9]/g, '');
+      if (alphanumRoll && !currentLower.has(alphanumRoll)) {
+        toAdd.push(alphanumRoll);
+        currentLower.add(alphanumRoll);
+      }
+    }
+    if (studentName) {
+      const cleanName = studentName.trim().toLowerCase();
+      if (cleanName && !currentLower.has(cleanName)) {
+        toAdd.push(cleanName);
+        currentLower.add(cleanName);
+      }
+    }
+
+    if (toAdd.length > 0) {
+      localStorage.setItem('ea_deleted_student_ids', JSON.stringify([...current, ...toAdd]));
     }
   } catch (e) {}
 }
 
 export function isStudentDeleted(student?: { id?: string; rollNumber?: string; name?: string } | null): boolean {
-  if (!student || !student.id) return false;
+  if (!student) return false;
   const deleted = getDeletedStudentIds();
   if (deleted.length === 0) return false;
   const deletedSet = new Set(deleted.map(x => String(x).toLowerCase().trim()));
   
-  return deletedSet.has(student.id.toLowerCase().trim());
+  if (student.id && deletedSet.has(String(student.id).toLowerCase().trim())) return true;
+  if (student.rollNumber) {
+    const r = String(student.rollNumber).toLowerCase().trim();
+    if (deletedSet.has(r)) return true;
+    const rClean = r.replace(/[^a-z0-9]/g, '');
+    if (deletedSet.has(rClean)) return true;
+  }
+  if (student.name) {
+    const n = String(student.name).toLowerCase().trim();
+    if (deletedSet.has(n)) return true;
+  }
+  return false;
 }
 
 export function removeDeletedStudentId(id?: string, rollNumber?: string, studentName?: string): void {
@@ -1531,6 +1568,24 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       });
       if (res.ok) {
         const json = await res.json();
+        if (json && Array.isArray(json.deletedStudentIds) && json.deletedStudentIds.length > 0) {
+          try {
+            const existing = getDeletedStudentIds();
+            const set = new Set(existing.map(x => String(x).toLowerCase().trim()));
+            let added = false;
+            json.deletedStudentIds.forEach((id: string) => {
+              const clean = String(id).toLowerCase().trim();
+              if (clean && !set.has(clean)) {
+                existing.push(clean);
+                set.add(clean);
+                added = true;
+              }
+            });
+            if (added) {
+              localStorage.setItem('ea_deleted_student_ids', JSON.stringify(existing));
+            }
+          } catch (e) {}
+        }
         if (json && Array.isArray(json.students)) {
           return filterDeleted(json.students);
         }
@@ -1684,6 +1739,11 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     // If Supabase returned records that are marked deleted in tombstone registry, purge them from remote DB in background
     const recordsToPurge = mapped.filter(s => isStudentDeleted(s));
     if (recordsToPurge.length > 0) {
+      const purgeIds = recordsToPurge.map(s => s.id).filter(Boolean);
+      for (let i = 0; i < purgeIds.length; i += 50) {
+        const chunk = purgeIds.slice(i, i + 50);
+        client.from('ea_students').delete().in('id', chunk).then(() => {}).catch(() => {});
+      }
       for (const st of recordsToPurge) {
         deleteSupabaseStudent(st.id, st.rollNumber, st.name).catch(() => {});
       }
@@ -1865,13 +1925,6 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
     return await clearAllSupabaseStudents();
   }
 
-  // Un-tombstone all active students
-  students.forEach(s => {
-    if (s && s.id) {
-      removeDeletedStudentId(s.id, s.rollNumber, s.name);
-    }
-  });
-
   // Filter out any students that have been marked deleted or demo
   const validStudents = students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
@@ -1928,14 +1981,24 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
       }
     }
     
-    // Only prune rows that are explicitly tombstoned
+    // Prune all rows in Supabase that are tombstoned
     try {
       const deletedIds = getDeletedStudentIds();
       if (deletedIds.length > 0) {
-        for (const dId of deletedIds) {
-          try {
-            await client.from('ea_students').delete().eq('id', dId);
-          } catch (e) {}
+        const deletedSet = new Set(deletedIds.map(x => String(x).toLowerCase().trim()));
+        const { data: remoteRows } = await client.from('ea_students').select('id, roll_number, name');
+        if (remoteRows && Array.isArray(remoteRows)) {
+          const idsToDelete = remoteRows.filter((r: any) => {
+            if (r.id && deletedSet.has(String(r.id).toLowerCase().trim())) return true;
+            if (r.roll_number && (deletedSet.has(String(r.roll_number).toLowerCase().trim()) || deletedSet.has(String(r.roll_number).toLowerCase().replace(/[^a-z0-9]/g, '')))) return true;
+            if (r.name && deletedSet.has(String(r.name).toLowerCase().trim())) return true;
+            return false;
+          }).map((r: any) => r.id);
+
+          for (let i = 0; i < idsToDelete.length; i += 50) {
+            const chunk = idsToDelete.slice(i, i + 50);
+            await client.from('ea_students').delete().in('id', chunk);
+          }
         }
       }
     } catch (pruneErr) {

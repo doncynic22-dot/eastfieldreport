@@ -29,16 +29,39 @@ function isDemoStudent(s: any): boolean {
   return false;
 }
 
+function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
+  if (!s) return false;
+  const db = dbCache || (fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, "utf-8")) : null);
+  const allDeleted = new Set([
+    ...(db?.deletedStudentIds || []),
+    ...(deletedIds || [])
+  ].map(x => String(x).toLowerCase().trim()));
+  if (allDeleted.size === 0) return false;
+
+  if (s.id && allDeleted.has(String(s.id).toLowerCase().trim())) return true;
+  if (s.rollNumber) {
+    const r = String(s.rollNumber).toLowerCase().trim();
+    if (allDeleted.has(r)) return true;
+    const rClean = r.replace(/[^a-z0-9]/g, '');
+    if (allDeleted.has(rClean)) return true;
+  }
+  if (s.name && allDeleted.has(String(s.name).toLowerCase().trim())) return true;
+  return false;
+}
+
 function loadServerStudents(): any[] {
   try {
     const db = dbCache || (fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, "utf-8")) : null);
     if (db && db.rosterCleared) {
       return [];
     }
+    if (db && Array.isArray(db.students)) {
+      return db.students.filter(s => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
+    }
     if (fs.existsSync(STUDENTS_CACHE_FILE)) {
       const data = fs.readFileSync(STUDENTS_CACHE_FILE, "utf-8");
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) return parsed.filter(s => !isDemoStudent(s));
+      if (Array.isArray(parsed)) return parsed.filter(s => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db?.deletedStudentIds));
     }
   } catch (err) {
     console.warn("[Server Students] Failed to read students cache:", err);
@@ -48,10 +71,10 @@ function loadServerStudents(): any[] {
 
 function saveServerStudents(students: any[]): boolean {
   try {
-    const clean = (students || []).filter(s => !isDemoStudent(s));
+    const db = loadServerDatabase();
+    const clean = (students || []).filter(s => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
     fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(clean, null, 2), "utf-8");
     // Also update unified server database
-    const db = loadServerDatabase();
     db.students = clean;
     if (clean.length === 0) {
       db.rosterCleared = true;
@@ -521,10 +544,12 @@ async function startServer() {
     res.setHeader("Expires", "0");
 
     const students = loadServerStudents();
+    const db = loadServerDatabase();
     return res.status(200).json({
       status: "success",
       students,
       count: students.length,
+      deletedStudentIds: db.deletedStudentIds || [],
       timestamp: new Date().toISOString()
     });
   });
@@ -536,9 +561,25 @@ async function startServer() {
       return res.status(400).json({ status: "error", message: "Invalid student payload" });
     }
 
-    const currentStudents = loadServerStudents();
+    const db = loadServerDatabase();
+    // If roster was cleared, start fresh with just this student
+    const currentStudents = db.rosterCleared ? [] : loadServerStudents();
     const cleanId = String(student.id || `st-${Date.now()}`);
     const cleanRoll = String(student.rollNumber || "").trim();
+
+    // If this pupil was previously tombstoned, remove from deleted list
+    if (Array.isArray(db.deletedStudentIds)) {
+      const lowerId = cleanId.toLowerCase();
+      const lowerRoll = cleanRoll.toLowerCase();
+      const lowerName = String(student.name || '').trim().toLowerCase();
+      db.deletedStudentIds = db.deletedStudentIds.filter(id => {
+        const item = String(id).toLowerCase().trim();
+        if (item === lowerId) return false;
+        if (lowerRoll && item === lowerRoll) return false;
+        if (lowerName && item === lowerName) return false;
+        return true;
+      });
+    }
 
     // Check if student already exists by unique ID
     const existingIndex = currentStudents.findIndex(s => s.id === cleanId);
@@ -568,6 +609,7 @@ async function startServer() {
       updatedList = [...currentStudents, normalizedStudent];
     }
 
+    db.rosterCleared = false;
     saveServerStudents(updatedList);
     console.log(`[Global Student Sync] Pupil '${normalizedStudent.name}' admitted / updated. Total pupils: ${updatedList.length}`);
 
@@ -617,46 +659,60 @@ async function startServer() {
       });
     }
 
+    // Authoritatively save the active students without re-merging previous cached students
+    saveServerStudents(students);
     const db = loadServerDatabase();
-    db.rosterCleared = false;
-
-    // Merge non-destructively with existing students in server cache
-    const currentStudents = loadServerStudents();
-    const studentMap = new Map<string, any>();
-
-    // Seed existing
-    currentStudents.forEach(s => {
-      const key = s.id || (s.rollNumber ? s.rollNumber.toLowerCase().trim() : undefined);
-      if (key) studentMap.set(key, s);
-    });
-
-    // Upsert incoming
-    students.forEach(s => {
-      const key = s.id || (s.rollNumber ? s.rollNumber.toLowerCase().trim() : undefined);
-      if (key) studentMap.set(key, s);
-    });
-
-    const mergedStudents = Array.from(studentMap.values());
-    saveServerStudents(mergedStudents);
 
     return res.status(200).json({
       status: "success",
-      count: mergedStudents.length,
+      count: db.students.length,
       timestamp: new Date().toISOString()
     });
   });
 
   // DELETE /api/students/:id: Delete pupil from global server store
   app.delete("/api/students/:id", (req, res) => {
-    const targetId = req.params.id;
-    const { rollNumber } = req.body || {};
+    const targetId = decodeURIComponent(req.params.id);
+    const { rollNumber, studentName } = req.body || {};
+
+    const db = loadServerDatabase();
+    const toTombstone = [targetId, rollNumber, studentName].filter(Boolean) as string[];
+    const currentDeleted = new Set((db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
+    toTombstone.forEach(item => {
+      const trimmed = String(item).toLowerCase().trim();
+      if (trimmed) currentDeleted.add(trimmed);
+      const cleanAlphanum = trimmed.replace(/[^a-z0-9]/g, '');
+      if (cleanAlphanum) currentDeleted.add(cleanAlphanum);
+    });
+    db.deletedStudentIds = Array.from(currentDeleted);
+
+    const isMatch = (s: any) => {
+      if (s.id && (s.id === targetId || String(s.id).toLowerCase().trim() === targetId.toLowerCase().trim())) return true;
+      if (rollNumber && s.rollNumber && String(s.rollNumber).toLowerCase().trim() === String(rollNumber).toLowerCase().trim()) return true;
+      if (studentName && s.name && String(s.name).toLowerCase().trim() === String(studentName).toLowerCase().trim()) return true;
+      return false;
+    };
 
     const currentStudents = loadServerStudents();
-    const updated = currentStudents.filter(s => {
-      if (s.id === targetId) return false;
-      if (rollNumber && s.rollNumber && s.rollNumber.toLowerCase().trim() === rollNumber.toLowerCase().trim()) return false;
-      return true;
-    });
+    const updated = currentStudents.filter(s => !isMatch(s));
+
+    // Also clean up grades, attendance, bills, mock exams for deleted student
+    const keysToRemove = new Set(toTombstone.map(x => String(x).toLowerCase().trim()));
+    if (Array.isArray(db.grades)) {
+      db.grades = db.grades.filter(g => !keysToRemove.has(String(g.studentId).toLowerCase().trim()));
+    }
+    if (Array.isArray(db.attendance)) {
+      db.attendance = db.attendance.filter(a => !keysToRemove.has(String(a.studentId).toLowerCase().trim()));
+    }
+    if (Array.isArray(db.bills)) {
+      db.bills = db.bills.filter(b => !keysToRemove.has(String(b.studentId).toLowerCase().trim()));
+    }
+    if (Array.isArray(db.dailyAttendance)) {
+      db.dailyAttendance = db.dailyAttendance.filter(r => !keysToRemove.has(String(r.studentId).toLowerCase().trim()));
+    }
+    if (Array.isArray(db.jhsMockExams)) {
+      db.jhsMockExams = db.jhsMockExams.filter(m => !keysToRemove.has(String(m.studentId).toLowerCase().trim()));
+    }
 
     saveServerStudents(updated);
     console.log(`[Global Student Sync] Student ID '${targetId}' deleted. Remaining pupils: ${updated.length}`);
@@ -743,18 +799,27 @@ async function startServer() {
 
     if (incoming.config) db.config = incoming.config;
     if (Array.isArray(incoming.teachers)) db.teachers = incoming.teachers;
+    if (Array.isArray(incoming.deletedStudentIds)) {
+      const currentDeleted = new Set((db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
+      incoming.deletedStudentIds.forEach((id: any) => {
+        const clean = String(id).toLowerCase().trim();
+        if (clean) currentDeleted.add(clean);
+      });
+      db.deletedStudentIds = Array.from(currentDeleted);
+    }
+    if (Array.isArray(incoming.deletedTeacherIds)) db.deletedTeacherIds = incoming.deletedTeacherIds;
     if (Array.isArray(incoming.students)) {
-      const cleanStudents = incoming.students.filter((s: any) => !isDemoStudent(s));
+      const cleanStudents = incoming.students.filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
       db.students = cleanStudents;
       if (cleanStudents.length === 0) {
         db.rosterCleared = true;
         db.rosterClearedAt = new Date().toISOString();
-        try {
-          fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify([], null, 2), "utf-8");
-        } catch (e) {}
       } else {
         db.rosterCleared = false;
       }
+      try {
+        fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(cleanStudents, null, 2), "utf-8");
+      } catch (e) {}
     }
     if (incoming.rosterCleared === true) {
       db.students = [];
@@ -775,8 +840,6 @@ async function startServer() {
     if (Array.isArray(incoming.bookStock)) db.bookStock = incoming.bookStock;
     if (Array.isArray(incoming.bookSales)) db.bookSales = incoming.bookSales;
     if (Array.isArray(incoming.jhsMockExams)) db.jhsMockExams = incoming.jhsMockExams;
-    if (Array.isArray(incoming.deletedStudentIds)) db.deletedStudentIds = incoming.deletedStudentIds;
-    if (Array.isArray(incoming.deletedTeacherIds)) db.deletedTeacherIds = incoming.deletedTeacherIds;
 
     saveServerDatabase(db);
     console.log(`[Global Master Sync] Full database synchronized. Version: ${db.version}`);
