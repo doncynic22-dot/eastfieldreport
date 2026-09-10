@@ -258,6 +258,11 @@ async function startServer() {
     next(err);
   });
 
+  // Health check endpoints for cloud infrastructure and reverse proxies
+  app.get(["/api/health", "/health"], (_req, res) => {
+    res.status(200).json({ status: "ok", port: PORT, timestamp: new Date().toISOString() });
+  });
+
   // 0. CDN & Edge Proxy Anti-Caching Middleware for dynamic API routes
   // Guarantees that Google Cloud CDN, Cloudflare, proxies, and mobile browsers NEVER serve stale responses for dynamic state
   app.use("/api", (req, res, next) => {
@@ -1422,9 +1427,26 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+
+  server.on("error", (err: any) => {
+    console.error("[Server Error] HTTP server encountered an error:", err);
   });
 }
 
-startServer();
+process.on("unhandledRejection", (reason, promise) => {
+  console.warn("[Server Process] Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[Server Process] Uncaught Exception:", error);
+});
+
+startServer().catch((err) => {
+  console.error("[Fatal Error] Failed to start server:", err);
+  process.exit(1);
+});
