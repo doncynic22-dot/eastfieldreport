@@ -68,16 +68,16 @@ export const INITIAL_GRADING_SCALE: GradingScaleRule[] = [
 
 export const DEFAULT_REPORT_CONFIG: ReportConfig = {
   schoolName: 'Eastfield Academy',
-  schoolYear: '2025/2026',
+  schoolYear: '2026/2027',
   term: 'Term 1',
   gradingScale: INITIAL_GRADING_SCALE,
-  principalName: 'Dr. Evelyn Asare-Bediako',
+  principalName: 'Naomi Osei-Owusu',
   schoolLogoText: 'EA',
   classScoreWeight: 50, // 50% Class Score
   examScoreWeight: 50,  // 50% Terminal Exams
   selectedTemplate: 'dynamic',
-  reopeningDate: '2026-09-15',
-  autoPromoteOnReopening: false,
+  reopeningDate: '2026-09-01',
+  autoPromoteOnReopening: true,
   schoolMotto: 'Knowledge, Character & Excellence',
   customNoticeNote: '',
   showPositionInClass: true,

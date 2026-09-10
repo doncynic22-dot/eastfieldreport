@@ -3045,6 +3045,12 @@ export async function saveSupabaseAttendance(attendance: Attendance[]): Promise<
     localStorage.setItem('ea_attendance', JSON.stringify(attendance));
   } catch (e) {}
 
+  // Broadcast cross-tab and to local event listeners
+  try {
+    broadcastSync('attendance', attendance, 'update');
+    window.dispatchEvent(new CustomEvent('ea_attendance_updated', { detail: attendance }));
+  } catch (e) {}
+
   // Persist to central server database and broadcast to other devices
   saveServerEntity('/attendance', attendance).catch(e => console.warn('[Server Sync Attendance Notice]', e));
 
@@ -3054,7 +3060,7 @@ export async function saveSupabaseAttendance(attendance: Attendance[]): Promise<
     const payloads = attendance.map(a => ({
       student_id: a.studentId,
       term: a.term || 'Term 1',
-      year: a.year || '2025/2026',
+      year: a.year || '2026/2027',
       total_days: a.totalDays,
       days_present: a.daysPresent,
       remarks: a.remarks,
@@ -3163,6 +3169,12 @@ export async function saveSupabaseDailyAttendance(records: DailyAttendanceRecord
     localStorage.setItem('ea_daily_attendance', JSON.stringify(records));
   } catch (e) {}
 
+  // Broadcast cross-tab and to local event listeners
+  try {
+    broadcastSync('daily_attendance', records, 'update');
+    window.dispatchEvent(new CustomEvent('ea_daily_attendance_updated', { detail: records }));
+  } catch (e) {}
+
   // Persist to central server database and broadcast to other devices
   saveServerEntity('/daily-attendance', records).catch(e => console.warn('[Server Sync Daily Attendance Notice]', e));
 
@@ -3175,7 +3187,7 @@ export async function saveSupabaseDailyAttendance(records: DailyAttendanceRecord
       date: r.date,
       status: r.status,
       term: r.term || 'Term 1',
-      year: r.year || '2025/2026',
+      year: r.year || '2026/2027',
       teacher_id: r.teacherId || 'admin',
       updated_at: r.updatedAt || new Date().toISOString()
     }));
@@ -5049,6 +5061,7 @@ export type GlobalSyncDomain =
   | 'teachers'
   | 'grades'
   | 'attendance'
+  | 'daily_attendance'
   | 'config'
   | 'bills'
   | 'fee_payments'
@@ -5104,6 +5117,7 @@ export interface RealtimeSyncCallbacks {
   onTeachersChange?: () => void;
   onGradesChange?: () => void;
   onAttendanceChange?: () => void;
+  onDailyAttendanceChange?: () => void;
   onConfigChange?: () => void;
   onBillsChange?: () => void;
   onFeePaymentsChange?: () => void;
@@ -5142,6 +5156,10 @@ export function subscribeToGlobalRealtime(callbacks: RealtimeSyncCallbacks = {})
       case 'attendance':
         callbacks.onAttendanceChange?.();
         break;
+      case 'daily_attendance':
+        callbacks.onDailyAttendanceChange?.();
+        callbacks.onAttendanceChange?.();
+        break;
       case 'config':
         callbacks.onConfigChange?.();
         break;
@@ -5168,6 +5186,7 @@ export function subscribeToGlobalRealtime(callbacks: RealtimeSyncCallbacks = {})
         callbacks.onTeachersChange?.();
         callbacks.onGradesChange?.();
         callbacks.onAttendanceChange?.();
+        callbacks.onDailyAttendanceChange?.();
         callbacks.onConfigChange?.();
         callbacks.onBillsChange?.();
         break;
@@ -5193,6 +5212,7 @@ export function subscribeToGlobalRealtime(callbacks: RealtimeSyncCallbacks = {})
       { table: 'ea_teachers', domain: 'teachers', callbackKey: 'onTeachersChange' },
       { table: 'ea_grades', domain: 'grades', callbackKey: 'onGradesChange' },
       { table: 'ea_attendance', domain: 'attendance', callbackKey: 'onAttendanceChange' },
+      { table: 'ea_daily_attendance', domain: 'daily_attendance', callbackKey: 'onDailyAttendanceChange' },
       { table: 'ea_bills', domain: 'bills', callbackKey: 'onBillsChange' },
       { table: 'ea_fee_payments', domain: 'fee_payments', callbackKey: 'onFeePaymentsChange' },
       { table: 'ea_inventory', domain: 'inventory', callbackKey: 'onInventoryChange' },

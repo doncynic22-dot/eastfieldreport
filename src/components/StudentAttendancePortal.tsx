@@ -45,7 +45,7 @@ import {
   X
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import { saveSupabaseAttendance, saveSupabaseDailyAttendance } from '../lib/supabase';
+import { saveSupabaseAttendance, saveSupabaseDailyAttendance, fetchSupabaseAttendance, fetchSupabaseDailyAttendance } from '../lib/supabase';
 import { calculateStudentTermAttendance } from '../utils/attendanceUtils';
 import { pushMasterServerSync } from '../lib/globalSync';
 
@@ -126,6 +126,124 @@ export default function StudentAttendancePortal({
   const [saveSuccessMessage, setSaveSuccessMessage] = useState('');
   const [isSubmittingRegister, setIsSubmittingRegister] = useState(false);
   const [submittedSuccessfully, setSubmittedSuccessfully] = useState(false);
+  const [isSyncingAttendance, setIsSyncingAttendance] = useState(false);
+
+  // Cross-browser & Cloud Realtime Synchronization Listener
+  useEffect(() => {
+    let isMounted = true;
+
+    // Refresh immediately on mount to grab latest global records from server and cloud
+    const fetchLatestOnlineAttendance = async () => {
+      try {
+        setIsSyncingAttendance(true);
+        const [freshDaily, freshAtt] = await Promise.all([
+          fetchSupabaseDailyAttendance(),
+          fetchSupabaseAttendance()
+        ]);
+        if (!isMounted) return;
+
+        if (freshDaily && Array.isArray(freshDaily) && freshDaily.length > 0) {
+          setDailyAttendance(prev => {
+            const map = new Map<string, DailyAttendanceRecord>();
+            freshDaily.forEach(r => {
+              if (r && r.studentId && r.date) map.set(`${r.studentId}_${r.date}`, r);
+            });
+            prev.forEach(r => {
+              if (r && r.studentId && r.date) {
+                const k = `${r.studentId}_${r.date}`;
+                if (!map.has(k)) {
+                  map.set(k, r);
+                } else {
+                  const localTime = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
+                  const remoteTime = map.get(k)?.updatedAt ? new Date(map.get(k)!.updatedAt).getTime() : 0;
+                  if (localTime > remoteTime) map.set(k, r);
+                }
+              }
+            });
+            const merged = Array.from(map.values());
+            localStorage.setItem('ea_daily_attendance', JSON.stringify(merged));
+            return merged;
+          });
+        }
+
+        if (freshAtt && Array.isArray(freshAtt) && freshAtt.length > 0) {
+          setAttendance(prev => {
+            const map = new Map<string, Attendance>();
+            freshAtt.forEach(a => {
+              if (a && a.studentId) map.set(`${a.studentId}_${a.term || ''}_${a.year || ''}`, a);
+            });
+            prev.forEach(a => {
+              if (a && a.studentId) {
+                const k = `${a.studentId}_${a.term || ''}_${a.year || ''}`;
+                if (!map.has(k)) {
+                  map.set(k, a);
+                } else {
+                  const localTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+                  const remoteTime = map.get(k)?.updatedAt ? new Date(map.get(k)!.updatedAt).getTime() : 0;
+                  if (localTime > remoteTime) map.set(k, a);
+                }
+              }
+            });
+            const merged = Array.from(map.values());
+            localStorage.setItem('ea_attendance', JSON.stringify(merged));
+            return merged;
+          });
+        }
+      } catch (err) {
+        console.warn('Initial attendance sync notice:', err);
+      } finally {
+        if (isMounted) setIsSyncingAttendance(false);
+      }
+    };
+
+    fetchLatestOnlineAttendance();
+
+    // Listen for intra-tab and cross-browser realtime updates
+    const handleDailyUpdate = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setDailyAttendance(e.detail);
+      }
+    };
+    const handleAttUpdate = (e: any) => {
+      if (e?.detail && Array.isArray(e.detail)) {
+        setAttendance(e.detail);
+      }
+    };
+
+    window.addEventListener('ea_daily_attendance_updated', handleDailyUpdate);
+    window.addEventListener('ea_attendance_updated', handleAttUpdate);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('ea_daily_attendance_updated', handleDailyUpdate);
+      window.removeEventListener('ea_attendance_updated', handleAttUpdate);
+    };
+  }, [setDailyAttendance, setAttendance]);
+
+  // Manual Trigger to re-fetch and synchronize attendance immediately
+  const handleManualRefreshAttendance = async () => {
+    setIsSyncingAttendance(true);
+    try {
+      const [freshDaily, freshAtt] = await Promise.all([
+        fetchSupabaseDailyAttendance(),
+        fetchSupabaseAttendance()
+      ]);
+      if (freshDaily && Array.isArray(freshDaily) && freshDaily.length > 0) {
+        setDailyAttendance(freshDaily);
+        localStorage.setItem('ea_daily_attendance', JSON.stringify(freshDaily));
+      }
+      if (freshAtt && Array.isArray(freshAtt) && freshAtt.length > 0) {
+        setAttendance(freshAtt);
+        localStorage.setItem('ea_attendance', JSON.stringify(freshAtt));
+      }
+      setSaveSuccessMessage('Attendance synchronized with cloud database successfully!');
+      setTimeout(() => setSaveSuccessMessage(''), 3000);
+    } catch (e) {
+      console.warn('Manual sync failed:', e);
+    } finally {
+      setIsSyncingAttendance(false);
+    }
+  };
 
   // Handle Login with Registered Credentials Assigned by Admin
   const handleTeacherLogin = async (e: React.FormEvent) => {
@@ -250,6 +368,46 @@ export default function StudentAttendancePortal({
     });
   }, [students, selectedClass, searchQuery, teacherAssignedClasses]);
 
+  // Check if attendance has been explicitly marked for a student on selectedDate
+  const hasAttendanceRecordForDate = (studentId: string): boolean => {
+    const student = students.find(s => s.id === studentId || s.rollNumber === studentId);
+    const sid = student ? student.id.toLowerCase() : studentId.toLowerCase();
+    const sRoll = (student?.rollNumber || '').toLowerCase();
+
+    return dailyAttendance.some(r => {
+      if (!r || r.date !== selectedDate) return false;
+      const rId = (r.studentId || '').toLowerCase();
+      return rId === sid || (sRoll && rId === sRoll);
+    });
+  };
+
+  // List of distinct dates with recorded attendance for the current class in this term
+  const markedDatesForClass = useMemo(() => {
+    const dates = new Set<string>();
+    const normTerm = (config.term || '').trim().toLowerCase();
+    const normYear = (config.schoolYear || '').trim();
+
+    dailyAttendance.forEach(r => {
+      if (!r || !r.date) return;
+      const rTerm = (r.term || '').trim().toLowerCase();
+      const rYear = (r.year || '').trim();
+      const termOk = !normTerm || !rTerm || rTerm === normTerm;
+      const yearOk = !normYear || !rYear || rYear === normYear;
+      if (!termOk || !yearOk) return;
+
+      if (selectedClass === 'ALL') {
+        dates.add(r.date);
+      } else {
+        const student = students.find(s => s.id === r.studentId || s.rollNumber === r.studentId);
+        if (student && student.className === selectedClass) {
+          dates.add(r.date);
+        }
+      }
+    });
+
+    return Array.from(dates).sort().reverse();
+  }, [dailyAttendance, students, selectedClass, config.term, config.schoolYear]);
+
   // Get status for a student on selectedDate
   const getStudentStatusForDate = (studentId: string): DailyAttendanceStatus => {
     const student = students.find(s => s.id === studentId || s.rollNumber === studentId);
@@ -269,89 +427,104 @@ export default function StudentAttendancePortal({
   const setStudentStatus = (studentId: string, status: DailyAttendanceStatus) => {
     const student = students.find(s => s.id === studentId || s.rollNumber === studentId);
     const sid = student ? student.id : studentId;
+    const currentYear = config.schoolYear || '2026/2027';
+    const currentTerm = config.term || 'Term 1';
+
+    let updatedDaily: DailyAttendanceRecord[] = [];
 
     setDailyAttendance(prev => {
       const existingIdx = prev.findIndex(
         r => (r.studentId === sid || (student && r.studentId === student.rollNumber)) && r.date === selectedDate
       );
-      let updated: DailyAttendanceRecord[];
       if (existingIdx >= 0) {
-        updated = [...prev];
-        updated[existingIdx] = {
-          ...updated[existingIdx],
+        updatedDaily = [...prev];
+        updatedDaily[existingIdx] = {
+          ...updatedDaily[existingIdx],
           status,
+          term: currentTerm,
+          year: currentYear,
+          teacherId: currentUser?.id || 'admin',
           updatedAt: new Date().toISOString()
         };
       } else {
         const newRecord: DailyAttendanceRecord = {
-          id: `att-${sid}-${selectedDate}-${Date.now()}`,
+          id: `att-${sid}-${selectedDate}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           studentId: sid,
           date: selectedDate,
           status,
-          term: config.term,
-          year: config.schoolYear,
+          term: currentTerm,
+          year: currentYear,
           teacherId: currentUser?.id || 'admin',
           updatedAt: new Date().toISOString()
         };
-        updated = [...prev, newRecord];
+        updatedDaily = [...prev, newRecord];
       }
 
       // Guarantee immediate local storage persistence
       try {
-        localStorage.setItem('ea_daily_attendance', JSON.stringify(updated));
-        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(updated));
+        localStorage.setItem('ea_daily_attendance', JSON.stringify(updatedDaily));
+        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(updatedDaily));
       } catch (e) {}
 
-      // Background persist to server
-      saveSupabaseDailyAttendance(updated).catch(() => {});
+      return updatedDaily;
+    });
 
-      // Recalculate term attendance live for this student
-      if (student) {
-        const currentYear = config.schoolYear;
-        const currentTerm = config.term;
+    // Recalculate term attendance live for all students & sync globally
+    setAttendance(prevAtt => {
+      const nextAtt = [...prevAtt];
+      students.forEach(s => {
         const calc = calculateStudentTermAttendance(
-          student,
+          s,
           currentTerm,
           currentYear,
-          updated,
-          attendance,
+          updatedDaily,
+          nextAtt,
           students
         );
+        const attIdx = nextAtt.findIndex(
+          a => (a.studentId === s.id || a.studentId === s.rollNumber) &&
+            (!a.term || a.term.toLowerCase() === currentTerm.toLowerCase()) &&
+            (!a.year || a.year === currentYear)
+        );
+        const attRecord: Attendance = {
+          studentId: s.id,
+          term: currentTerm,
+          year: currentYear,
+          daysPresent: calc.daysPresent,
+          totalDays: calc.totalDays,
+          remarks: calc.remarks,
+          teacherId: currentUser?.id || 'admin',
+          updatedAt: new Date().toISOString()
+        };
+        if (attIdx >= 0) {
+          nextAtt[attIdx] = attRecord;
+        } else if (calc.totalDays > 0) {
+          nextAtt.push(attRecord);
+        }
+      });
 
-        setAttendance(prevAtt => {
-          const nextAtt = [...prevAtt];
-          const attIdx = nextAtt.findIndex(
-            a => a.studentId === sid && (!a.term || a.term === currentTerm) && (!a.year || a.year === currentYear)
-          );
-          const attRecord: Attendance = {
-            studentId: sid,
-            term: currentTerm,
-            year: currentYear,
-            daysPresent: calc.daysPresent,
-            totalDays: calc.totalDays,
-            remarks: calc.remarks,
-            teacherId: currentUser?.id || 'admin',
-            updatedAt: new Date().toISOString()
-          };
-          if (attIdx >= 0) {
-            nextAtt[attIdx] = attRecord;
-          } else if (calc.totalDays > 0) {
-            nextAtt.push(attRecord);
-          }
-          try {
-            localStorage.setItem('ea_attendance', JSON.stringify(nextAtt));
-            localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(nextAtt));
-          } catch {}
-          return nextAtt;
-        });
-      }
+      try {
+        localStorage.setItem('ea_attendance', JSON.stringify(nextAtt));
+        localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(nextAtt));
+      } catch {}
 
-      return updated;
+      // Global Server, Cloud Supabase, and Realtime Broadcast
+      Promise.allSettled([
+        saveSupabaseDailyAttendance(updatedDaily),
+        saveSupabaseAttendance(nextAtt),
+        pushMasterServerSync({ dailyAttendance: updatedDaily, attendance: nextAtt })
+      ]).catch(() => {});
+
+      return nextAtt;
     });
   };
 
   // Bulk Mark All for selected class
   const handleMarkAll = (status: DailyAttendanceStatus) => {
+    const currentYear = config.schoolYear || '2026/2027';
+    const currentTerm = config.term || 'Term 1';
+    let updatedDaily: DailyAttendanceRecord[] = [];
+
     setDailyAttendance(prev => {
       const otherRecords = prev.filter(
         r => !(filteredStudents.some(s => s.id === r.studentId || s.rollNumber === r.studentId) && r.date === selectedDate)
@@ -361,23 +534,69 @@ export default function StudentAttendancePortal({
         studentId: student.id,
         date: selectedDate,
         status,
-        term: config.term,
-        year: config.schoolYear,
+        term: currentTerm,
+        year: currentYear,
         teacherId: currentUser?.id || 'admin',
         updatedAt: new Date().toISOString()
       }));
-      const updated = [...otherRecords, ...newRecords];
+      updatedDaily = [...otherRecords, ...newRecords];
 
       // Guarantee immediate local storage persistence
       try {
-        localStorage.setItem('ea_daily_attendance', JSON.stringify(updated));
-        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(updated));
+        localStorage.setItem('ea_daily_attendance', JSON.stringify(updatedDaily));
+        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(updatedDaily));
       } catch (e) {}
 
-      // Background persist to server
-      saveSupabaseDailyAttendance(updated).catch(() => {});
+      return updatedDaily;
+    });
 
-      return updated;
+    // Recalculate term attendance live for all students & sync globally
+    setAttendance(prevAtt => {
+      const nextAtt = [...prevAtt];
+      students.forEach(s => {
+        const calc = calculateStudentTermAttendance(
+          s,
+          currentTerm,
+          currentYear,
+          updatedDaily,
+          nextAtt,
+          students
+        );
+        const attIdx = nextAtt.findIndex(
+          a => (a.studentId === s.id || a.studentId === s.rollNumber) &&
+            (!a.term || a.term.toLowerCase() === currentTerm.toLowerCase()) &&
+            (!a.year || a.year === currentYear)
+        );
+        const attRecord: Attendance = {
+          studentId: s.id,
+          term: currentTerm,
+          year: currentYear,
+          daysPresent: calc.daysPresent,
+          totalDays: calc.totalDays,
+          remarks: calc.remarks,
+          teacherId: currentUser?.id || 'admin',
+          updatedAt: new Date().toISOString()
+        };
+        if (attIdx >= 0) {
+          nextAtt[attIdx] = attRecord;
+        } else if (calc.totalDays > 0) {
+          nextAtt.push(attRecord);
+        }
+      });
+
+      try {
+        localStorage.setItem('ea_attendance', JSON.stringify(nextAtt));
+        localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(nextAtt));
+      } catch {}
+
+      // Global Server, Cloud Supabase, and Realtime Broadcast
+      Promise.allSettled([
+        saveSupabaseDailyAttendance(updatedDaily),
+        saveSupabaseAttendance(nextAtt),
+        pushMasterServerSync({ dailyAttendance: updatedDaily, attendance: nextAtt })
+      ]).catch(() => {});
+
+      return nextAtt;
     });
   };
 
@@ -880,7 +1099,83 @@ export default function StudentAttendancePortal({
             </div>
           </div>
         </div>
+
+        {/* Global Sync & Recorded Roll Call Dates Navigation Bar */}
+        <div className="pt-3 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg font-bold text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <span>Global Cloud Sync Active</span>
+            </div>
+
+            {markedDatesForClass.includes(selectedDate) ? (
+              <span className="px-2.5 py-1 bg-purple-100 text-purple-900 border border-purple-200 rounded-lg font-bold text-[11px] flex items-center gap-1">
+                <Check className="w-3.5 h-3.5 text-purple-700" />
+                Roll call recorded for {selectedDate}
+              </span>
+            ) : (
+              <span className="px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg font-semibold text-[11px]">
+                No roll call taken yet for {selectedDate}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleManualRefreshAttendance}
+              disabled={isSyncingAttendance}
+              className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg text-[11px] transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              title="Pull latest attendance from cloud"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingAttendance ? 'animate-spin text-purple-600' : 'text-gray-500'}`} />
+              <span>{isSyncingAttendance ? 'Syncing...' : 'Sync Cloud Now'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Date Selectors for Recorded Dates */}
+        {markedDatesForClass.length > 0 && (
+          <div className="pt-2 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider mr-1">
+              Recorded Dates ({markedDatesForClass.length}):
+            </span>
+            {markedDatesForClass.slice(0, 8).map(dateStr => (
+              <button
+                key={dateStr}
+                type="button"
+                onClick={() => setSelectedDate(dateStr)}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                  selectedDate === dateStr
+                    ? 'bg-mauve-900 text-white shadow-xs'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
+                }`}
+              >
+                {dateStr}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Helpful Alert if looking at an empty date when records exist on other dates */}
+      {!markedDatesForClass.includes(selectedDate) && markedDatesForClass.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-900 p-3 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs no-print">
+          <div className="flex items-center gap-2">
+            <HelpCircle className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>
+              Attendance has already been recorded on other dates for this class (latest on <strong className="font-extrabold">{markedDatesForClass[0]}</strong>).
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedDate(markedDatesForClass[0])}
+            className="px-3 py-1 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-lg text-[11px] uppercase tracking-wider shrink-0 transition cursor-pointer self-start sm:self-auto"
+          >
+            Jump to {markedDatesForClass[0]}
+          </button>
+        </div>
+      )}
 
       {/* SAVE SUCCESS BANNER */}
       {saveSuccessMessage && (

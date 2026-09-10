@@ -1427,6 +1427,7 @@ export default function App() {
           remoteBills,
           remoteGrades,
           remoteAttendance,
+          remoteDailyAttendance,
           _mock,
           _inv,
           remoteStudents,
@@ -1438,6 +1439,7 @@ export default function App() {
           fetchSupabaseBills(),
           fetchSupabaseGrades(),
           fetchSupabaseAttendance(),
+          fetchSupabaseDailyAttendance(),
           fetchSupabaseJHSMockExams(),
           fetchSupabaseInventory(),
           fetchSupabaseStudents(),
@@ -1586,15 +1588,49 @@ export default function App() {
           });
         }
 
+        if (remoteDailyAttendance && Array.isArray(remoteDailyAttendance) && remoteDailyAttendance.length > 0) {
+          setDailyAttendance(prev => {
+            const dailyMap = new Map<string, DailyAttendanceRecord>();
+            remoteDailyAttendance.forEach(r => {
+              if (r && r.studentId && r.date) {
+                dailyMap.set(`${r.studentId}_${r.date}`, r);
+              }
+            });
+            prev.forEach(r => {
+              if (r && r.studentId && r.date) {
+                const key = `${r.studentId}_${r.date}`;
+                if (!dailyMap.has(key)) {
+                  dailyMap.set(key, r);
+                } else {
+                  const localTime = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
+                  const remoteTime = dailyMap.get(key)?.updatedAt ? new Date(dailyMap.get(key)!.updatedAt).getTime() : 0;
+                  if (localTime > remoteTime) {
+                    dailyMap.set(key, r);
+                  }
+                }
+              }
+            });
+            const mergedDaily = Array.from(dailyMap.values()).filter(r => !isStudentDeleted({ id: r.studentId }));
+            if (JSON.stringify(prev) !== JSON.stringify(mergedDaily)) {
+              localStorage.setItem('ea_daily_attendance', JSON.stringify(mergedDaily));
+              localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(mergedDaily));
+              window.dispatchEvent(new CustomEvent('ea_daily_attendance_updated', { detail: mergedDaily }));
+              return mergedDaily;
+            }
+            return prev;
+          });
+        }
+
         if (remoteAttendance && Array.isArray(remoteAttendance) && remoteAttendance.length > 0) {
           setAttendance(prev => {
+            const defaultYear = config.schoolYear || '2026/2027';
             const attMap = new Map<string, Attendance>();
             remoteAttendance.forEach(a => {
-              const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+              const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || defaultYear}`;
               attMap.set(key, a);
             });
             prev.forEach(a => {
-              const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+              const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || defaultYear}`;
               if (!attMap.has(key)) {
                 attMap.set(key, a);
               } else {
@@ -1609,6 +1645,7 @@ export default function App() {
             if (JSON.stringify(prev) !== JSON.stringify(mergedAtt)) {
               localStorage.setItem('ea_attendance', JSON.stringify(mergedAtt));
               localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(mergedAtt));
+              window.dispatchEvent(new CustomEvent('ea_attendance_updated', { detail: mergedAtt }));
               return mergedAtt;
             }
             return prev;
@@ -1643,6 +1680,7 @@ export default function App() {
       onTeachersChange: triggerDebouncedPull,
       onGradesChange: triggerDebouncedPull,
       onAttendanceChange: triggerDebouncedPull,
+      onDailyAttendanceChange: triggerDebouncedPull,
       onConfigChange: triggerDebouncedPull,
       onBillsChange: triggerDebouncedPull,
       onFeePaymentsChange: triggerDebouncedPull,

@@ -1036,7 +1036,16 @@ async function startServer() {
       });
       incoming.attendance.forEach((a: any) => {
         const key = `${a.studentId}_${a.term || ''}_${a.year || a.academicYear || ''}`;
-        attMap.set(key, a);
+        const existing = attMap.get(key);
+        if (!existing) {
+          attMap.set(key, a);
+        } else {
+          const incomingTime = a.updatedAt ? new Date(a.updatedAt).getTime() : Date.now();
+          const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+          if (incomingTime >= existingTime) {
+            attMap.set(key, a);
+          }
+        }
       });
       db.attendance = Array.from(attMap.values());
     }
@@ -1049,7 +1058,17 @@ async function startServer() {
       });
       incoming.dailyAttendance.forEach((r: any) => {
         if (r && r.studentId && r.date) {
-          dailyMap.set(`${r.studentId}_${r.date}`, r);
+          const key = `${r.studentId}_${r.date}`;
+          const existing = dailyMap.get(key);
+          if (!existing) {
+            dailyMap.set(key, r);
+          } else {
+            const incomingTime = r.updatedAt ? new Date(r.updatedAt).getTime() : Date.now();
+            const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+            if (incomingTime >= existingTime) {
+              dailyMap.set(key, r);
+            }
+          }
         }
       });
       db.dailyAttendance = Array.from(dailyMap.values());
@@ -1151,6 +1170,9 @@ async function startServer() {
 
   // Attendance: GET & POST
   app.get("/api/attendance", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     const db = loadServerDatabase();
     return res.status(200).json({ status: "success", data: db.attendance || [], count: (db.attendance || []).length, version: db.version });
   });
@@ -1167,7 +1189,16 @@ async function startServer() {
     });
     attendance.forEach(a => {
       const key = `${a.studentId}_${a.term || ''}_${a.year || a.academicYear || ''}`;
-      attMap.set(key, a);
+      const existing = attMap.get(key);
+      if (!existing) {
+        attMap.set(key, a);
+      } else {
+        const incomingTime = a.updatedAt ? new Date(a.updatedAt).getTime() : Date.now();
+        const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+        if (incomingTime >= existingTime) {
+          attMap.set(key, a);
+        }
+      }
     });
 
     db.attendance = Array.from(attMap.values());
@@ -1177,6 +1208,9 @@ async function startServer() {
 
   // Daily Attendance: GET & POST
   app.get("/api/daily-attendance", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     const db = loadServerDatabase();
     return res.status(200).json({ status: "success", data: db.dailyAttendance || [], count: (db.dailyAttendance || []).length, version: db.version });
   });
@@ -1194,7 +1228,17 @@ async function startServer() {
     });
     records.forEach(r => {
       if (r && r.studentId && r.date) {
-        dailyMap.set(`${r.studentId}_${r.date}`, r);
+        const key = `${r.studentId}_${r.date}`;
+        const existing = dailyMap.get(key);
+        if (!existing) {
+          dailyMap.set(key, r);
+        } else {
+          const incomingTime = r.updatedAt ? new Date(r.updatedAt).getTime() : Date.now();
+          const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+          if (incomingTime >= existingTime) {
+            dailyMap.set(key, r);
+          }
+        }
       }
     });
 
