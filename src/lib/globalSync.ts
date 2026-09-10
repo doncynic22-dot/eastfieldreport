@@ -308,6 +308,102 @@ export async function syncStudentDeletionToCDN(
 }
 
 /**
+ * Explicit CDN & Server Synchronization for attendance
+ */
+export async function syncAttendanceToCDN(
+  attendance: Attendance[],
+  dailyAttendance?: DailyAttendanceRecord[]
+): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/attendance?_t=${Date.now()}`, {
+      method: 'POST',
+      headers: getAntiCacheHeaders(),
+      body: JSON.stringify({ attendance, dailyAttendance })
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[CDN Sync Engine] syncAttendanceToCDN notice:', err);
+    return false;
+  }
+}
+
+/**
+ * Upload any binary file, blob, or base64 data to persistent CDN storage
+ */
+export async function uploadAssetToCDN(
+  fileOrBlob: File | Blob | string,
+  folder: string = 'assets',
+  customFileName?: string
+): Promise<string | null> {
+  try {
+    let fileData = '';
+    let contentType = 'image/jpeg';
+    let fileName = customFileName || `asset_${Date.now()}.jpg`;
+
+    if (typeof fileOrBlob === 'string') {
+      fileData = fileOrBlob;
+      if (fileData.startsWith('data:')) {
+        const match = fileData.match(/^data:([^;]+);base64,/);
+        if (match) contentType = match[1];
+      }
+    } else {
+      contentType = fileOrBlob.type || 'image/jpeg';
+      if ('name' in fileOrBlob && !customFileName) {
+        fileName = (fileOrBlob as File).name;
+      }
+      fileData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || '');
+        reader.onerror = reject;
+        reader.readAsDataURL(fileOrBlob);
+      });
+    }
+
+    const res = await fetch('/api/cdn/upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        fileData,
+        fileName,
+        folder,
+        contentType
+      })
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.url || json.cdnUrl) {
+        const publicUrl = json.url || json.cdnUrl;
+        console.log(`[CDN Sync Engine] Uploaded to CDN storage successfully: ${publicUrl}`);
+        return publicUrl;
+      }
+    }
+    return null;
+  } catch (err) {
+    console.warn('[CDN Sync Engine] uploadAssetToCDN error:', err);
+    return null;
+  }
+}
+
+/**
+ * Check CDN edge and storage operational status
+ */
+export async function checkCDNHealth(): Promise<{ ok: boolean; status?: string }> {
+  try {
+    const res = await fetch(`/api/cdn/health?_t=${Date.now()}`);
+    if (res.ok) {
+      const data = await res.json();
+      return { ok: true, status: data.cdn || 'operational' };
+    }
+    return { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
  * Fetch full master state from server
  */
 export async function fetchMasterServerSync(): Promise<({ version: number; lastUpdated: string; data: GlobalSyncPayload } & GlobalSyncPayload) | null> {

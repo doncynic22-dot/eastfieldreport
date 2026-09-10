@@ -2,7 +2,7 @@ import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabas
 import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord, BookStockItem, BookSaleRecord, DailyAttendanceRecord, DailyAttendanceStatus } from '../types';
 import { DEFAULT_INVENTORY_DATA, DEFAULT_BOOK_STOCK_ITEMS, DEFAULT_BOOK_SALES } from '../data/mockData';
 import { isDemoStudent } from '../data/demoPupils';
-import { fetchServerEntity, saveServerEntity, globalSyncEngine, getAntiCacheHeaders, syncStudentAdditionToCDN, syncStudentDeletionToCDN } from './globalSync';
+import { fetchServerEntity, saveServerEntity, globalSyncEngine, getAntiCacheHeaders, syncStudentAdditionToCDN, syncStudentDeletionToCDN, uploadAssetToCDN } from './globalSync';
 
 // Helper to retrieve credentials from env or localStorage
 export function getSupabaseCredentials() {
@@ -4176,10 +4176,25 @@ export async function uploadStudentPhotoToSupabase(file: File, studentId: string
       }
     }
 
-    // 3. Fallback to optimized data URL if bucket permissions/network restrict direct upload
+    // 3. Fallback to Server-Hosted Persistent Edge CDN Storage
+    try {
+      const cdnUrl = await uploadAssetToCDN(file, 'student-photos', `${cleanId}_${Date.now()}.${fileExt}`);
+      if (cdnUrl) {
+        console.log(`[Storage CDN Sync] Pupil photo saved directly to edge CDN storage: ${cdnUrl}`);
+        return cdnUrl;
+      }
+    } catch (e) {
+      console.warn('Fallback to CDN storage notice:', e);
+    }
+
+    // 4. Fallback to optimized data URL if bucket permissions/network restrict direct upload
     return dataUrl;
   } catch (err) {
-    console.warn('Student photo storage upload error, falling back to data URL:', err);
+    console.warn('Student photo storage upload error, attempting CDN fallback:', err);
+    try {
+      const cdnFallback = await uploadAssetToCDN(file, 'student-photos');
+      if (cdnFallback) return cdnFallback;
+    } catch {}
     return new Promise((resolve) => {
       const r = new FileReader();
       r.onloadend = () => resolve((r.result as string) || '');
@@ -4197,7 +4212,8 @@ export async function uploadTeacherPhotoToSupabase(file: File, teacherId: string
     const { blob, dataUrl } = await compressPassportPhoto(file);
     const client = getSupabaseClient();
     if (!client) {
-      return dataUrl;
+      const cdnUrl = await uploadAssetToCDN(file, 'teacher-photos');
+      return cdnUrl || dataUrl;
     }
 
     const cleanId = teacherId ? teacherId.replace(/[^a-zA-Z0-9_-]/g, '_') : `teacher_${Date.now()}`;
@@ -4230,8 +4246,18 @@ export async function uploadTeacherPhotoToSupabase(file: File, teacherId: string
       if (urlData?.publicUrl) return urlData.publicUrl;
     }
 
+    // Fallback to Server CDN Storage
+    try {
+      const cdnUrl = await uploadAssetToCDN(file, 'teacher-photos', `${cleanId}_${Date.now()}.${fileExt}`);
+      if (cdnUrl) return cdnUrl;
+    } catch {}
+
     return dataUrl;
   } catch (err) {
+    try {
+      const cdnUrl = await uploadAssetToCDN(file, 'teacher-photos');
+      if (cdnUrl) return cdnUrl;
+    } catch {}
     return new Promise((resolve) => {
       const r = new FileReader();
       r.onloadend = () => resolve((r.result as string) || '');

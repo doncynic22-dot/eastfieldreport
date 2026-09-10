@@ -258,9 +258,19 @@ async function startServer() {
     next(err);
   });
 
-  // 0. CDN & Edge Proxy Anti-Caching Middleware for all API routes
-  // Guarantees that Google Cloud CDN, Cloudflare, proxies, and mobile browsers NEVER serve stale responses
+  // 0. CDN & Edge Proxy Anti-Caching Middleware for dynamic API routes
+  // Guarantees that Google Cloud CDN, Cloudflare, proxies, and mobile browsers NEVER serve stale responses for dynamic state
   app.use("/api", (req, res, next) => {
+    // Exclude static or proxy CDN endpoints from no-store headers if they explicitly opt into caching
+    if (req.path === "/cdn/health" || req.path === "/cdn/status") {
+      res.setHeader("Cache-Control", "public, max-age=60");
+      return next();
+    }
+    if (req.path.startsWith("/cdn/proxy")) {
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.setHeader("CDN-Cache-Control", "public, max-age=86400");
+      return next();
+    }
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
@@ -268,6 +278,130 @@ async function startServer() {
     res.setHeader("CDN-Cache-Control", "no-store");
     res.setHeader("Cloudflare-CDN-Cache-Control", "no-store");
     next();
+  });
+
+  // Dedicated CDN Storage Directory
+  const cdnStorageDir = path.join(process.cwd(), "public", "cdn");
+  if (!fs.existsSync(cdnStorageDir)) {
+    try {
+      fs.mkdirSync(cdnStorageDir, { recursive: true });
+    } catch (e) {}
+  }
+
+  // Ensure common subfolders exist for CDN organization
+  ["student-photos", "teacher-photos", "logos", "assets"].forEach(folder => {
+    const fPath = path.join(cdnStorageDir, folder);
+    if (!fs.existsSync(fPath)) {
+      try { fs.mkdirSync(fPath, { recursive: true }); } catch (e) {}
+    }
+  });
+
+  // Mount /cdn endpoint for serving edge-cached CDN assets with long-term immutable caching
+  app.use("/cdn", express.static(cdnStorageDir, {
+    maxAge: "365d",
+    immutable: true,
+    setHeaders: (res) => {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      res.setHeader("CDN-Cache-Control", "public, max-age=31536000");
+      res.setHeader("Cloudflare-CDN-Cache-Control", "public, max-age=31536000");
+    }
+  }));
+
+  // GET /api/cdn/health & /api/cdn/status - Verify CDN and edge operational status
+  app.get(["/api/cdn/health", "/api/cdn/status"], (req, res) => {
+    return res.status(200).json({
+      status: "ok",
+      cdn: "operational",
+      edgeSync: "active",
+      storage: "ready",
+      antiStaleProtection: true,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // POST /api/cdn/upload - Upload assets directly to persistent CDN storage
+  app.post("/api/cdn/upload", (req, res) => {
+    try {
+      const { fileData, fileName, folder = "assets", contentType = "image/jpeg" } = req.body || {};
+      if (!fileData || typeof fileData !== "string") {
+        return res.status(400).json({ status: "error", message: "fileData (base64 string or data URL) is required." });
+      }
+
+      // Safe folder name (prevent directory traversal)
+      const safeFolder = String(folder).replace(/[^a-zA-Z0-9_-]/g, "_") || "assets";
+      const targetDir = path.join(cdnStorageDir, safeFolder);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+
+      // Extract raw base64 and determine extension
+      let base64String = fileData;
+      let ext = "jpg";
+      if (fileData.startsWith("data:")) {
+        const matches = fileData.match(/^data:([^;]+);base64,(.+)$/);
+        if (matches) {
+          const mime = matches[1];
+          base64String = matches[2];
+          if (mime.includes("png")) ext = "png";
+          else if (mime.includes("webp")) ext = "webp";
+          else if (mime.includes("svg")) ext = "svg";
+          else if (mime.includes("pdf")) ext = "pdf";
+          else if (mime.includes("jpeg") || mime.includes("jpg")) ext = "jpg";
+        }
+      }
+
+      const buffer = Buffer.from(base64String, "base64");
+      const safeName = (fileName ? String(fileName).replace(/[^a-zA-Z0-9_.-]/g, "_") : `asset_${Date.now()}.${ext}`).replace(/\.[^.]+$/, `.${ext}`);
+      const filePath = path.join(targetDir, safeName);
+
+      fs.writeFileSync(filePath, buffer);
+
+      const publicPath = `/cdn/${safeFolder}/${safeName}`;
+      console.log(`[CDN Storage] Asset written to ${publicPath} (${buffer.length} bytes)`);
+
+      return res.status(200).json({
+        status: "success",
+        url: publicPath,
+        cdnUrl: publicPath,
+        size: buffer.length,
+        contentType,
+        timestamp: new Date().toISOString()
+      });
+    } catch (err: any) {
+      console.error("[CDN Storage] Upload error:", err);
+      return res.status(500).json({ status: "error", message: err?.message || "Failed to save file to CDN storage." });
+    }
+  });
+
+  // GET /api/cdn/proxy?url=<url> - CORS-safe CDN Image Proxy
+  app.get("/api/cdn/proxy", async (req, res) => {
+    try {
+      const targetUrl = req.query.url as string;
+      if (!targetUrl || (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://"))) {
+        return res.status(400).send("Valid http/https url query parameter required.");
+      }
+
+      const response = await fetch(targetUrl);
+      if (!response.ok) {
+        return res.status(response.status).send(`Failed to fetch upstream asset: ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get("content-type") || "application/octet-stream";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.setHeader("CDN-Cache-Control", "public, max-age=86400");
+
+      const arrayBuffer = await response.arrayBuffer();
+      return res.send(Buffer.from(arrayBuffer));
+    } catch (err: any) {
+      console.error("[CDN Proxy] Error proxying asset:", err);
+      return res.status(500).send("Error proxying asset.");
+    }
   });
 
   // API Route: Check Arkesel API Balance

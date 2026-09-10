@@ -17,7 +17,7 @@ import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials } from '../lib/supabase';
-import { globalSyncEngine } from '../lib/globalSync';
+import { globalSyncEngine, uploadAssetToCDN } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
@@ -1018,9 +1018,26 @@ export default function AdminDashboard({
         setIsFormConfigDirty(true);
         return; // Success, bypass base64 fallback
       } catch (err: any) {
-        console.warn('Could not upload to Supabase Storage, falling back to base64:', err.message || err);
+        console.warn('Could not upload to Supabase Storage, trying CDN storage:', err.message || err);
       }
     }
+
+    // Edge CDN Storage Upload
+    try {
+      const cdnUrl = await uploadAssetToCDN(file, 'logos', `school_logo_${Date.now()}`);
+      if (cdnUrl) {
+        setConfig(prev => ({
+          ...prev,
+          schoolLogoUrl: cdnUrl
+        }));
+        setFormConfig(prev => ({
+          ...prev,
+          schoolLogoUrl: cdnUrl
+        }));
+        setIsFormConfigDirty(true);
+        return;
+      }
+    } catch (e) {}
 
     // Local Compressed Base64 Fallback (ensures tiny size for perfect DB synchronization)
     try {
