@@ -53,7 +53,7 @@ import {
 import { isAutoPromotionDue, promoteStudents, restoreAllStudentsToAdmittedLevels, deduplicateStudents, restoreStudentsFromTerminalReport } from './services/promotionService';
 import { getCanonicalSubjectId } from './utils/subjectUtils';
 import { isDemoStudent } from './data/demoPupils';
-import { globalSyncEngine, GlobalDatabaseState } from './lib/globalSync';
+import { globalSyncEngine, GlobalDatabaseState, pushMasterServerSync, syncTeachersToCDN, syncAttendanceToCDN } from './lib/globalSync';
 
 
 export default function App() {
@@ -180,6 +180,7 @@ export default function App() {
   const lastSavedAttendanceSigRef = useRef<string>('');
   const lastSavedConfigSigRef = useRef<string>('');
   const lastSavedBillsSigRef = useRef<string>('');
+  const lastSavedDailyAttendanceSigRef = useRef<string>('');
 
   // Check connection status
   const checkSupabaseStatus = async () => {
@@ -918,27 +919,36 @@ export default function App() {
 
     hydrateMasterDatabase();
 
+    const handleOutdated = () => {
+      console.log('[App] Server version updated. Synchronizing master state...');
+      hydrateMasterDatabase();
+    };
+    window.addEventListener('ea_global_sync_outdated', handleOutdated);
+
     // B. Real-time Server-Sent Events (SSE) listener
     const unsubscribe = globalSyncEngine.subscribe((streamEvent) => {
       const { type, entity, payload } = streamEvent;
-      console.log(`[GlobalSync SSE] Event received: entity='${entity}', type='${type}'`, payload);
-      if (isPullingRemoteRef.current) return;
+      console.log(`[GlobalSync SSE] Event received: entity='${entity}', type='${type}'`);
 
-      if ((entity === 'all' || type === 'FULL_SYNC') && payload) {
+      if ((entity === 'all' || type === 'FULL_SYNC' || type === 'SYNC_ALL') && payload) {
         const p = payload as GlobalDatabaseState;
         if (p.config) {
           setConfig(prev => ({ ...prev, ...p.config }));
           localStorage.setItem('ea_config', JSON.stringify(p.config));
         }
-        if (Array.isArray(p.teachers) && p.teachers.length > 0) {
+        if (Array.isArray(p.teachers)) {
           setTeachers(p.teachers);
           localStorage.setItem('ea_teachers', JSON.stringify(p.teachers));
+          lastSavedTeachersSigRef.current = p.teachers.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
+          window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: p.teachers }));
         }
         if (Array.isArray(p.students)) {
           const filtered = p.students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
           setStudents(filtered);
           localStorage.setItem('ea_students', JSON.stringify(filtered));
           localStorage.setItem('mock_supabase_ea_students', JSON.stringify(filtered));
+          lastSavedStudentsSigRef.current = filtered.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+          window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: filtered }));
           if (filtered.length === 0) {
             localStorage.setItem('ea_students_cleared', 'true');
           } else {
@@ -952,10 +962,15 @@ export default function App() {
         if (Array.isArray(p.attendance)) {
           setAttendance(p.attendance);
           localStorage.setItem('ea_attendance', JSON.stringify(p.attendance));
+          lastSavedAttendanceSigRef.current = p.attendance.map(a => `${a.studentId}:${a.term || ''}:${a.year || ''}:${a.daysPresent}:${a.totalDays}:${a.remarks || ''}`).join('|');
+          window.dispatchEvent(new CustomEvent('ea_attendance_updated', { detail: p.attendance }));
         }
         if (Array.isArray(p.dailyAttendance)) {
           setDailyAttendance(p.dailyAttendance);
           localStorage.setItem('ea_daily_attendance', JSON.stringify(p.dailyAttendance));
+          localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(p.dailyAttendance));
+          lastSavedDailyAttendanceSigRef.current = p.dailyAttendance.map(r => `${r.id || ''}:${r.studentId}:${r.date}:${r.status}`).join('|');
+          window.dispatchEvent(new CustomEvent('ea_daily_attendance_updated', { detail: p.dailyAttendance }));
         }
         if (Array.isArray(p.bills)) {
           setBills(p.bills);
@@ -981,6 +996,8 @@ export default function App() {
           setStudents(filtered);
           localStorage.setItem('ea_students', JSON.stringify(filtered));
           localStorage.setItem('mock_supabase_ea_students', JSON.stringify(filtered));
+          lastSavedStudentsSigRef.current = filtered.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+          window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: filtered }));
           if (filtered.length === 0) {
             localStorage.setItem('ea_students_cleared', 'true');
           } else {
@@ -1001,6 +1018,8 @@ export default function App() {
               });
               localStorage.setItem('ea_students', JSON.stringify(updated));
               localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updated));
+              lastSavedStudentsSigRef.current = updated.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+              window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: updated }));
               return updated;
             });
           } else if ((action === 'ADMIT' || action === 'UPSERT') && payload.student) {
@@ -1017,6 +1036,8 @@ export default function App() {
                 localStorage.setItem('ea_students', JSON.stringify(updated));
                 localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updated));
                 localStorage.removeItem('ea_students_cleared');
+                lastSavedStudentsSigRef.current = updated.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+                window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: updated }));
                 return updated;
               });
             }
@@ -1025,6 +1046,8 @@ export default function App() {
       } else if (entity === 'teachers' && Array.isArray(payload)) {
         setTeachers(payload);
         localStorage.setItem('ea_teachers', JSON.stringify(payload));
+        lastSavedTeachersSigRef.current = payload.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
+        window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: payload }));
       } else if (entity === 'config' && payload) {
         setConfig(prev => ({ ...prev, ...payload }));
         localStorage.setItem('ea_config', JSON.stringify(payload));
@@ -1034,10 +1057,14 @@ export default function App() {
       } else if (entity === 'attendance' && Array.isArray(payload)) {
         setAttendance(payload);
         localStorage.setItem('ea_attendance', JSON.stringify(payload));
+        lastSavedAttendanceSigRef.current = payload.map(a => `${a.studentId}:${a.term || ''}:${a.year || ''}:${a.daysPresent}:${a.totalDays}:${a.remarks || ''}`).join('|');
+        window.dispatchEvent(new CustomEvent('ea_attendance_updated', { detail: payload }));
       } else if ((entity === 'dailyAttendance' || entity === 'daily-attendance') && Array.isArray(payload)) {
         setDailyAttendance(payload);
         localStorage.setItem('ea_daily_attendance', JSON.stringify(payload));
         localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(payload));
+        lastSavedDailyAttendanceSigRef.current = payload.map(r => `${r.id || ''}:${r.studentId}:${r.date}:${r.status}`).join('|');
+        window.dispatchEvent(new CustomEvent('ea_daily_attendance_updated', { detail: payload }));
       } else if (entity === 'bills' && Array.isArray(payload)) {
         setBills(payload);
         localStorage.setItem('ea_bills', JSON.stringify(payload));
@@ -1067,6 +1094,7 @@ export default function App() {
     });
 
     return () => {
+      window.removeEventListener('ea_global_sync_outdated', handleOutdated);
       unsubscribe();
     };
   }, []);
@@ -1218,6 +1246,10 @@ export default function App() {
     if (lastSavedStudentsSigRef.current === sig) return;
     lastSavedStudentsSigRef.current = sig;
 
+    // Always synchronize across master server and connected tabs
+    pushMasterServerSync({ students }).catch(() => {});
+    broadcastSync('students', students);
+
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       console.log(`[Supabase Student Sync Diagnostic] Auto-sync: Pushing ${students.length} students to Supabase (in-memory: ${students.length}, local cache was: ${cachedCount})`);
@@ -1226,7 +1258,6 @@ export default function App() {
         if (ok) {
           setSyncStatus('synced');
           setLastSyncTime(new Date());
-          broadcastSync('students', students);
         } else {
           setSyncStatus('error');
           setLastSyncError('Failed to sync student updates to Cloud.');
@@ -1244,9 +1275,14 @@ export default function App() {
     if (!isInitialized) return;
     localStorage.setItem('ea_teachers', JSON.stringify(teachers));
     if (isPullingRemoteRef.current) return;
-    const sig = teachers.map(t => `${t.id}:${t.email}:${t.role}:${t.className}`).join('|');
+    const sig = teachers.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
     if (lastSavedTeachersSigRef.current === sig) return;
     lastSavedTeachersSigRef.current = sig;
+
+    // Always push to master server and edge CDN
+    pushMasterServerSync({ teachers }).catch(() => {});
+    syncTeachersToCDN(teachers).catch(() => {});
+    broadcastSync('teachers', teachers);
 
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
@@ -1255,7 +1291,6 @@ export default function App() {
         if (ok) {
           setSyncStatus('synced');
           setLastSyncTime(new Date());
-          broadcastSync('teachers', teachers);
         } else {
           setSyncStatus('error');
           setLastSyncError('Failed to sync staff updates to Cloud.');
@@ -1277,6 +1312,9 @@ export default function App() {
     if (lastSavedGradesSigRef.current === sig) return;
     lastSavedGradesSigRef.current = sig;
 
+    pushMasterServerSync({ grades }).catch(() => {});
+    broadcastSync('grades', grades);
+
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
       setSyncStatus('syncing');
@@ -1284,7 +1322,6 @@ export default function App() {
         if (ok) {
           setSyncStatus('synced');
           setLastSyncTime(new Date());
-          broadcastSync('grades', grades);
         } else {
           setSyncStatus('error');
           setLastSyncError('Failed to sync grade records to Cloud.');
@@ -1302,9 +1339,14 @@ export default function App() {
     if (!isInitialized) return;
     localStorage.setItem('ea_attendance', JSON.stringify(attendance));
     if (isPullingRemoteRef.current) return;
-    const sig = attendance.map(a => `${a.id}:${a.studentId}:${a.totalDaysPresent}:${a.totalDaysOpened}`).join('|');
+    const sig = attendance.map(a => `${a.studentId}:${a.term || ''}:${a.year || ''}:${a.daysPresent}:${a.totalDays}:${a.remarks || ''}`).join('|');
     if (lastSavedAttendanceSigRef.current === sig) return;
     lastSavedAttendanceSigRef.current = sig;
+
+    // Always push attendance to master server and edge CDN
+    pushMasterServerSync({ attendance }).catch(() => {});
+    syncAttendanceToCDN(attendance).catch(() => {});
+    broadcastSync('attendance', attendance);
 
     const creds = getSupabaseCredentials();
     if (creds.isConfigured) {
@@ -1313,7 +1355,6 @@ export default function App() {
         if (ok) {
           setSyncStatus('synced');
           setLastSyncTime(new Date());
-          broadcastSync('attendance', attendance);
         } else {
           setSyncStatus('error');
           setLastSyncError('Failed to sync attendance updates to Cloud.');
@@ -1326,6 +1367,24 @@ export default function App() {
       setSyncStatus('offline');
     }
   }, [attendance, isInitialized]);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    localStorage.setItem('ea_daily_attendance', JSON.stringify(dailyAttendance));
+    if (isPullingRemoteRef.current) return;
+    const sig = dailyAttendance.map(r => `${r.id || ''}:${r.studentId}:${r.date}:${r.status}`).join('|');
+    if (lastSavedDailyAttendanceSigRef.current === sig) return;
+    lastSavedDailyAttendanceSigRef.current = sig;
+
+    // Always push daily attendance to master server and broadcast
+    pushMasterServerSync({ dailyAttendance }).catch(() => {});
+    broadcastSync('daily_attendance', dailyAttendance);
+
+    const creds = getSupabaseCredentials();
+    if (creds.isConfigured) {
+      saveSupabaseDailyAttendance(dailyAttendance).catch(() => {});
+    }
+  }, [dailyAttendance, isInitialized]);
 
   useEffect(() => {
     if (!isInitialized) return;

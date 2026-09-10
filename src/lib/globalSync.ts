@@ -72,6 +72,11 @@ class GlobalSyncManager {
         this.connect();
         this.checkVersionAndSync();
       });
+
+      // Continuous polling heartbeat (every 3.5s) to guarantee instantaneous state synchronization across all tabs and devices
+      setInterval(() => {
+        this.checkVersionAndSync();
+      }, 3500);
     }
   }
 
@@ -211,6 +216,27 @@ class GlobalSyncManager {
         console.log(`[GlobalSync] Detected newer server version (${serverVersion} > ${this.lastKnownVersion}). Triggering refresh...`);
         this.lastKnownVersion = serverVersion;
         window.dispatchEvent(new CustomEvent('ea_global_sync_outdated', { detail: { serverVersion } }));
+
+        // Immediately fetch fresh state and broadcast to all in-app subscribers
+        fetchMasterServerSync().then(fresh => {
+          if (fresh && (fresh.data || fresh.students || fresh.teachers)) {
+            const fullPayload = fresh.data || fresh;
+            const streamEvent: SyncStreamEvent = {
+              type: 'FULL_SYNC',
+              entity: 'all',
+              version: serverVersion,
+              payload: fullPayload,
+              timestamp: fresh.lastUpdated
+            };
+            for (const sub of this.subscribers) {
+              try {
+                sub(streamEvent);
+              } catch (e) {}
+            }
+            window.dispatchEvent(new CustomEvent('ea_global_sync_stream_event', { detail: streamEvent }));
+          }
+        }).catch(() => {});
+
         return true;
       }
       return false;
@@ -323,6 +349,41 @@ export async function syncAttendanceToCDN(
     return res.ok;
   } catch (err) {
     console.warn('[CDN Sync Engine] syncAttendanceToCDN notice:', err);
+    return false;
+  }
+}
+
+/**
+ * Explicit CDN & Server Synchronization for Teachers / Staff Registry
+ */
+export async function syncTeachersToCDN(teachers: User[]): Promise<boolean> {
+  if (!Array.isArray(teachers)) return false;
+  try {
+    const res = await fetch(`/api/teachers?_t=${Date.now()}`, {
+      method: 'POST',
+      headers: getAntiCacheHeaders(),
+      body: JSON.stringify({ teachers })
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[CDN Sync Engine] syncTeachersToCDN notice:', err);
+    return false;
+  }
+}
+
+/**
+ * Explicit CDN & Server Synchronization when a Teacher / Staff is deleted
+ */
+export async function syncTeacherDeletionToCDN(id: string, email?: string, name?: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/teachers/${encodeURIComponent(id)}?_t=${Date.now()}`, {
+      method: 'DELETE',
+      headers: getAntiCacheHeaders(),
+      body: JSON.stringify({ email, name })
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[CDN Sync Engine] syncTeacherDeletionToCDN notice:', err);
     return false;
   }
 }

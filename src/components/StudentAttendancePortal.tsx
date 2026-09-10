@@ -47,7 +47,7 @@ import {
 import { supabase } from '../supabaseClient';
 import { saveSupabaseAttendance, saveSupabaseDailyAttendance, fetchSupabaseAttendance, fetchSupabaseDailyAttendance } from '../lib/supabase';
 import { calculateStudentTermAttendance } from '../utils/attendanceUtils';
-import { pushMasterServerSync } from '../lib/globalSync';
+import { pushMasterServerSync, syncAttendanceToCDN } from '../lib/globalSync';
 
 interface StudentAttendancePortalProps {
   students: Student[];
@@ -410,14 +410,21 @@ export default function StudentAttendancePortal({
 
   // Get status for a student on selectedDate (null if not marked yet)
   const getStudentStatusForDate = (studentId: string): DailyAttendanceStatus | null => {
-    const student = students.find(s => s.id === studentId || s.rollNumber === studentId);
-    const sRoll = student?.rollNumber;
+    const cleanId = (studentId || '').trim().toLowerCase();
+    const student = students.find(s => 
+      (s.id && s.id.trim().toLowerCase() === cleanId) || 
+      (s.rollNumber && s.rollNumber.trim().toLowerCase() === cleanId)
+    );
+    const sId = (student?.id || studentId || '').trim().toLowerCase();
+    const sRoll = (student?.rollNumber || '').trim().toLowerCase();
+    const cleanSelectedDate = (selectedDate || '').trim();
 
     const record = dailyAttendance.find(r => {
-      if (r.date !== selectedDate) return false;
-      if (r.studentId === studentId) return true;
-      if (student && r.studentId === student.id) return true;
-      if (sRoll && r.studentId === sRoll) return true;
+      if ((r.date || '').trim() !== cleanSelectedDate) return false;
+      const rSid = (r.studentId || '').trim().toLowerCase();
+      if (rSid === cleanId) return true;
+      if (sId && rSid === sId) return true;
+      if (sRoll && rSid === sRoll) return true;
       return false;
     });
     return record ? record.status : null;
@@ -425,8 +432,15 @@ export default function StudentAttendancePortal({
 
   // Update a student's attendance status for selectedDate
   const setStudentStatus = (studentId: string, status: DailyAttendanceStatus) => {
-    const student = students.find(s => s.id === studentId || s.rollNumber === studentId);
+    const cleanInputId = (studentId || '').trim().toLowerCase();
+    const student = students.find(s => 
+      (s.id && s.id.trim().toLowerCase() === cleanInputId) || 
+      (s.rollNumber && s.rollNumber.trim().toLowerCase() === cleanInputId)
+    );
     const sid = student ? student.id : studentId;
+    const sRoll = (student?.rollNumber || '').trim().toLowerCase();
+    const cleanSid = sid.trim().toLowerCase();
+    const cleanSelectedDate = (selectedDate || '').trim();
     const currentYear = config.schoolYear || '2026/2027';
     const currentTerm = config.term || 'Term 1';
 
@@ -442,9 +456,12 @@ export default function StudentAttendancePortal({
       } catch {}
     }
 
-    const existingIdx = baseDaily.findIndex(
-      r => (r.studentId === sid || (student && r.studentId === student.rollNumber)) && r.date === selectedDate
-    );
+    const existingIdx = baseDaily.findIndex(r => {
+      const rSid = (r.studentId || '').trim().toLowerCase();
+      const rDate = (r.date || '').trim();
+      if (rDate !== cleanSelectedDate) return false;
+      return rSid === cleanSid || rSid === cleanInputId || (sRoll && rSid === sRoll);
+    });
 
     let updatedDaily: DailyAttendanceRecord[];
     if (existingIdx >= 0) {
@@ -530,11 +547,16 @@ export default function StudentAttendancePortal({
       localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(nextAtt));
     } catch {}
 
-    // 5. Global Server, Cloud Supabase, and Realtime Broadcast in background
+    // 5. Dispatch instant local events
+    window.dispatchEvent(new CustomEvent('ea_daily_attendance_updated', { detail: updatedDaily }));
+    window.dispatchEvent(new CustomEvent('ea_attendance_updated', { detail: nextAtt }));
+
+    // 6. Global Server, Cloud Supabase, and Realtime Broadcast in background
     Promise.allSettled([
       saveSupabaseDailyAttendance(updatedDaily),
       saveSupabaseAttendance(nextAtt),
-      pushMasterServerSync({ dailyAttendance: updatedDaily, attendance: nextAtt })
+      pushMasterServerSync({ dailyAttendance: updatedDaily, attendance: nextAtt }),
+      syncAttendanceToCDN(nextAtt, updatedDaily)
     ]).catch(() => {});
   };
 

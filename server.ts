@@ -974,6 +974,7 @@ async function startServer() {
         teachers: db.teachers?.length || 0,
         grades: db.grades?.length || 0,
         attendance: db.attendance?.length || 0,
+        dailyAttendance: db.dailyAttendance?.length || 0,
         bills: db.bills?.length || 0,
         feePayments: db.feePayments?.length || 0
       }
@@ -1001,7 +1002,24 @@ async function startServer() {
     const db = loadServerDatabase();
 
     if (incoming.config) db.config = incoming.config;
-    if (Array.isArray(incoming.teachers)) db.teachers = incoming.teachers;
+    if (Array.isArray(incoming.deletedTeacherIds)) {
+      if (!db.deletedTeacherIds) db.deletedTeacherIds = [];
+      incoming.deletedTeacherIds.forEach((id: any) => {
+        const clean = String(id).toLowerCase().trim();
+        if (clean && !db.deletedTeacherIds!.includes(clean)) {
+          db.deletedTeacherIds!.push(clean);
+        }
+      });
+    }
+    if (Array.isArray(incoming.teachers)) {
+      const deletedTeacherSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
+      db.teachers = incoming.teachers.filter((t: any) => {
+        if (t.id && deletedTeacherSet.has(String(t.id).toLowerCase().trim())) return false;
+        if (t.email && deletedTeacherSet.has(String(t.email).toLowerCase().trim())) return false;
+        if (t.name && deletedTeacherSet.has(String(t.name).toLowerCase().trim())) return false;
+        return true;
+      });
+    }
     if (Array.isArray(incoming.deletedStudentIds)) {
       const currentDeleted = new Set((db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
       incoming.deletedStudentIds.forEach((id: any) => {
@@ -1010,7 +1028,6 @@ async function startServer() {
       });
       db.deletedStudentIds = Array.from(currentDeleted);
     }
-    if (Array.isArray(incoming.deletedTeacherIds)) db.deletedTeacherIds = incoming.deletedTeacherIds;
     if (Array.isArray(incoming.students)) {
       const cleanStudents = incoming.students.filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
       db.students = cleanStudents;
@@ -1036,11 +1053,11 @@ async function startServer() {
     if (Array.isArray(incoming.attendance)) {
       const attMap = new Map<string, any>();
       (db.attendance || []).forEach((a: any) => {
-        const key = `${a.studentId}_${a.term || ''}_${a.year || a.academicYear || ''}`;
+        const key = `${String(a.studentId).trim().toLowerCase()}_${String(a.term || '').trim().toLowerCase()}_${String(a.year || a.academicYear || '').trim().toLowerCase()}`;
         attMap.set(key, a);
       });
       incoming.attendance.forEach((a: any) => {
-        const key = `${a.studentId}_${a.term || ''}_${a.year || a.academicYear || ''}`;
+        const key = `${String(a.studentId).trim().toLowerCase()}_${String(a.term || '').trim().toLowerCase()}_${String(a.year || a.academicYear || '').trim().toLowerCase()}`;
         const existing = attMap.get(key);
         if (!existing) {
           attMap.set(key, a);
@@ -1058,12 +1075,12 @@ async function startServer() {
       const dailyMap = new Map<string, any>();
       (db.dailyAttendance || []).forEach((r: any) => {
         if (r && r.studentId && r.date) {
-          dailyMap.set(`${r.studentId}_${r.date}`, r);
+          dailyMap.set(`${String(r.studentId).trim().toLowerCase()}_${r.date}`, r);
         }
       });
       incoming.dailyAttendance.forEach((r: any) => {
         if (r && r.studentId && r.date) {
-          const key = `${r.studentId}_${r.date}`;
+          const key = `${String(r.studentId).trim().toLowerCase()}_${r.date}`;
           const existing = dailyMap.get(key);
           if (!existing) {
             dailyMap.set(key, r);
@@ -1099,7 +1116,7 @@ async function startServer() {
     if (Array.isArray(incoming.jhsMockExams)) db.jhsMockExams = incoming.jhsMockExams;
 
     saveServerDatabase(db);
-    console.log(`[Global Master Sync] Full database synchronized. Version: ${db.version}`);
+    console.log(`[Global Master Sync] Full database synchronized. Version: ${db.version}, Students: ${db.students?.length}, Teachers: ${db.teachers?.length}, Attendance: ${db.attendance?.length}, Daily: ${db.dailyAttendance?.length}`);
 
     return res.status(200).json({
       status: "success",
@@ -1127,12 +1144,16 @@ async function startServer() {
     return res.status(200).json({ status: "success", version: db.version });
   });
 
-  // Teachers: GET & POST
+  // Teachers: GET, POST & DELETE
   app.get("/api/teachers", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     const db = loadServerDatabase();
+    const deletedSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
     if (!Array.isArray(db.teachers) || db.teachers.length === 0) {
-      db.teachers = DEFAULT_SERVER_TEACHERS;
-      saveServerDatabase(db, "teachers", DEFAULT_SERVER_TEACHERS);
+      db.teachers = DEFAULT_SERVER_TEACHERS.filter(t => !deletedSet.has(String(t.id).toLowerCase().trim()) && !deletedSet.has(String(t.email).toLowerCase().trim()));
+      saveServerDatabase(db, "teachers", db.teachers);
+    } else {
+      db.teachers = db.teachers.filter(t => !deletedSet.has(String(t.id).toLowerCase().trim()) && !deletedSet.has(String(t.email).toLowerCase().trim()));
     }
     return res.status(200).json({ status: "success", data: db.teachers, count: db.teachers.length, version: db.version });
   });
@@ -1141,9 +1162,45 @@ async function startServer() {
     const teachers = req.body?.teachers || req.body;
     if (!Array.isArray(teachers)) return res.status(400).json({ status: "error", message: "Expected teachers array" });
     const db = loadServerDatabase();
-    db.teachers = teachers;
-    saveServerDatabase(db, "teachers", teachers);
-    return res.status(200).json({ status: "success", count: teachers.length, version: db.version });
+    const deletedSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
+    const cleanTeachers = teachers.filter((t: any) => {
+      if (t.id && deletedSet.has(String(t.id).toLowerCase().trim())) return false;
+      if (t.email && deletedSet.has(String(t.email).toLowerCase().trim())) return false;
+      if (t.name && deletedSet.has(String(t.name).toLowerCase().trim())) return false;
+      return true;
+    });
+    db.teachers = cleanTeachers;
+    saveServerDatabase(db, "teachers", cleanTeachers);
+    console.log(`[Global Teacher Sync] Updated staff registry: ${cleanTeachers.length} staff members.`);
+    return res.status(200).json({ status: "success", count: cleanTeachers.length, version: db.version });
+  });
+
+  app.delete("/api/teachers/:id", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    const targetId = decodeURIComponent(req.params.id);
+    const { email, name } = req.body || {};
+    const db = loadServerDatabase();
+
+    if (!db.deletedTeacherIds) db.deletedTeacherIds = [];
+    [targetId, email, name].filter(Boolean).forEach(x => {
+      const clean = String(x).toLowerCase().trim();
+      if (clean && !db.deletedTeacherIds!.includes(clean)) {
+        db.deletedTeacherIds!.push(clean);
+      }
+    });
+
+    const deletedSet = new Set(db.deletedTeacherIds.map(x => String(x).toLowerCase().trim()));
+    const remaining = (db.teachers || []).filter((t: any) => {
+      if (t.id && deletedSet.has(String(t.id).toLowerCase().trim())) return false;
+      if (t.email && deletedSet.has(String(t.email).toLowerCase().trim())) return false;
+      if (t.name && deletedSet.has(String(t.name).toLowerCase().trim())) return false;
+      return true;
+    });
+
+    db.teachers = remaining;
+    saveServerDatabase(db, "teachers", remaining);
+    console.log(`[Global Teacher Sync] Teacher '${targetId}' deleted. Remaining active staff: ${remaining.length}`);
+    return res.status(200).json({ status: "success", count: remaining.length, version: db.version });
   });
 
   // Grades: GET & POST
@@ -1183,32 +1240,59 @@ async function startServer() {
   });
 
   app.post("/api/attendance", (req, res) => {
-    const attendance = req.body?.attendance || req.body;
-    if (!Array.isArray(attendance)) return res.status(400).json({ status: "error", message: "Expected attendance array" });
+    const incomingAttendance = req.body?.attendance || (Array.isArray(req.body) ? req.body : null);
+    const incomingDaily = req.body?.dailyAttendance;
     const db = loadServerDatabase();
 
-    const attMap = new Map<string, any>();
-    (db.attendance || []).forEach(a => {
-      const key = `${a.studentId}_${a.term || ''}_${a.year || a.academicYear || ''}`;
-      attMap.set(key, a);
-    });
-    attendance.forEach(a => {
-      const key = `${a.studentId}_${a.term || ''}_${a.year || a.academicYear || ''}`;
-      const existing = attMap.get(key);
-      if (!existing) {
+    if (Array.isArray(incomingAttendance)) {
+      const attMap = new Map<string, any>();
+      (db.attendance || []).forEach(a => {
+        const key = `${String(a.studentId).trim().toLowerCase()}_${String(a.term || '').trim().toLowerCase()}_${String(a.year || a.academicYear || '').trim().toLowerCase()}`;
         attMap.set(key, a);
-      } else {
-        const incomingTime = a.updatedAt ? new Date(a.updatedAt).getTime() : Date.now();
-        const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-        if (incomingTime >= existingTime) {
+      });
+      incomingAttendance.forEach(a => {
+        const key = `${String(a.studentId).trim().toLowerCase()}_${String(a.term || '').trim().toLowerCase()}_${String(a.year || a.academicYear || '').trim().toLowerCase()}`;
+        const existing = attMap.get(key);
+        if (!existing) {
           attMap.set(key, a);
+        } else {
+          const incomingTime = a.updatedAt ? new Date(a.updatedAt).getTime() : Date.now();
+          const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+          if (incomingTime >= existingTime) {
+            attMap.set(key, a);
+          }
         }
-      }
-    });
+      });
+      db.attendance = Array.from(attMap.values());
+    }
 
-    db.attendance = Array.from(attMap.values());
-    saveServerDatabase(db, "attendance", db.attendance);
-    return res.status(200).json({ status: "success", count: db.attendance.length, version: db.version });
+    if (Array.isArray(incomingDaily)) {
+      const dailyMap = new Map<string, any>();
+      (db.dailyAttendance || []).forEach(r => {
+        if (r && r.studentId && r.date) {
+          dailyMap.set(`${String(r.studentId).trim().toLowerCase()}_${r.date}`, r);
+        }
+      });
+      incomingDaily.forEach(r => {
+        if (r && r.studentId && r.date) {
+          const key = `${String(r.studentId).trim().toLowerCase()}_${r.date}`;
+          const existing = dailyMap.get(key);
+          if (!existing) {
+            dailyMap.set(key, r);
+          } else {
+            const incomingTime = r.updatedAt ? new Date(r.updatedAt).getTime() : Date.now();
+            const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+            if (incomingTime >= existingTime) {
+              dailyMap.set(key, r);
+            }
+          }
+        }
+      });
+      db.dailyAttendance = Array.from(dailyMap.values());
+    }
+
+    saveServerDatabase(db);
+    return res.status(200).json({ status: "success", attendanceCount: (db.attendance || []).length, dailyAttendanceCount: (db.dailyAttendance || []).length, version: db.version });
   });
 
   // Daily Attendance: GET & POST
@@ -1228,12 +1312,12 @@ async function startServer() {
     const dailyMap = new Map<string, any>();
     (db.dailyAttendance || []).forEach(r => {
       if (r && r.studentId && r.date) {
-        dailyMap.set(`${r.studentId}_${r.date}`, r);
+        dailyMap.set(`${String(r.studentId).trim().toLowerCase()}_${r.date}`, r);
       }
     });
     records.forEach(r => {
       if (r && r.studentId && r.date) {
-        const key = `${r.studentId}_${r.date}`;
+        const key = `${String(r.studentId).trim().toLowerCase()}_${r.date}`;
         const existing = dailyMap.get(key);
         if (!existing) {
           dailyMap.set(key, r);
