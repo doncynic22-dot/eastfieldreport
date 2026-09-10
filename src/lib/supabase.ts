@@ -3039,6 +3039,9 @@ export async function fetchSupabaseAttendance(): Promise<Attendance[] | null> {
 }
 
 export async function saveSupabaseAttendance(attendance: Attendance[]): Promise<boolean> {
+  if (!attendance || !Array.isArray(attendance) || attendance.length === 0) {
+    return true;
+  }
   // Always persist to local cache immediately to guarantee offline/local persistence
   try {
     localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
@@ -3163,6 +3166,9 @@ export async function fetchSupabaseDailyAttendance(): Promise<DailyAttendanceRec
 }
 
 export async function saveSupabaseDailyAttendance(records: DailyAttendanceRecord[]): Promise<boolean> {
+  if (!records || !Array.isArray(records) || records.length === 0) {
+    return true;
+  }
   // Always persist to local cache immediately to guarantee offline/local persistence
   try {
     localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(records));

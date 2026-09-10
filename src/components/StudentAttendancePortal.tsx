@@ -200,12 +200,12 @@ export default function StudentAttendancePortal({
 
     // Listen for intra-tab and cross-browser realtime updates
     const handleDailyUpdate = (e: any) => {
-      if (e?.detail && Array.isArray(e.detail)) {
+      if (e?.detail && Array.isArray(e.detail) && e.detail.length > 0) {
         setDailyAttendance(e.detail);
       }
     };
     const handleAttUpdate = (e: any) => {
-      if (e?.detail && Array.isArray(e.detail)) {
+      if (e?.detail && Array.isArray(e.detail) && e.detail.length > 0) {
         setAttendance(e.detail);
       }
     };
@@ -408,8 +408,8 @@ export default function StudentAttendancePortal({
     return Array.from(dates).sort().reverse();
   }, [dailyAttendance, students, selectedClass, config.term, config.schoolYear]);
 
-  // Get status for a student on selectedDate
-  const getStudentStatusForDate = (studentId: string): DailyAttendanceStatus => {
+  // Get status for a student on selectedDate (null if not marked yet)
+  const getStudentStatusForDate = (studentId: string): DailyAttendanceStatus | null => {
     const student = students.find(s => s.id === studentId || s.rollNumber === studentId);
     const sRoll = student?.rollNumber;
 
@@ -420,7 +420,7 @@ export default function StudentAttendancePortal({
       if (sRoll && r.studentId === sRoll) return true;
       return false;
     });
-    return record ? record.status : 'PRESENT';
+    return record ? record.status : null;
   };
 
   // Update a student's attendance status for selectedDate
@@ -430,191 +430,228 @@ export default function StudentAttendancePortal({
     const currentYear = config.schoolYear || '2026/2027';
     const currentTerm = config.term || 'Term 1';
 
-    let updatedDaily: DailyAttendanceRecord[] = [];
-
-    setDailyAttendance(prev => {
-      const existingIdx = prev.findIndex(
-        r => (r.studentId === sid || (student && r.studentId === student.rollNumber)) && r.date === selectedDate
-      );
-      if (existingIdx >= 0) {
-        updatedDaily = [...prev];
-        updatedDaily[existingIdx] = {
-          ...updatedDaily[existingIdx],
-          status,
-          term: currentTerm,
-          year: currentYear,
-          teacherId: currentUser?.id || 'admin',
-          updatedAt: new Date().toISOString()
-        };
-      } else {
-        const newRecord: DailyAttendanceRecord = {
-          id: `att-${sid}-${selectedDate}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          studentId: sid,
-          date: selectedDate,
-          status,
-          term: currentTerm,
-          year: currentYear,
-          teacherId: currentUser?.id || 'admin',
-          updatedAt: new Date().toISOString()
-        };
-        updatedDaily = [...prev, newRecord];
-      }
-
-      // Guarantee immediate local storage persistence
+    // 1. Get current base daily attendance synchronously
+    let baseDaily = Array.isArray(dailyAttendance) ? [...dailyAttendance] : [];
+    if (baseDaily.length === 0) {
       try {
-        localStorage.setItem('ea_daily_attendance', JSON.stringify(updatedDaily));
-        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(updatedDaily));
-      } catch (e) {}
-
-      return updatedDaily;
-    });
-
-    // Recalculate term attendance live for all students & sync globally
-    setAttendance(prevAtt => {
-      const nextAtt = [...prevAtt];
-      students.forEach(s => {
-        const calc = calculateStudentTermAttendance(
-          s,
-          currentTerm,
-          currentYear,
-          updatedDaily,
-          nextAtt,
-          students
-        );
-        const attIdx = nextAtt.findIndex(
-          a => (a.studentId === s.id || a.studentId === s.rollNumber) &&
-            (!a.term || a.term.toLowerCase() === currentTerm.toLowerCase()) &&
-            (!a.year || a.year === currentYear)
-        );
-        const attRecord: Attendance = {
-          studentId: s.id,
-          term: currentTerm,
-          year: currentYear,
-          daysPresent: calc.daysPresent,
-          totalDays: calc.totalDays,
-          remarks: calc.remarks,
-          teacherId: currentUser?.id || 'admin',
-          updatedAt: new Date().toISOString()
-        };
-        if (attIdx >= 0) {
-          nextAtt[attIdx] = attRecord;
-        } else if (calc.totalDays > 0) {
-          nextAtt.push(attRecord);
+        const stored = localStorage.getItem('ea_daily_attendance');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) baseDaily = parsed;
         }
-      });
-
-      try {
-        localStorage.setItem('ea_attendance', JSON.stringify(nextAtt));
-        localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(nextAtt));
       } catch {}
+    }
 
-      // Global Server, Cloud Supabase, and Realtime Broadcast
-      Promise.allSettled([
-        saveSupabaseDailyAttendance(updatedDaily),
-        saveSupabaseAttendance(nextAtt),
-        pushMasterServerSync({ dailyAttendance: updatedDaily, attendance: nextAtt })
-      ]).catch(() => {});
+    const existingIdx = baseDaily.findIndex(
+      r => (r.studentId === sid || (student && r.studentId === student.rollNumber)) && r.date === selectedDate
+    );
 
-      return nextAtt;
-    });
-  };
-
-  // Bulk Mark All for selected class
-  const handleMarkAll = (status: DailyAttendanceStatus) => {
-    const currentYear = config.schoolYear || '2026/2027';
-    const currentTerm = config.term || 'Term 1';
-    let updatedDaily: DailyAttendanceRecord[] = [];
-
-    setDailyAttendance(prev => {
-      const otherRecords = prev.filter(
-        r => !(filteredStudents.some(s => s.id === r.studentId || s.rollNumber === r.studentId) && r.date === selectedDate)
-      );
-      const newRecords = filteredStudents.map(student => ({
-        id: `att-${student.id}-${selectedDate}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        studentId: student.id,
+    let updatedDaily: DailyAttendanceRecord[];
+    if (existingIdx >= 0) {
+      updatedDaily = [...baseDaily];
+      updatedDaily[existingIdx] = {
+        ...updatedDaily[existingIdx],
+        status,
+        term: currentTerm,
+        year: currentYear,
+        teacherId: currentUser?.id || 'admin',
+        updatedAt: new Date().toISOString()
+      };
+    } else {
+      const newRecord: DailyAttendanceRecord = {
+        id: `att-${sid}-${selectedDate}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        studentId: sid,
         date: selectedDate,
         status,
         term: currentTerm,
         year: currentYear,
         teacherId: currentUser?.id || 'admin',
         updatedAt: new Date().toISOString()
-      }));
-      updatedDaily = [...otherRecords, ...newRecords];
+      };
+      updatedDaily = [...baseDaily, newRecord];
+    }
 
-      // Guarantee immediate local storage persistence
+    // 2. Set React daily attendance state immediately
+    setDailyAttendance(updatedDaily);
+
+    // 3. Guarantee immediate local storage persistence
+    try {
+      localStorage.setItem('ea_daily_attendance', JSON.stringify(updatedDaily));
+      localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(updatedDaily));
+    } catch (e) {}
+
+    // 4. Recalculate term attendance live for all students & update attendance state
+    let baseAtt = Array.isArray(attendance) ? [...attendance] : [];
+    if (baseAtt.length === 0) {
       try {
-        localStorage.setItem('ea_daily_attendance', JSON.stringify(updatedDaily));
-        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(updatedDaily));
-      } catch (e) {}
+        const stored = localStorage.getItem('ea_attendance');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) baseAtt = parsed;
+        }
+      } catch {}
+    }
+    const nextAtt = [...baseAtt];
 
-      return updatedDaily;
+    students.forEach(s => {
+      const calc = calculateStudentTermAttendance(
+        s,
+        currentTerm,
+        currentYear,
+        updatedDaily,
+        nextAtt,
+        students
+      );
+      const attIdx = nextAtt.findIndex(
+        a => (a.studentId === s.id || a.studentId === s.rollNumber) &&
+          (!a.term || a.term.toLowerCase() === currentTerm.toLowerCase()) &&
+          (!a.year || a.year === currentYear)
+      );
+      const attRecord: Attendance = {
+        studentId: s.id,
+        term: currentTerm,
+        year: currentYear,
+        daysPresent: calc.daysPresent,
+        totalDays: calc.totalDays,
+        remarks: calc.remarks,
+        teacherId: currentUser?.id || 'admin',
+        updatedAt: new Date().toISOString()
+      };
+      if (attIdx >= 0) {
+        nextAtt[attIdx] = attRecord;
+      } else if (calc.totalDays > 0) {
+        nextAtt.push(attRecord);
+      }
     });
+
+    setAttendance(nextAtt);
+    try {
+      localStorage.setItem('ea_attendance', JSON.stringify(nextAtt));
+      localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(nextAtt));
+    } catch {}
+
+    // 5. Global Server, Cloud Supabase, and Realtime Broadcast in background
+    Promise.allSettled([
+      saveSupabaseDailyAttendance(updatedDaily),
+      saveSupabaseAttendance(nextAtt),
+      pushMasterServerSync({ dailyAttendance: updatedDaily, attendance: nextAtt })
+    ]).catch(() => {});
+  };
+
+  // Bulk Mark All for selected class
+  const handleMarkAll = (status: DailyAttendanceStatus) => {
+    const currentYear = config.schoolYear || '2026/2027';
+    const currentTerm = config.term || 'Term 1';
+
+    let baseDaily = Array.isArray(dailyAttendance) ? [...dailyAttendance] : [];
+    if (baseDaily.length === 0) {
+      try {
+        const stored = localStorage.getItem('ea_daily_attendance');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) baseDaily = parsed;
+        }
+      } catch {}
+    }
+
+    const otherRecords = baseDaily.filter(
+      r => !(filteredStudents.some(s => s.id === r.studentId || s.rollNumber === r.studentId) && r.date === selectedDate)
+    );
+    const newRecords = filteredStudents.map(student => ({
+      id: `att-${student.id}-${selectedDate}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      studentId: student.id,
+      date: selectedDate,
+      status,
+      term: currentTerm,
+      year: currentYear,
+      teacherId: currentUser?.id || 'admin',
+      updatedAt: new Date().toISOString()
+    }));
+    const updatedDaily = [...otherRecords, ...newRecords];
+
+    setDailyAttendance(updatedDaily);
+
+    try {
+      localStorage.setItem('ea_daily_attendance', JSON.stringify(updatedDaily));
+      localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(updatedDaily));
+    } catch (e) {}
 
     // Recalculate term attendance live for all students & sync globally
-    setAttendance(prevAtt => {
-      const nextAtt = [...prevAtt];
-      students.forEach(s => {
-        const calc = calculateStudentTermAttendance(
-          s,
-          currentTerm,
-          currentYear,
-          updatedDaily,
-          nextAtt,
-          students
-        );
-        const attIdx = nextAtt.findIndex(
-          a => (a.studentId === s.id || a.studentId === s.rollNumber) &&
-            (!a.term || a.term.toLowerCase() === currentTerm.toLowerCase()) &&
-            (!a.year || a.year === currentYear)
-        );
-        const attRecord: Attendance = {
-          studentId: s.id,
-          term: currentTerm,
-          year: currentYear,
-          daysPresent: calc.daysPresent,
-          totalDays: calc.totalDays,
-          remarks: calc.remarks,
-          teacherId: currentUser?.id || 'admin',
-          updatedAt: new Date().toISOString()
-        };
-        if (attIdx >= 0) {
-          nextAtt[attIdx] = attRecord;
-        } else if (calc.totalDays > 0) {
-          nextAtt.push(attRecord);
-        }
-      });
-
+    let baseAtt = Array.isArray(attendance) ? [...attendance] : [];
+    if (baseAtt.length === 0) {
       try {
-        localStorage.setItem('ea_attendance', JSON.stringify(nextAtt));
-        localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(nextAtt));
+        const stored = localStorage.getItem('ea_attendance');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) baseAtt = parsed;
+        }
       } catch {}
+    }
+    const nextAtt = [...baseAtt];
 
-      // Global Server, Cloud Supabase, and Realtime Broadcast
-      Promise.allSettled([
-        saveSupabaseDailyAttendance(updatedDaily),
-        saveSupabaseAttendance(nextAtt),
-        pushMasterServerSync({ dailyAttendance: updatedDaily, attendance: nextAtt })
-      ]).catch(() => {});
-
-      return nextAtt;
+    students.forEach(s => {
+      const calc = calculateStudentTermAttendance(
+        s,
+        currentTerm,
+        currentYear,
+        updatedDaily,
+        nextAtt,
+        students
+      );
+      const attIdx = nextAtt.findIndex(
+        a => (a.studentId === s.id || a.studentId === s.rollNumber) &&
+          (!a.term || a.term.toLowerCase() === currentTerm.toLowerCase()) &&
+          (!a.year || a.year === currentYear)
+      );
+      const attRecord: Attendance = {
+        studentId: s.id,
+        term: currentTerm,
+        year: currentYear,
+        daysPresent: calc.daysPresent,
+        totalDays: calc.totalDays,
+        remarks: calc.remarks,
+        teacherId: currentUser?.id || 'admin',
+        updatedAt: new Date().toISOString()
+      };
+      if (attIdx >= 0) {
+        nextAtt[attIdx] = attRecord;
+      } else if (calc.totalDays > 0) {
+        nextAtt.push(attRecord);
+      }
     });
+
+    setAttendance(nextAtt);
+    try {
+      localStorage.setItem('ea_attendance', JSON.stringify(nextAtt));
+      localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(nextAtt));
+    } catch {}
+
+    // Global Server, Cloud Supabase, and Realtime Broadcast
+    Promise.allSettled([
+      saveSupabaseDailyAttendance(updatedDaily),
+      saveSupabaseAttendance(nextAtt),
+      pushMasterServerSync({ dailyAttendance: updatedDaily, attendance: nextAtt })
+    ]).catch(() => {});
   };
 
   // Calculate stats for today
   const dailyStats = useMemo(() => {
     let presentCount = 0;
     let absentCount = 0;
+    let unmarkedCount = 0;
 
     filteredStudents.forEach(s => {
       const st = getStudentStatusForDate(s.id);
       if (st === 'PRESENT') presentCount++;
       else if (st === 'ABSENT') absentCount++;
+      else unmarkedCount++;
     });
 
     const total = filteredStudents.length;
-    const rate = total > 0 ? Math.round((presentCount / total) * 100) : 100;
+    const markedTotal = presentCount + absentCount;
+    const rate = markedTotal > 0 ? Math.round((presentCount / markedTotal) * 100) : (total > 0 && presentCount > 0 ? 100 : 0);
 
-    return { total, presentCount, absentCount, rate };
+    return { total, presentCount, absentCount, unmarkedCount, rate };
   }, [filteredStudents, dailyAttendance, selectedDate]);
 
   // Save attendance & update Term Attendance totals in attendance state
@@ -1366,30 +1403,34 @@ export default function StudentAttendancePortal({
 
                         {/* Status Toggle Buttons */}
                         <td className="p-3 text-center">
-                          <div className="inline-flex items-center gap-1.5 bg-gray-100 p-1.5 rounded-xl">
+                          <div className="inline-flex items-center gap-2 bg-gray-100 p-1.5 rounded-xl border border-gray-200/80 shadow-inner">
                             <button
+                              id={`btn-present-${student.id}`}
                               type="button"
                               onClick={() => setStudentStatus(student.id, 'PRESENT')}
-                              className={`px-4 py-1.5 rounded-lg text-xs font-extrabold uppercase transition cursor-pointer flex items-center gap-1.5 ${
+                              title={`Mark ${student.name} as Present`}
+                              className={`px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all duration-150 cursor-pointer flex items-center gap-1.5 active:scale-95 select-none ${
                                 status === 'PRESENT'
-                                  ? 'bg-emerald-600 text-white shadow-md scale-105'
-                                  : 'text-gray-600 hover:bg-emerald-100 hover:text-emerald-800'
+                                  ? 'bg-emerald-600 text-white shadow-md scale-105 ring-2 ring-emerald-400 font-black'
+                                  : 'bg-white text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-gray-200'
                               }`}
                             >
-                              <Check className="w-3.5 h-3.5" />
+                              <Check className={`w-3.5 h-3.5 ${status === 'PRESENT' ? 'stroke-[3]' : 'stroke-2'}`} />
                               <span>Present</span>
                             </button>
 
                             <button
+                              id={`btn-absent-${student.id}`}
                               type="button"
                               onClick={() => setStudentStatus(student.id, 'ABSENT')}
-                              className={`px-4 py-1.5 rounded-lg text-xs font-extrabold uppercase transition cursor-pointer flex items-center gap-1.5 ${
+                              title={`Mark ${student.name} as Absent`}
+                              className={`px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all duration-150 cursor-pointer flex items-center gap-1.5 active:scale-95 select-none ${
                                 status === 'ABSENT'
-                                  ? 'bg-rose-600 text-white shadow-md scale-105'
-                                  : 'text-gray-600 hover:bg-rose-100 hover:text-rose-800'
+                                  ? 'bg-rose-600 text-white shadow-md scale-105 ring-2 ring-rose-400 font-black'
+                                  : 'bg-white text-gray-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 border border-gray-200'
                               }`}
                             >
-                              <XCircle className="w-3.5 h-3.5" />
+                              <XCircle className={`w-3.5 h-3.5 ${status === 'ABSENT' ? 'stroke-[3]' : 'stroke-2'}`} />
                               <span>Absent</span>
                             </button>
                           </div>
