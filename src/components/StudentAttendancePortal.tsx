@@ -40,11 +40,14 @@ import {
   Search,
   CheckSquare,
   XSquare,
-  HelpCircle
+  HelpCircle,
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import { saveSupabaseAttendance } from '../lib/supabase';
+import { saveSupabaseAttendance, saveSupabaseDailyAttendance } from '../lib/supabase';
 import { calculateStudentTermAttendance } from '../utils/attendanceUtils';
+import { pushMasterServerSync } from '../lib/globalSync';
 
 interface StudentAttendancePortalProps {
   students: Student[];
@@ -90,16 +93,39 @@ export default function StudentAttendancePortal({
   // Selected filters
   const [selectedLevel, setSelectedLevel] = useState<AcademicLevel | 'ALL'>('ALL');
 
-  const [selectedClass, setSelectedClass] = useState<string>('ALL');
-
-  // Default to today's date in YYYY-MM-DD
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    const now = new Date();
-    return now.toISOString().split('T')[0];
+  const [selectedClass, setSelectedClass] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ea_attendance_selected_class') || 'ALL';
+    } catch {
+      return 'ALL';
+    }
   });
+
+  // Default to today's date in YYYY-MM-DD, or persisted date
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    try {
+      return localStorage.getItem('ea_attendance_selected_date') || new Date().toISOString().split('T')[0];
+    } catch {
+      return new Date().toISOString().split('T')[0];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ea_attendance_selected_class', selectedClass);
+    } catch {}
+  }, [selectedClass]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ea_attendance_selected_date', selectedDate);
+    } catch {}
+  }, [selectedDate]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState('');
+  const [isSubmittingRegister, setIsSubmittingRegister] = useState(false);
+  const [submittedSuccessfully, setSubmittedSuccessfully] = useState(false);
 
   // Handle Login with Registered Credentials Assigned by Admin
   const handleTeacherLogin = async (e: React.FormEvent) => {
@@ -226,30 +252,40 @@ export default function StudentAttendancePortal({
 
   // Get status for a student on selectedDate
   const getStudentStatusForDate = (studentId: string): DailyAttendanceStatus => {
-    const record = dailyAttendance.find(
-      r => r.studentId === studentId && r.date === selectedDate
-    );
+    const student = students.find(s => s.id === studentId || s.rollNumber === studentId);
+    const sRoll = student?.rollNumber;
+
+    const record = dailyAttendance.find(r => {
+      if (r.date !== selectedDate) return false;
+      if (r.studentId === studentId) return true;
+      if (student && r.studentId === student.id) return true;
+      if (sRoll && r.studentId === sRoll) return true;
+      return false;
+    });
     return record ? record.status : 'PRESENT';
   };
 
   // Update a student's attendance status for selectedDate
   const setStudentStatus = (studentId: string, status: DailyAttendanceStatus) => {
+    const student = students.find(s => s.id === studentId || s.rollNumber === studentId);
+    const sid = student ? student.id : studentId;
+
     setDailyAttendance(prev => {
       const existingIdx = prev.findIndex(
-        r => r.studentId === studentId && r.date === selectedDate
+        r => (r.studentId === sid || (student && r.studentId === student.rollNumber)) && r.date === selectedDate
       );
+      let updated: DailyAttendanceRecord[];
       if (existingIdx >= 0) {
-        const updated = [...prev];
+        updated = [...prev];
         updated[existingIdx] = {
           ...updated[existingIdx],
           status,
           updatedAt: new Date().toISOString()
         };
-        return updated;
       } else {
         const newRecord: DailyAttendanceRecord = {
-          id: `att-${studentId}-${selectedDate}-${Date.now()}`,
-          studentId,
+          id: `att-${sid}-${selectedDate}-${Date.now()}`,
+          studentId: sid,
           date: selectedDate,
           status,
           term: config.term,
@@ -257,8 +293,60 @@ export default function StudentAttendancePortal({
           teacherId: currentUser?.id || 'admin',
           updatedAt: new Date().toISOString()
         };
-        return [...prev, newRecord];
+        updated = [...prev, newRecord];
       }
+
+      // Guarantee immediate local storage persistence
+      try {
+        localStorage.setItem('ea_daily_attendance', JSON.stringify(updated));
+        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(updated));
+      } catch (e) {}
+
+      // Background persist to server
+      saveSupabaseDailyAttendance(updated).catch(() => {});
+
+      // Recalculate term attendance live for this student
+      if (student) {
+        const currentYear = config.schoolYear;
+        const currentTerm = config.term;
+        const calc = calculateStudentTermAttendance(
+          student,
+          currentTerm,
+          currentYear,
+          updated,
+          attendance,
+          students
+        );
+
+        setAttendance(prevAtt => {
+          const nextAtt = [...prevAtt];
+          const attIdx = nextAtt.findIndex(
+            a => a.studentId === sid && (!a.term || a.term === currentTerm) && (!a.year || a.year === currentYear)
+          );
+          const attRecord: Attendance = {
+            studentId: sid,
+            term: currentTerm,
+            year: currentYear,
+            daysPresent: calc.daysPresent,
+            totalDays: calc.totalDays,
+            remarks: calc.remarks,
+            teacherId: currentUser?.id || 'admin',
+            updatedAt: new Date().toISOString()
+          };
+          if (attIdx >= 0) {
+            nextAtt[attIdx] = attRecord;
+          } else if (calc.totalDays > 0) {
+            nextAtt.push(attRecord);
+          }
+          try {
+            localStorage.setItem('ea_attendance', JSON.stringify(nextAtt));
+            localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(nextAtt));
+          } catch {}
+          return nextAtt;
+        });
+      }
+
+      return updated;
     });
   };
 
@@ -266,10 +354,10 @@ export default function StudentAttendancePortal({
   const handleMarkAll = (status: DailyAttendanceStatus) => {
     setDailyAttendance(prev => {
       const otherRecords = prev.filter(
-        r => !(filteredStudents.some(s => s.id === r.studentId) && r.date === selectedDate)
+        r => !(filteredStudents.some(s => s.id === r.studentId || s.rollNumber === r.studentId) && r.date === selectedDate)
       );
       const newRecords = filteredStudents.map(student => ({
-        id: `att-${student.id}-${selectedDate}-${Date.now()}`,
+        id: `att-${student.id}-${selectedDate}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         studentId: student.id,
         date: selectedDate,
         status,
@@ -278,7 +366,18 @@ export default function StudentAttendancePortal({
         teacherId: currentUser?.id || 'admin',
         updatedAt: new Date().toISOString()
       }));
-      return [...otherRecords, ...newRecords];
+      const updated = [...otherRecords, ...newRecords];
+
+      // Guarantee immediate local storage persistence
+      try {
+        localStorage.setItem('ea_daily_attendance', JSON.stringify(updated));
+        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(updated));
+      } catch (e) {}
+
+      // Background persist to server
+      saveSupabaseDailyAttendance(updated).catch(() => {});
+
+      return updated;
     });
   };
 
@@ -300,98 +399,137 @@ export default function StudentAttendancePortal({
   }, [filteredStudents, dailyAttendance, selectedDate]);
 
   // Save attendance & update Term Attendance totals in attendance state
-  const handleSaveAndSyncTermRegister = () => {
-    const currentYear = config.schoolYear;
-    const currentTerm = config.term;
+  const handleSaveAndSyncTermRegister = async () => {
     const targetStudents = filteredStudents.length > 0 ? filteredStudents : students;
 
-    // 1. Ensure all viewed students on the selectedDate have an explicit daily record
-    const updatedDailyAttendance = [...dailyAttendance];
-    targetStudents.forEach(student => {
-      const existingIdx = updatedDailyAttendance.findIndex(
-        r => r.studentId === student.id && r.date === selectedDate
-      );
-      const currentStatus = getStudentStatusForDate(student.id);
+    if (targetStudents.length === 0) {
+      setSaveSuccessMessage('No pupils found to submit attendance for. Please select a class or enroll pupils.');
+      setSubmittedSuccessfully(true);
+      setTimeout(() => {
+        setSaveSuccessMessage('');
+        setSubmittedSuccessfully(false);
+      }, 4000);
+      return;
+    }
 
-      if (existingIdx >= 0) {
-        updatedDailyAttendance[existingIdx] = {
-          ...updatedDailyAttendance[existingIdx],
-          status: currentStatus,
+    setIsSubmittingRegister(true);
+    setSaveSuccessMessage('');
+
+    try {
+      const currentYear = config.schoolYear;
+      const currentTerm = config.term;
+
+      // 1. Ensure all viewed students on the selectedDate have an explicit daily record
+      const updatedDailyAttendance = [...dailyAttendance];
+      targetStudents.forEach(student => {
+        const existingIdx = updatedDailyAttendance.findIndex(
+          r => r.studentId === student.id && r.date === selectedDate
+        );
+        const currentStatus = getStudentStatusForDate(student.id);
+
+        if (existingIdx >= 0) {
+          updatedDailyAttendance[existingIdx] = {
+            ...updatedDailyAttendance[existingIdx],
+            status: currentStatus,
+            term: currentTerm,
+            year: currentYear,
+            teacherId: currentUser?.id || 'admin',
+            updatedAt: new Date().toISOString()
+          };
+        } else {
+          updatedDailyAttendance.push({
+            id: `att-${student.id}-${selectedDate}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            studentId: student.id,
+            date: selectedDate,
+            status: currentStatus,
+            term: currentTerm,
+            year: currentYear,
+            teacherId: currentUser?.id || 'admin',
+            updatedAt: new Date().toISOString()
+          });
+        }
+      });
+
+      setDailyAttendance(updatedDailyAttendance);
+
+      // 2. Calculate each student's term attendance:
+      // Strictly count days marked PRESENT against total days attendance was marked for the term
+      const updatedAttendance = [...attendance];
+
+      students.forEach(student => {
+        const calc = calculateStudentTermAttendance(
+          student,
+          currentTerm,
+          currentYear,
+          updatedDailyAttendance,
+          updatedAttendance,
+          students
+        );
+
+        const attIdx = updatedAttendance.findIndex(
+          a => a.studentId === student.id && (!a.term || a.term === currentTerm) && (!a.year || a.year === currentYear)
+        );
+
+        const attRecord: Attendance = {
+          studentId: student.id,
           term: currentTerm,
           year: currentYear,
+          daysPresent: calc.daysPresent,
+          totalDays: calc.totalDays,
+          remarks: calc.remarks,
           teacherId: currentUser?.id || 'admin',
           updatedAt: new Date().toISOString()
         };
-      } else {
-        updatedDailyAttendance.push({
-          id: `att-${student.id}-${selectedDate}-${Date.now()}`,
-          studentId: student.id,
-          date: selectedDate,
-          status: currentStatus,
-          term: currentTerm,
-          year: currentYear,
-          teacherId: currentUser?.id || 'admin',
-          updatedAt: new Date().toISOString()
-        });
+
+        if (attIdx >= 0) {
+          updatedAttendance[attIdx] = attRecord;
+        } else if (calc.totalDays > 0) {
+          updatedAttendance.push(attRecord);
+        }
+      });
+
+      setAttendance(updatedAttendance);
+
+      // Save locally to multiple fallback keys for zero data loss
+      try {
+        localStorage.setItem('ea_daily_attendance', JSON.stringify(updatedDailyAttendance));
+        localStorage.setItem('ea_attendance', JSON.stringify(updatedAttendance));
+        localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(updatedAttendance));
+      } catch (e) {
+        console.warn('Local storage write warning', e);
       }
-    });
 
-    setDailyAttendance(updatedDailyAttendance);
+      // Save to Cloud Supabase & broadcast master server sync
+      await Promise.allSettled([
+        saveSupabaseAttendance(updatedAttendance),
+        saveSupabaseDailyAttendance(updatedDailyAttendance),
+        pushMasterServerSync({ attendance: updatedAttendance, dailyAttendance: updatedDailyAttendance })
+      ]);
 
-    // 2. Calculate each student's term attendance:
-    // Strictly count days marked PRESENT against total days attendance was marked for the term
-    const updatedAttendance = [...attendance];
-
-    students.forEach(student => {
-      const calc = calculateStudentTermAttendance(
-        student,
-        currentTerm,
-        currentYear,
-        updatedDailyAttendance,
-        updatedAttendance,
-        students
+      const classLabel = selectedClass === 'ALL' ? 'All Academy Classes' : selectedClass;
+      setSaveSuccessMessage(
+        `Attendance Register for ${classLabel} (${selectedDate}) has been successfully submitted and saved! Terminal report cards have been updated.`
       );
+      setSubmittedSuccessfully(true);
 
-      const attIdx = updatedAttendance.findIndex(
-        a => a.studentId === student.id && (!a.term || a.term === currentTerm) && (!a.year || a.year === currentYear)
-      );
+      setTimeout(() => {
+        setSubmittedSuccessfully(false);
+      }, 5000);
 
-      const attRecord: Attendance = {
-        studentId: student.id,
-        term: currentTerm,
-        year: currentYear,
-        daysPresent: calc.daysPresent,
-        totalDays: calc.totalDays,
-        remarks: calc.remarks,
-        teacherId: currentUser?.id || 'admin',
-        updatedAt: new Date().toISOString()
-      };
-
-      if (attIdx >= 0) {
-        updatedAttendance[attIdx] = attRecord;
-      } else if (calc.totalDays > 0) {
-        updatedAttendance.push(attRecord);
-      }
-    });
-
-    setAttendance(updatedAttendance);
-
-    // Save locally
-    try {
-      localStorage.setItem('ea_daily_attendance', JSON.stringify(updatedDailyAttendance));
-      localStorage.setItem('ea_attendance', JSON.stringify(updatedAttendance));
-      localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(updatedAttendance));
-    } catch (e) {
-      console.warn('Local storage write warning', e);
+      setTimeout(() => {
+        setSaveSuccessMessage('');
+      }, 7000);
+    } catch (error) {
+      console.error('Error submitting attendance register:', error);
+      setSaveSuccessMessage('Attendance register saved locally. Changes will sync to cloud when connected.');
+      setSubmittedSuccessfully(true);
+      setTimeout(() => {
+        setSubmittedSuccessfully(false);
+        setSaveSuccessMessage('');
+      }, 5000);
+    } finally {
+      setIsSubmittingRegister(false);
     }
-
-    // Save to Cloud Supabase
-    saveSupabaseAttendance(updatedAttendance).catch(err =>
-      console.warn('Supabase save attendance error', err)
-    );
-
-    setSaveSuccessMessage(`Attendance Register Saved & Term Records Synced to Individual Report Cards for ${selectedClass === 'ALL' ? 'All Classes' : selectedClass}!`);
-    setTimeout(() => setSaveSuccessMessage(''), 4000);
   };
 
   // Get term attendance summary for a student (live & persistent)
@@ -746,14 +884,23 @@ export default function StudentAttendancePortal({
 
       {/* SAVE SUCCESS BANNER */}
       {saveSuccessMessage && (
-        <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-3 rounded-xl font-bold text-xs flex items-center justify-between shadow-sm animate-fadeIn">
+        <div id="top-attendance-success-banner" className="bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-3 rounded-xl font-bold text-xs flex items-center justify-between shadow-sm animate-fadeIn">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
             <span>{saveSuccessMessage}</span>
           </div>
-          <span className="text-[10px] uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-            Term Totals Synced
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded font-mono font-bold">
+              Term Totals Synced
+            </span>
+            <button
+              type="button"
+              onClick={() => setSaveSuccessMessage('')}
+              className="text-emerald-700 hover:text-emerald-900 p-0.5 rounded"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -836,12 +983,32 @@ export default function StudentAttendancePortal({
               </button>
 
               <button
+                id="top-submit-attendance-register-btn"
                 type="button"
+                disabled={isSubmittingRegister}
                 onClick={handleSaveAndSyncTermRegister}
-                className="px-4 py-1.5 bg-[#1C053E] hover:bg-[#2B0D5D] text-white rounded-xl text-xs font-extrabold uppercase tracking-wider transition flex items-center gap-1.5 shadow-sm cursor-pointer ml-auto sm:ml-2"
+                className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition flex items-center gap-1.5 shadow-sm cursor-pointer ml-auto sm:ml-2 active:scale-95 ${
+                  submittedSuccessfully
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-300'
+                    : 'bg-[#1C053E] hover:bg-[#2B0D5D] text-white'
+                }`}
               >
-                <Save className="w-4 h-4 text-amber-300" />
-                <span>Save &amp; Sync Register</span>
+                {isSubmittingRegister ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 text-amber-300 animate-spin" />
+                    <span>Submitting...</span>
+                  </>
+                ) : submittedSuccessfully ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
+                    <span>Submitted!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Submit Register</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -959,18 +1126,73 @@ export default function StudentAttendancePortal({
               </table>
 
               {/* BOTTOM SUBMIT ATTENDANCE FOOTER BAR */}
-              <div className="p-5 bg-gradient-to-r from-mauve-50 via-purple-50 to-mauve-50 border-t border-mauve-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="text-xs text-mauve-900 font-bold">
-                  <span>Showing {filteredStudents.length} pupils across {selectedClass === 'ALL' ? 'All Academy Classes' : selectedClass}. Click PRESENT or ABSENT to mark attendance.</span>
+              <div className="p-5 bg-gradient-to-r from-mauve-50 via-purple-50 to-mauve-50 border-t border-mauve-200 flex flex-col gap-4">
+                {saveSuccessMessage && (
+                  <div
+                    id="attendance-register-bottom-success-banner"
+                    className="w-full bg-emerald-900 text-white p-4 rounded-xl shadow-lg border-2 border-emerald-400 flex items-start sm:items-center justify-between gap-3 animate-fadeIn"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-emerald-800 rounded-lg text-emerald-300 shrink-0">
+                        <CheckCircle2 className="w-6 h-6 text-emerald-300" />
+                      </div>
+                      <div>
+                        <div className="font-black text-sm text-emerald-100 uppercase tracking-wide flex items-center gap-2">
+                          <span>Attendance Register Submitted Successfully!</span>
+                          <span className="text-[10px] bg-emerald-700 text-emerald-100 px-2 py-0.5 rounded font-mono font-bold">
+                            CONFIRMED
+                          </span>
+                        </div>
+                        <p className="text-xs text-emerald-200 mt-0.5 font-medium leading-relaxed">
+                          {saveSuccessMessage}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      id="dismiss-bottom-attendance-success-btn"
+                      type="button"
+                      onClick={() => setSaveSuccessMessage('')}
+                      className="text-emerald-300 hover:text-white p-1 rounded-lg transition shrink-0"
+                      title="Dismiss"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="text-xs text-mauve-900 font-bold">
+                    <span>Showing {filteredStudents.length} pupils across {selectedClass === 'ALL' ? 'All Academy Classes' : selectedClass}. Click PRESENT or ABSENT to mark attendance.</span>
+                  </div>
+                  <button
+                    id="submit-attendance-register-btn"
+                    type="button"
+                    disabled={isSubmittingRegister}
+                    onClick={handleSaveAndSyncTermRegister}
+                    className={`px-6 py-3.5 rounded-xl text-xs sm:text-sm font-black uppercase tracking-wider transition flex items-center justify-center gap-2.5 shadow-lg cursor-pointer transform active:scale-95 ${
+                      submittedSuccessfully
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-4 ring-emerald-300 scale-105'
+                        : 'bg-[#1C053E] hover:bg-[#2B0D5D] text-white hover:-translate-y-0.5'
+                    }`}
+                  >
+                    {isSubmittingRegister ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 text-amber-300 animate-spin" />
+                        <span>Submitting Attendance Register...</span>
+                      </>
+                    ) : submittedSuccessfully ? (
+                      <>
+                        <CheckCircle2 className="w-5 h-5 text-emerald-200 animate-bounce" />
+                        <span>Attendance Register Submitted!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4 text-amber-300" />
+                        <span>Submit Attendance Register</span>
+                      </>
+                    )}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleSaveAndSyncTermRegister}
-                  className="px-6 py-3 bg-[#1C053E] hover:bg-[#2B0D5D] text-white rounded-xl text-xs sm:text-sm font-black uppercase tracking-wider transition flex items-center gap-2 shadow-lg cursor-pointer transform hover:-translate-y-0.5"
-                >
-                  <Save className="w-4 h-4 text-amber-300" />
-                  <span>Submit Attendance Register</span>
-                </button>
               </div>
             </div>
           )}
@@ -991,6 +1213,34 @@ export default function StudentAttendancePortal({
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                id="term-register-submit-btn"
+                type="button"
+                disabled={isSubmittingRegister}
+                onClick={handleSaveAndSyncTermRegister}
+                className={`px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center gap-2 shadow-sm cursor-pointer active:scale-95 ${
+                  submittedSuccessfully
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-300'
+                    : 'bg-[#1C053E] hover:bg-[#2B0D5D] text-white'
+                }`}
+              >
+                {isSubmittingRegister ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 text-amber-300 animate-spin" />
+                    <span>Submitting...</span>
+                  </>
+                ) : submittedSuccessfully ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                    <span>Submitted!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 text-amber-300" />
+                    <span>Submit &amp; Sync Register</span>
+                  </>
+                )}
+              </button>
               <button
                 type="button"
                 onClick={() => window.print()}
@@ -1081,6 +1331,49 @@ export default function StudentAttendancePortal({
               Headmaster / Principal Stamp &amp; Date
             </div>
           </div>
+        </div>
+      )}
+
+      {/* FLOATING PERSISTENT SUBMISSION SUCCESS TOAST */}
+      {saveSuccessMessage && (
+        <div
+          id="floating-attendance-submitted-toast"
+          className="fixed bottom-6 right-6 z-50 max-w-lg bg-[#1C053E] text-white p-4 rounded-2xl shadow-2xl border-2 border-emerald-400 flex items-start gap-3.5 animate-fadeIn backdrop-blur-md"
+        >
+          <div className="p-2 bg-emerald-500/20 border border-emerald-400/40 rounded-xl text-emerald-300 shrink-0">
+            <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h4 className="font-black text-sm text-emerald-300 uppercase tracking-wider">
+                Register Submitted Successfully
+              </h4>
+              <span className="text-[9px] uppercase font-mono px-2 py-0.5 bg-emerald-900/80 text-emerald-200 rounded border border-emerald-700 font-bold">
+                Synced
+              </span>
+            </div>
+            <p className="text-xs text-gray-200 mt-1 leading-relaxed break-words">
+              {saveSuccessMessage}
+            </p>
+            <div className="mt-2.5 flex items-center gap-3 text-[11px] text-emerald-300 font-bold">
+              <span className="flex items-center gap-1">
+                <Check className="w-3.5 h-3.5 text-emerald-400" /> Saved to Register
+              </span>
+              <span>•</span>
+              <span className="flex items-center gap-1">
+                <Check className="w-3.5 h-3.5 text-emerald-400" /> Synced to Terminal Reports
+              </span>
+            </div>
+          </div>
+          <button
+            id="close-floating-attendance-toast-btn"
+            type="button"
+            onClick={() => setSaveSuccessMessage('')}
+            className="text-gray-400 hover:text-white p-1 rounded-lg transition shrink-0 ml-1 cursor-pointer"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

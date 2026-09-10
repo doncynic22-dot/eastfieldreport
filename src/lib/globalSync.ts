@@ -7,7 +7,7 @@
  * browsers, tabs, and CDN edge caches with zero stale-data leakage.
  */
 
-import { Student, User, Grade, Attendance, StudentBill, ReportConfig, FeePayment } from '../types';
+import { Student, User, Grade, Attendance, StudentBill, ReportConfig, FeePayment, DailyAttendanceRecord } from '../types';
 
 export interface GlobalSyncPayload {
   config?: ReportConfig;
@@ -15,7 +15,7 @@ export interface GlobalSyncPayload {
   students?: Student[];
   grades?: Grade[];
   attendance?: Attendance[];
-  dailyAttendance?: any[];
+  dailyAttendance?: DailyAttendanceRecord[];
   bills?: StudentBill[];
   feePayments?: FeePayment[];
   inventory?: any[];

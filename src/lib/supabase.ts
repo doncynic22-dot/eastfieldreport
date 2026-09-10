@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
-import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord, BookStockItem, BookSaleRecord } from '../types';
+import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord, BookStockItem, BookSaleRecord, DailyAttendanceRecord, DailyAttendanceStatus } from '../types';
 import { DEFAULT_INVENTORY_DATA, DEFAULT_BOOK_STOCK_ITEMS, DEFAULT_BOOK_SALES } from '../data/mockData';
 import { isDemoStudent } from '../data/demoPupils';
 import { fetchServerEntity, saveServerEntity, globalSyncEngine, getAntiCacheHeaders, syncStudentAdditionToCDN, syncStudentDeletionToCDN } from './globalSync';
@@ -3040,8 +3040,10 @@ export async function fetchSupabaseAttendance(): Promise<Attendance[] | null> {
 
 export async function saveSupabaseAttendance(attendance: Attendance[]): Promise<boolean> {
   // Always persist to local cache immediately to guarantee offline/local persistence
-  localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
-  localStorage.setItem('ea_attendance', JSON.stringify(attendance));
+  try {
+    localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
+    localStorage.setItem('ea_attendance', JSON.stringify(attendance));
+  } catch (e) {}
 
   // Persist to central server database and broadcast to other devices
   saveServerEntity('/attendance', attendance).catch(e => console.warn('[Server Sync Attendance Notice]', e));
@@ -3067,6 +3069,124 @@ export async function saveSupabaseAttendance(attendance: Attendance[]): Promise<
     return true;
   } catch (err: any) {
     console.warn('Supabase saveSupabaseAttendance exception, fallback to local storage preserved:', err);
+    return true;
+  }
+}
+
+// 5b. SYNC DAILY ATTENDANCE (Roll Call)
+export async function fetchSupabaseDailyAttendance(): Promise<DailyAttendanceRecord[] | null> {
+  const client = getSupabaseClient();
+  if (!client) {
+    const serverDaily = await fetchServerEntity<DailyAttendanceRecord[]>('/daily-attendance');
+    if (serverDaily && Array.isArray(serverDaily) && serverDaily.length > 0) {
+      try {
+        localStorage.setItem('ea_daily_attendance', JSON.stringify(serverDaily));
+        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(serverDaily));
+      } catch (e) {}
+      return serverDaily;
+    }
+    const cached = localStorage.getItem('mock_supabase_ea_daily_attendance') || localStorage.getItem('ea_daily_attendance');
+    return cached ? JSON.parse(cached) : null;
+  }
+  try {
+    const { data, error } = await client.from('ea_daily_attendance').select('*');
+    if (error) {
+      const serverDaily = await fetchServerEntity<DailyAttendanceRecord[]>('/daily-attendance');
+      if (serverDaily && Array.isArray(serverDaily) && serverDaily.length > 0) {
+        try {
+          localStorage.setItem('ea_daily_attendance', JSON.stringify(serverDaily));
+          localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(serverDaily));
+        } catch (e) {}
+        return serverDaily;
+      }
+      if (isMissingTableOrConnectionError(error)) {
+        const cached = localStorage.getItem('mock_supabase_ea_daily_attendance') || localStorage.getItem('ea_daily_attendance');
+        return cached ? JSON.parse(cached) : null;
+      }
+      return null;
+    }
+    if (!data || data.length === 0) {
+      const serverDaily = await fetchServerEntity<DailyAttendanceRecord[]>('/daily-attendance');
+      if (serverDaily && Array.isArray(serverDaily) && serverDaily.length > 0) {
+        try {
+          localStorage.setItem('ea_daily_attendance', JSON.stringify(serverDaily));
+          localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(serverDaily));
+        } catch (e) {}
+        saveSupabaseDailyAttendance(serverDaily).catch(() => {});
+        return serverDaily;
+      }
+      const cached = localStorage.getItem('mock_supabase_ea_daily_attendance') || localStorage.getItem('ea_daily_attendance');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            saveSupabaseDailyAttendance(parsed).catch(() => {});
+            return parsed;
+          }
+        } catch (e) {}
+      }
+      return null;
+    }
+    const mapped: DailyAttendanceRecord[] = data.map(item => ({
+      id: item.id || `att-${item.student_id}-${item.date}-${Date.now()}`,
+      studentId: item.student_id,
+      date: item.date,
+      status: item.status as DailyAttendanceStatus,
+      term: item.term || 'Term 1',
+      year: item.year || '2025/2026',
+      teacherId: item.teacher_id || 'admin',
+      updatedAt: item.updated_at || new Date().toISOString()
+    }));
+    try {
+      localStorage.setItem('ea_daily_attendance', JSON.stringify(mapped));
+      localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(mapped));
+    } catch (e) {}
+    return mapped;
+  } catch (err: any) {
+    const serverDaily = await fetchServerEntity<DailyAttendanceRecord[]>('/daily-attendance');
+    if (serverDaily && Array.isArray(serverDaily) && serverDaily.length > 0) {
+      try {
+        localStorage.setItem('ea_daily_attendance', JSON.stringify(serverDaily));
+        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(serverDaily));
+      } catch (e) {}
+      return serverDaily;
+    }
+    const cached = localStorage.getItem('mock_supabase_ea_daily_attendance') || localStorage.getItem('ea_daily_attendance');
+    return cached ? JSON.parse(cached) : null;
+  }
+}
+
+export async function saveSupabaseDailyAttendance(records: DailyAttendanceRecord[]): Promise<boolean> {
+  // Always persist to local cache immediately to guarantee offline/local persistence
+  try {
+    localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(records));
+    localStorage.setItem('ea_daily_attendance', JSON.stringify(records));
+  } catch (e) {}
+
+  // Persist to central server database and broadcast to other devices
+  saveServerEntity('/daily-attendance', records).catch(e => console.warn('[Server Sync Daily Attendance Notice]', e));
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+  try {
+    const payloads = records.map(r => ({
+      id: r.id || `att-${r.studentId}-${r.date}-${Date.now()}`,
+      student_id: r.studentId,
+      date: r.date,
+      status: r.status,
+      term: r.term || 'Term 1',
+      year: r.year || '2025/2026',
+      teacher_id: r.teacherId || 'admin',
+      updated_at: r.updatedAt || new Date().toISOString()
+    }));
+    const { error } = await safeUpsert('ea_daily_attendance', payloads, client, 'id');
+    if (error) {
+      console.warn('Supabase saveSupabaseDailyAttendance notice:', error);
+      return true;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Supabase saveSupabaseDailyAttendance exception:', err);
     return true;
   }
 }

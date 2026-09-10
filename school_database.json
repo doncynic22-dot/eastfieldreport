@@ -1,6 +1,6 @@
 {
-  "version": 4136,
-  "lastUpdated": "2026-09-07T09:45:14.983Z",
+  "version": 4166,
+  "lastUpdated": "2026-09-10T10:07:36.826Z",
   "config": {
     "schoolName": "Eastfield Academy",
     "schoolYear": "2026/2027",
@@ -19588,9 +19588,148 @@
       "remarks": "Needs Support",
       "teacherId": "user-t-reg-1784637715235",
       "updatedAt": "2026-08-15T19:33:27.337+00:00"
+    },
+    {
+      "studentId": "st-1788867372935",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 3,
+      "totalDays": 3,
+      "remarks": "Outstanding punctuality and exemplary conduct.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.922Z"
+    },
+    {
+      "studentId": "st-1788867328972",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 0,
+      "totalDays": 3,
+      "remarks": "Irregular attendance; requires parental support and improvement.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.922Z"
+    },
+    {
+      "studentId": "st-1788856116162",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 3,
+      "totalDays": 3,
+      "remarks": "Outstanding punctuality and exemplary conduct.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.922Z"
+    },
+    {
+      "studentId": "st-1788856086211",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 3,
+      "totalDays": 3,
+      "remarks": "Outstanding punctuality and exemplary conduct.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.922Z"
+    },
+    {
+      "studentId": "st-1788856034852",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 3,
+      "totalDays": 3,
+      "remarks": "Outstanding punctuality and exemplary conduct.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.924Z"
+    },
+    {
+      "studentId": "st-1788856367502",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 2,
+      "totalDays": 3,
+      "remarks": "Irregular attendance; requires parental support and improvement.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.924Z"
+    },
+    {
+      "studentId": "st-1788856251052",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 2,
+      "totalDays": 3,
+      "remarks": "Irregular attendance; requires parental support and improvement.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.924Z"
+    },
+    {
+      "studentId": "st-1788859894604",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 3,
+      "totalDays": 3,
+      "remarks": "Outstanding punctuality and exemplary conduct.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.925Z"
+    },
+    {
+      "studentId": "st-1788975945980",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 0,
+      "totalDays": 3,
+      "remarks": "Irregular attendance; requires parental support and improvement.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.925Z"
+    },
+    {
+      "studentId": "st-1788856147136",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 1,
+      "totalDays": 3,
+      "remarks": "Irregular attendance; requires parental support and improvement.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.926Z"
+    },
+    {
+      "studentId": "st-1788856006919",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 3,
+      "totalDays": 3,
+      "remarks": "Outstanding punctuality and exemplary conduct.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.927Z"
+    },
+    {
+      "studentId": "st-1788856291658",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 3,
+      "totalDays": 3,
+      "remarks": "Outstanding punctuality and exemplary conduct.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.927Z"
+    },
+    {
+      "studentId": "st-1788856209918",
+      "term": "Term 1",
+      "year": "2026/2027",
+      "daysPresent": 3,
+      "totalDays": 3,
+      "remarks": "Outstanding punctuality and exemplary conduct.",
+      "teacherId": "user-t-reg-1784637715235",
+      "updatedAt": "2026-09-10T09:48:37.927Z"
     }
   ],
-  "dailyAttendance": [],
+  "dailyAttendance": [
+    {
+      "id": "test-1",
+      "studentId": "std-test-1",
+      "date": "2026-09-10",
+      "status": "PRESENT",
+      "term": "Term 1",
+      "year": "2025/2026"
+    }
+  ],
   "bills": [
     {
       "studentId": "st-1784887843443",
@@ -25149,6 +25288,8 @@
     "addosikendrick"
   ],
   "deletedTeacherIds": [],
+  "deletedBookStockIds": [],
+  "deletedBookSaleIds": [],
   "rosterCleared": true,
   "rosterClearedAt": "2026-09-07T09:45:14.983Z"
 }

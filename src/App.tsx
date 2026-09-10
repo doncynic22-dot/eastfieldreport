@@ -27,6 +27,7 @@ import {
   fetchSupabaseTeachers,
   fetchSupabaseGrades,
   fetchSupabaseAttendance,
+  fetchSupabaseDailyAttendance,
   fetchSupabaseBills,
   fetchSupabaseFeePayments,
   fetchSupabaseJHSMockExams,
@@ -36,6 +37,7 @@ import {
   saveSupabaseTeachers,
   saveSupabaseGrades,
   saveSupabaseAttendance,
+  saveSupabaseDailyAttendance,
   saveSupabaseBills,
   saveSupabaseFeePayments,
   fetchSupabaseBookStock,
@@ -60,10 +62,17 @@ export default function App() {
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
-  const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [attendance, setAttendance] = useState<Attendance[]>(() => {
+    try {
+      const cached = localStorage.getItem('ea_attendance') || localStorage.getItem('mock_supabase_ea_attendance');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [dailyAttendance, setDailyAttendance] = useState<DailyAttendanceRecord[]>(() => {
     try {
-      const saved = localStorage.getItem('ea_daily_attendance');
+      const saved = localStorage.getItem('ea_daily_attendance') || localStorage.getItem('mock_supabase_ea_daily_attendance');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -73,10 +82,20 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem('ea_daily_attendance', JSON.stringify(dailyAttendance));
+      localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(dailyAttendance));
     } catch (e) {
       console.warn('Failed saving daily attendance to localStorage', e);
     }
   }, [dailyAttendance]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ea_attendance', JSON.stringify(attendance));
+      localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(attendance));
+    } catch (e) {
+      console.warn('Failed saving attendance to localStorage', e);
+    }
+  }, [attendance]);
 
   const [bills, setBills] = useState<StudentBill[]>([]);
   const [config, setConfig] = useState<ReportConfig>(DEFAULT_REPORT_CONFIG);
@@ -437,6 +456,45 @@ export default function App() {
         setAttendance(localAttendance);
       }
 
+      // 5b. Fetch & Sync Daily Attendance (Roll Call)
+      let sDailyAttendance: DailyAttendanceRecord[] | null = null;
+      let dailyAttendanceFetchSuccess = false;
+      try {
+        sDailyAttendance = await fetchSupabaseDailyAttendance();
+        dailyAttendanceFetchSuccess = true;
+      } catch (err: any) {
+        console.warn("Failed fetching daily attendance. Falling back to local cache.", err);
+      }
+
+      if (dailyAttendanceFetchSuccess && sDailyAttendance !== null) {
+        const dailyMap = new Map<string, DailyAttendanceRecord>();
+        sDailyAttendance.forEach(r => {
+          if (r && r.studentId && r.date) {
+            dailyMap.set(`${r.studentId}_${r.date}`, r);
+          }
+        });
+        dailyAttendance.forEach(r => {
+          if (r && r.studentId && r.date) {
+            const key = `${r.studentId}_${r.date}`;
+            const existing = dailyMap.get(key);
+            if (!existing) {
+              dailyMap.set(key, r);
+            } else {
+              const localTime = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
+              const remoteTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+              if (localTime >= remoteTime) {
+                dailyMap.set(key, r);
+              }
+            }
+          }
+        });
+        const activeDaily = Array.from(dailyMap.values());
+        setDailyAttendance(activeDaily);
+        localStorage.setItem('ea_daily_attendance', JSON.stringify(activeDaily));
+        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(activeDaily));
+        saveSupabaseDailyAttendance(activeDaily).catch(e => console.warn("Background sync daily attendance failed", e));
+      }
+
       // 6. Fetch & Sync Bills
       let sBills: StudentBill[] | null = null;
       let billsFetchSuccess = false;
@@ -675,12 +733,21 @@ export default function App() {
       finalAttendance = [];
     }
 
-    finalAttendance = finalAttendance.filter(a => {
-      const studentExists = cleanStudents.some(s => s.id === a.studentId || s.rollNumber === a.studentId);
-      return studentExists && !isStudentDeleted({ id: a.studentId });
-    });
-    setAttendance(finalAttendance);
-    localStorage.setItem('ea_attendance', JSON.stringify(finalAttendance));
+    if (finalAttendance.length > 0) {
+      finalAttendance = finalAttendance.filter(a => !isStudentDeleted({ id: a.studentId }));
+      setAttendance(finalAttendance);
+      localStorage.setItem('ea_attendance', JSON.stringify(finalAttendance));
+    }
+
+    const cachedDailyAttendance = localStorage.getItem('ea_daily_attendance') || localStorage.getItem('mock_supabase_ea_daily_attendance');
+    if (cachedDailyAttendance !== null) {
+      try {
+        const parsedDaily = JSON.parse(cachedDailyAttendance) as DailyAttendanceRecord[];
+        if (Array.isArray(parsedDaily) && parsedDaily.length > 0) {
+          setDailyAttendance(parsedDaily.filter(r => !isStudentDeleted({ id: r.studentId })));
+        }
+      } catch (e) {}
+    }
 
     if (cachedBills !== null) {
       try {
@@ -771,8 +838,59 @@ export default function App() {
             localStorage.setItem('ea_grades', JSON.stringify(master.grades));
           }
           if (Array.isArray(master.attendance) && master.attendance.length > 0) {
-            setAttendance(master.attendance);
-            localStorage.setItem('ea_attendance', JSON.stringify(master.attendance));
+            setAttendance(prev => {
+              const attMap = new Map<string, Attendance>();
+              master.attendance!.forEach(a => {
+                const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+                attMap.set(key, a);
+              });
+              prev.forEach(a => {
+                const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+                const existing = attMap.get(key);
+                if (!existing) {
+                  attMap.set(key, a);
+                } else {
+                  const localTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+                  const remoteTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+                  if (localTime >= remoteTime) {
+                    attMap.set(key, a);
+                  }
+                }
+              });
+              const merged = Array.from(attMap.values());
+              localStorage.setItem('ea_attendance', JSON.stringify(merged));
+              localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(merged));
+              return merged;
+            });
+          }
+          if (Array.isArray(master.dailyAttendance) && master.dailyAttendance.length > 0) {
+            setDailyAttendance(prev => {
+              const dailyMap = new Map<string, DailyAttendanceRecord>();
+              master.dailyAttendance!.forEach(r => {
+                if (r && r.studentId && r.date) {
+                  dailyMap.set(`${r.studentId}_${r.date}`, r);
+                }
+              });
+              prev.forEach(r => {
+                if (r && r.studentId && r.date) {
+                  const key = `${r.studentId}_${r.date}`;
+                  const existing = dailyMap.get(key);
+                  if (!existing) {
+                    dailyMap.set(key, r);
+                  } else {
+                    const localTime = r.updatedAt ? new Date(r.updatedAt).getTime() : 0;
+                    const remoteTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+                    if (localTime >= remoteTime) {
+                      dailyMap.set(key, r);
+                    }
+                  }
+                }
+              });
+              const merged = Array.from(dailyMap.values());
+              localStorage.setItem('ea_daily_attendance', JSON.stringify(merged));
+              localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(merged));
+              return merged;
+            });
           }
           if (Array.isArray(master.bills) && master.bills.length > 0) {
             setBills(master.bills);
@@ -834,6 +952,10 @@ export default function App() {
         if (Array.isArray(p.attendance)) {
           setAttendance(p.attendance);
           localStorage.setItem('ea_attendance', JSON.stringify(p.attendance));
+        }
+        if (Array.isArray(p.dailyAttendance)) {
+          setDailyAttendance(p.dailyAttendance);
+          localStorage.setItem('ea_daily_attendance', JSON.stringify(p.dailyAttendance));
         }
         if (Array.isArray(p.bills)) {
           setBills(p.bills);
@@ -912,6 +1034,10 @@ export default function App() {
       } else if (entity === 'attendance' && Array.isArray(payload)) {
         setAttendance(payload);
         localStorage.setItem('ea_attendance', JSON.stringify(payload));
+      } else if ((entity === 'dailyAttendance' || entity === 'daily-attendance') && Array.isArray(payload)) {
+        setDailyAttendance(payload);
+        localStorage.setItem('ea_daily_attendance', JSON.stringify(payload));
+        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(payload));
       } else if (entity === 'bills' && Array.isArray(payload)) {
         setBills(payload);
         localStorage.setItem('ea_bills', JSON.stringify(payload));

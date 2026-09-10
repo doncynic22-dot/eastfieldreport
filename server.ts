@@ -894,8 +894,32 @@ async function startServer() {
       } catch (e) {}
     }
     if (Array.isArray(incoming.grades)) db.grades = incoming.grades;
-    if (Array.isArray(incoming.attendance)) db.attendance = incoming.attendance;
-    if (Array.isArray(incoming.dailyAttendance)) db.dailyAttendance = incoming.dailyAttendance;
+    if (Array.isArray(incoming.attendance)) {
+      const attMap = new Map<string, any>();
+      (db.attendance || []).forEach((a: any) => {
+        const key = `${a.studentId}_${a.term || ''}_${a.year || a.academicYear || ''}`;
+        attMap.set(key, a);
+      });
+      incoming.attendance.forEach((a: any) => {
+        const key = `${a.studentId}_${a.term || ''}_${a.year || a.academicYear || ''}`;
+        attMap.set(key, a);
+      });
+      db.attendance = Array.from(attMap.values());
+    }
+    if (Array.isArray(incoming.dailyAttendance)) {
+      const dailyMap = new Map<string, any>();
+      (db.dailyAttendance || []).forEach((r: any) => {
+        if (r && r.studentId && r.date) {
+          dailyMap.set(`${r.studentId}_${r.date}`, r);
+        }
+      });
+      incoming.dailyAttendance.forEach((r: any) => {
+        if (r && r.studentId && r.date) {
+          dailyMap.set(`${r.studentId}_${r.date}`, r);
+        }
+      });
+      db.dailyAttendance = Array.from(dailyMap.values());
+    }
     if (Array.isArray(incoming.bills)) db.bills = incoming.bills;
     if (Array.isArray(incoming.feePayments)) db.feePayments = incoming.feePayments;
     if (Array.isArray(incoming.feeStructures)) db.feeStructures = incoming.feeStructures;
@@ -1004,11 +1028,11 @@ async function startServer() {
 
     const attMap = new Map<string, any>();
     (db.attendance || []).forEach(a => {
-      const key = `${a.studentId}_${a.term}_${a.academicYear || ''}`;
+      const key = `${a.studentId}_${a.term || ''}_${a.year || a.academicYear || ''}`;
       attMap.set(key, a);
     });
     attendance.forEach(a => {
-      const key = `${a.studentId}_${a.term}_${a.academicYear || ''}`;
+      const key = `${a.studentId}_${a.term || ''}_${a.year || a.academicYear || ''}`;
       attMap.set(key, a);
     });
 
@@ -1020,16 +1044,29 @@ async function startServer() {
   // Daily Attendance: GET & POST
   app.get("/api/daily-attendance", (req, res) => {
     const db = loadServerDatabase();
-    return res.status(200).json({ status: "success", data: db.dailyAttendance || [], version: db.version });
+    return res.status(200).json({ status: "success", data: db.dailyAttendance || [], count: (db.dailyAttendance || []).length, version: db.version });
   });
 
   app.post("/api/daily-attendance", (req, res) => {
     const records = req.body?.dailyAttendance || req.body;
     if (!Array.isArray(records)) return res.status(400).json({ status: "error", message: "Expected array" });
     const db = loadServerDatabase();
-    db.dailyAttendance = records;
-    saveServerDatabase(db, "dailyAttendance", records);
-    return res.status(200).json({ status: "success", version: db.version });
+
+    const dailyMap = new Map<string, any>();
+    (db.dailyAttendance || []).forEach(r => {
+      if (r && r.studentId && r.date) {
+        dailyMap.set(`${r.studentId}_${r.date}`, r);
+      }
+    });
+    records.forEach(r => {
+      if (r && r.studentId && r.date) {
+        dailyMap.set(`${r.studentId}_${r.date}`, r);
+      }
+    });
+
+    db.dailyAttendance = Array.from(dailyMap.values());
+    saveServerDatabase(db, "dailyAttendance", db.dailyAttendance);
+    return res.status(200).json({ status: "success", count: db.dailyAttendance.length, version: db.version });
   });
 
   // Bills: GET & POST
