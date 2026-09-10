@@ -2051,6 +2051,8 @@ export default function App() {
                 setGrades={setGrades}
                 attendance={attendance}
                 setAttendance={setAttendance}
+                dailyAttendance={dailyAttendance}
+                setDailyAttendance={setDailyAttendance}
                 bills={bills}
                 onUpdateBill={handleUpdateBill}
                 config={config}
@@ -2100,6 +2102,7 @@ export default function App() {
               setGrades={setGrades}
               attendance={attendance}
               setAttendance={setAttendance}
+              dailyAttendance={dailyAttendance}
               config={config}
               classes={INITIAL_CLASSES}
               currentUser={currentUser}

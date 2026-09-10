@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill, User } from '../types';
+import { Student, Subject, ReportConfig, Grade, Attendance, AcademicLevel, StudentBill, User, DailyAttendanceRecord } from '../types';
 import { User as UserIcon, Users, GraduationCap, School, BookOpen, Settings, Search, Plus, Edit2, Trash2, Sliders, Check, AlertCircle, FileSpreadsheet, Upload, Download, Image as ImageIcon, X, LogOut, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, HelpCircle, Lock, Share2, MessageSquare, Mail, Phone, ArrowUpRight, Calendar, Sparkles, Save, CheckCircle2, RotateCcw, Printer, FileText, ExternalLink, CreditCard, BarChart3, Camera, UserPlus, Boxes, Award, History, Contact, PhoneCall, Briefcase, BadgeCheck, UserCheck, MapPin, IdCard, Zap, Eye, Database, RefreshCw, Library, Copy, FileCode, Wrench } from 'lucide-react';
 import ReportPDF from './ReportPDF';
 import FeesCollectionModule from './FeesCollectionModule';
@@ -23,6 +23,7 @@ import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotio
 import { formatReopeningDate } from '../utils/dateUtils';
 import { INITIAL_SUBJECTS, INITIAL_USERS } from '../data/mockData';
 import { matchesSubject } from '../utils/subjectUtils';
+import { calculateStudentTermAttendance } from '../utils/attendanceUtils';
 
 interface AdminDashboardProps {
   students: Student[];
@@ -34,6 +35,8 @@ interface AdminDashboardProps {
   setGrades?: React.Dispatch<React.SetStateAction<Grade[]>>;
   attendance: Attendance[];
   setAttendance: React.Dispatch<React.SetStateAction<Attendance[]>>;
+  dailyAttendance?: DailyAttendanceRecord[];
+  setDailyAttendance?: React.Dispatch<React.SetStateAction<DailyAttendanceRecord[]>>;
   bills?: StudentBill[];
   onUpdateBill?: (bill: StudentBill) => void;
   config: ReportConfig;
@@ -62,6 +65,8 @@ export default function AdminDashboard({
   setGrades,
   attendance,
   setAttendance,
+  dailyAttendance,
+  setDailyAttendance,
   bills,
   onUpdateBill,
   config,
@@ -1749,14 +1754,38 @@ export default function AdminDashboard({
     classStudentTotals.sort((a, b) => b.total - a.total);
     const rankIndex = classStudentTotals.findIndex(item => item.studentId === studentId);
     const studentData = classStudentTotals.find(item => item.studentId === studentId);
-    const attRecord = attendance.find(a => a.studentId === studentId);
+
+    const effectiveDailyAtt = dailyAttendance || (() => {
+      try {
+        const s = localStorage.getItem('ea_daily_attendance');
+        return s ? JSON.parse(s) : [];
+      } catch {
+        return [];
+      }
+    })();
+
+    const calcAtt = calculateStudentTermAttendance(
+      targetStudent,
+      config.term,
+      config.schoolYear,
+      effectiveDailyAtt,
+      attendance,
+      students
+    );
+
+    const attRecord = attendance.find(
+      a => a.studentId === studentId && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear)
+    );
+
+    const finalPresent = calcAtt.totalDays > 0 ? calcAtt.daysPresent : (attRecord?.daysPresent ?? 0);
+    const finalTotal = calcAtt.totalDays > 0 ? calcAtt.totalDays : (attRecord?.totalDays ?? 0);
 
     return {
       totalScore: studentData?.total || 0,
       averageScore: studentData?.avg || 0,
       classRank: rankIndex >= 0 ? rankIndex + 1 : undefined,
       totalStudents: sameClassStudents.length,
-      attendanceSummary: attRecord ? `${attRecord.daysPresent} present out of ${attRecord.totalDays} academic days` : undefined
+      attendanceSummary: finalTotal > 0 ? `${finalPresent} present out of ${finalTotal} academic days` : undefined
     };
   };
 
@@ -2540,7 +2569,38 @@ export default function AdminDashboard({
                   grades.filter((g) => g.studentId === selectedStudent.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear))
                 }
                 attendance={
-                  attendance.find((a) => a.studentId === selectedStudent.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear))
+                  (() => {
+                    const effectiveDailyAtt = dailyAttendance || (() => {
+                      try {
+                        const s = localStorage.getItem('ea_daily_attendance');
+                        return s ? JSON.parse(s) : [];
+                      } catch {
+                        return [];
+                      }
+                    })();
+                    const calcAtt = calculateStudentTermAttendance(
+                      selectedStudent,
+                      config.term,
+                      config.schoolYear,
+                      effectiveDailyAtt,
+                      attendance,
+                      students
+                    );
+                    const existing = attendance.find((a) => a.studentId === selectedStudent.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear));
+                    if (calcAtt.totalDays > 0) {
+                      return {
+                        studentId: selectedStudent.id,
+                        term: config.term,
+                        year: config.schoolYear,
+                        totalDays: calcAtt.totalDays,
+                        daysPresent: calcAtt.daysPresent,
+                        remarks: existing?.remarks || calcAtt.remarks,
+                        teacherId: existing?.teacherId || 'admin',
+                        updatedAt: existing?.updatedAt || new Date().toISOString()
+                      };
+                    }
+                    return existing;
+                  })()
                 }
                 subjects={subjects}
                 config={config}
@@ -6264,9 +6324,38 @@ export default function AdminDashboard({
                     (g) => g.studentId === st.id && (!g.term || g.term === config.term) && (!g.year || g.year === config.schoolYear)
                   );
 
-                  const stAttendance = attendance.find(
+                  const effectiveDailyAtt = dailyAttendance || (() => {
+                    try {
+                      const s = localStorage.getItem('ea_daily_attendance');
+                      return s ? JSON.parse(s) : [];
+                    } catch {
+                      return [];
+                    }
+                  })();
+
+                  const calcAtt = calculateStudentTermAttendance(
+                    st,
+                    config.term,
+                    config.schoolYear,
+                    effectiveDailyAtt,
+                    attendance,
+                    students
+                  );
+
+                  const existingAtt = attendance.find(
                     (a) => a.studentId === st.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear)
                   );
+
+                  const stAttendance: Attendance | undefined = calcAtt.totalDays > 0 ? {
+                    studentId: st.id,
+                    term: config.term,
+                    year: config.schoolYear,
+                    totalDays: calcAtt.totalDays,
+                    daysPresent: calcAtt.daysPresent,
+                    remarks: existingAtt?.remarks || calcAtt.remarks,
+                    teacherId: existingAtt?.teacherId || 'admin',
+                    updatedAt: existingAtt?.updatedAt || new Date().toISOString()
+                  } : existingAtt;
 
                   const stClassList = students.filter((s) => s.className === st.className);
 

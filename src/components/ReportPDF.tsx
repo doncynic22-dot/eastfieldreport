@@ -905,11 +905,11 @@ export default function ReportPDF({
                         <label className="text-[10px] text-gray-500 block">Total School Days</label>
                         <input
                           type="number"
-                          value={attendance?.totalDays ?? 60}
-                          min={1}
+                          value={attendance?.totalDays ?? 0}
+                          min={0}
                           onChange={(e) => {
                             const val = parseInt(e.target.value) || 0;
-                            onUpdateAttendance(attendance?.daysPresent ?? Math.min(55, val), val, attendance?.remarks);
+                            onUpdateAttendance(attendance?.daysPresent ?? 0, val, attendance?.remarks);
                           }}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900 font-mono"
                         />
@@ -918,12 +918,12 @@ export default function ReportPDF({
                         <label className="text-[10px] text-gray-500 block">Days Present</label>
                         <input
                           type="number"
-                          value={attendance?.daysPresent ?? 55}
+                          value={attendance?.daysPresent ?? 0}
                           min={0}
                           max={attendance?.totalDays ?? 100}
                           onChange={(e) => {
                             const val = parseInt(e.target.value) || 0;
-                            onUpdateAttendance(val, attendance?.totalDays ?? 60, attendance?.remarks);
+                            onUpdateAttendance(val, attendance?.totalDays ?? 0, attendance?.remarks);
                           }}
                           className="w-full text-xs p-1.5 rounded border border-mauve-500/20 bg-white text-mauve-900 font-mono"
                         />
@@ -941,8 +941,8 @@ export default function ReportPDF({
                         value={attendance?.remarks ?? ''}
                         onChange={(e) => {
                           onUpdateAttendance(
-                            attendance?.daysPresent ?? 55,
-                            attendance?.totalDays ?? 60,
+                            attendance?.daysPresent ?? 0,
+                            attendance?.totalDays ?? 0,
                             e.target.value
                           );
                         }}
@@ -2502,7 +2502,7 @@ export default function ReportPDF({
                         <div className="pt-1 border-t border-mauve-500/10 flex justify-between font-bold text-mauve-900 uppercase text-[10px]">
                           <span>Attendance Rate:</span>
                           <span>
-                            {((attendance.daysPresent / attendance.totalDays) * 100).toFixed(0)}%
+                            {attendance.totalDays > 0 ? `${((attendance.daysPresent / attendance.totalDays) * 100).toFixed(0)}%` : '—'}
                           </span>
                         </div>
                       </div>

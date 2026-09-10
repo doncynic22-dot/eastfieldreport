@@ -4,13 +4,14 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel } from '../types';
+import { Student, User, Subject, ReportConfig, Grade, Attendance, AcademicLevel, DailyAttendanceRecord } from '../types';
 import { BookOpen, UserCheck, Search, CheckCircle2, Save, Users, Calendar, Award, LogIn, LogOut, UserPlus, ShieldAlert, School, Eye, EyeOff, KeyRound, Lock, Mail, Send, Copy, Check, ExternalLink, ShieldCheck, RefreshCw, FileSpreadsheet, Edit2, Camera, Upload, X, Sparkles, AlertCircle, Phone, MapPin } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { sendPasswordResetEmail } from '../services/emailDispatcher';
 import { getSupabaseCredentials, saveSupabaseGrades, saveSupabaseAttendance } from '../lib/supabase';
 import academyHubBg from '../assets/images/academy_hub_bg_sharp_1786006863900.jpg';
 import { matchesSubject, findMatchingGrade } from '../utils/subjectUtils';
+import { calculateStudentTermAttendance } from '../utils/attendanceUtils';
 import JHS3MockExamModule from './JHS3MockExamModule';
 
 interface TeacherDashboardProps {
@@ -22,6 +23,7 @@ interface TeacherDashboardProps {
   setGrades: React.Dispatch<React.SetStateAction<Grade[]>>;
   attendance: Attendance[];
   setAttendance: React.Dispatch<React.SetStateAction<Attendance[]>>;
+  dailyAttendance?: DailyAttendanceRecord[];
   config: ReportConfig;
   classes: { NURSERY: string[]; KINDERGARTEN?: string[]; PRIMARY: string[]; JHS: string[] };
   currentUser: User | null;
@@ -38,6 +40,7 @@ export default function TeacherDashboard({
   setGrades,
   attendance,
   setAttendance,
+  dailyAttendance,
   config,
   classes,
   currentUser,
@@ -787,21 +790,39 @@ export default function TeacherDashboard({
         nurseryRemark: loadedNurseryRemark
       };
 
-      // Load attendance strictly for active term and school year
+      // Calculate attendance strictly for active term and school year
+      const effectiveDailyAtt = dailyAttendance || (() => {
+        try {
+          const s = localStorage.getItem('ea_daily_attendance');
+          return s ? JSON.parse(s) : [];
+        } catch {
+          return [];
+        }
+      })();
+
+      const calcAtt = calculateStudentTermAttendance(
+        student,
+        config.term,
+        config.schoolYear,
+        effectiveDailyAtt,
+        attendance,
+        students
+      );
+
       const matchedAtt = attendance.find(
         a => a.studentId === student.id && (!a.term || a.term === config.term) && (!a.year || a.year === config.schoolYear)
       );
 
       initialAttendance[student.id] = {
-        totalDays: matchedAtt ? matchedAtt.totalDays.toString() : '60',
-        daysPresent: matchedAtt ? matchedAtt.daysPresent.toString() : '60',
-        remarks: matchedAtt ? matchedAtt.remarks : ''
+        totalDays: calcAtt.totalDays > 0 ? calcAtt.totalDays.toString() : (matchedAtt ? matchedAtt.totalDays.toString() : ''),
+        daysPresent: calcAtt.totalDays > 0 ? calcAtt.daysPresent.toString() : (matchedAtt ? matchedAtt.daysPresent.toString() : ''),
+        remarks: matchedAtt ? matchedAtt.remarks : (calcAtt.totalDays > 0 ? calcAtt.remarks : '')
       };
     });
 
     setGradeInputs(initialGrades);
     setAttendanceInputs(initialAttendance);
-  }, [selectedClass, selectedSubject, currentUser, config.term, config.schoolYear, grades, attendance]);
+  }, [selectedClass, selectedSubject, currentUser, config.term, config.schoolYear, grades, attendance, dailyAttendance]);
 
   // Automated Grading Formula (maps raw scores to code index letters)
   const getGradeLetter = (total: number) => {
@@ -884,13 +905,16 @@ export default function TeacherDashboard({
           a => a.studentId === student.id && a.term === config.term && a.year === config.schoolYear
         ) || attendance.find(a => a.studentId === student.id);
 
+        const finalTotalDays = Number(sAtt.totalDays) || existingAtt?.totalDays || 0;
+        const finalDaysPresent = sAtt.daysPresent !== undefined && sAtt.daysPresent !== '' ? Number(sAtt.daysPresent) : (existingAtt?.daysPresent ?? 0);
+
         const attRecord: Attendance = {
           studentId: student.id,
           term: config.term,
           year: config.schoolYear,
-          totalDays: existingAtt?.totalDays || Number(sAtt.totalDays) || 60,
-          daysPresent: sAtt.daysPresent ? Number(sAtt.daysPresent) : 60,
-          remarks: sAtt.remarks,
+          totalDays: finalTotalDays,
+          daysPresent: Math.min(finalDaysPresent, finalTotalDays > 0 ? finalTotalDays : finalDaysPresent),
+          remarks: sAtt.remarks || existingAtt?.remarks || 'Regular',
           teacherId: currentUser.id,
           updatedAt: new Date().toISOString()
         };

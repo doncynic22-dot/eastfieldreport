@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { saveSupabaseAttendance } from '../lib/supabase';
+import { calculateStudentTermAttendance } from '../utils/attendanceUtils';
 
 interface StudentAttendancePortalProps {
   students: Student[];
@@ -302,62 +303,74 @@ export default function StudentAttendancePortal({
   const handleSaveAndSyncTermRegister = () => {
     const currentYear = config.schoolYear;
     const currentTerm = config.term;
-
-    const updatedAttendance = [...attendance];
     const targetStudents = filteredStudents.length > 0 ? filteredStudents : students;
 
+    // 1. Ensure all viewed students on the selectedDate have an explicit daily record
+    const updatedDailyAttendance = [...dailyAttendance];
     targetStudents.forEach(student => {
-      // Find all daily records for this student in this term & year
-      const studentDailyLogs = dailyAttendance.filter(
-        r => r.studentId === student.id && r.term === currentTerm && r.year === currentYear
+      const existingIdx = updatedDailyAttendance.findIndex(
+        r => r.studentId === student.id && r.date === selectedDate
       );
+      const currentStatus = getStudentStatusForDate(student.id);
 
-      const daysPresentLog = studentDailyLogs.filter(
-        r => r.status === 'PRESENT'
-      ).length;
-
-      const daysAbsentLog = studentDailyLogs.filter(
-        r => r.status === 'ABSENT'
-      ).length;
-
-      const attIdx = updatedAttendance.findIndex(
-        a => a.studentId === student.id && a.term === currentTerm && a.year === currentYear
-      );
-
-      const existingRecord = attIdx >= 0 ? updatedAttendance[attIdx] : null;
-      const baseTotalDays = Math.max(existingRecord?.totalDays || 60, studentDailyLogs.length, 60);
-
-      let effectivePresent = baseTotalDays;
-      if (studentDailyLogs.length > 0) {
-        effectivePresent = Math.max(0, baseTotalDays - daysAbsentLog);
-      } else if (existingRecord) {
-        effectivePresent = existingRecord.daysPresent;
-      }
-
-      const pct = baseTotalDays > 0 ? Math.round((effectivePresent / baseTotalDays) * 100) : 100;
-      const autoRemark = pct >= 85 ? 'Regular' : pct >= 65 ? 'Satisfactory' : 'Needs Support';
-      const finalRemark = existingRecord?.remarks || autoRemark;
-
-      if (attIdx >= 0) {
-        updatedAttendance[attIdx] = {
-          ...updatedAttendance[attIdx],
-          daysPresent: effectivePresent,
-          totalDays: baseTotalDays,
-          remarks: finalRemark,
+      if (existingIdx >= 0) {
+        updatedDailyAttendance[existingIdx] = {
+          ...updatedDailyAttendance[existingIdx],
+          status: currentStatus,
+          term: currentTerm,
+          year: currentYear,
           teacherId: currentUser?.id || 'admin',
           updatedAt: new Date().toISOString()
         };
       } else {
-        updatedAttendance.push({
+        updatedDailyAttendance.push({
+          id: `att-${student.id}-${selectedDate}-${Date.now()}`,
           studentId: student.id,
+          date: selectedDate,
+          status: currentStatus,
           term: currentTerm,
           year: currentYear,
-          daysPresent: effectivePresent,
-          totalDays: baseTotalDays,
-          remarks: finalRemark,
           teacherId: currentUser?.id || 'admin',
           updatedAt: new Date().toISOString()
         });
+      }
+    });
+
+    setDailyAttendance(updatedDailyAttendance);
+
+    // 2. Calculate each student's term attendance:
+    // Strictly count days marked PRESENT against total days attendance was marked for the term
+    const updatedAttendance = [...attendance];
+
+    students.forEach(student => {
+      const calc = calculateStudentTermAttendance(
+        student,
+        currentTerm,
+        currentYear,
+        updatedDailyAttendance,
+        updatedAttendance,
+        students
+      );
+
+      const attIdx = updatedAttendance.findIndex(
+        a => a.studentId === student.id && (!a.term || a.term === currentTerm) && (!a.year || a.year === currentYear)
+      );
+
+      const attRecord: Attendance = {
+        studentId: student.id,
+        term: currentTerm,
+        year: currentYear,
+        daysPresent: calc.daysPresent,
+        totalDays: calc.totalDays,
+        remarks: calc.remarks,
+        teacherId: currentUser?.id || 'admin',
+        updatedAt: new Date().toISOString()
+      };
+
+      if (attIdx >= 0) {
+        updatedAttendance[attIdx] = attRecord;
+      } else if (calc.totalDays > 0) {
+        updatedAttendance.push(attRecord);
       }
     });
 
@@ -365,7 +378,7 @@ export default function StudentAttendancePortal({
 
     // Save locally
     try {
-      localStorage.setItem('ea_daily_attendance', JSON.stringify(dailyAttendance));
+      localStorage.setItem('ea_daily_attendance', JSON.stringify(updatedDailyAttendance));
       localStorage.setItem('ea_attendance', JSON.stringify(updatedAttendance));
       localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(updatedAttendance));
     } catch (e) {
@@ -383,27 +396,25 @@ export default function StudentAttendancePortal({
 
   // Get term attendance summary for a student (live & persistent)
   const getTermAttendanceSummary = (studentId: string) => {
-    const studentDailyLogs = dailyAttendance.filter(
-      r => r.studentId === studentId && r.term === config.term && r.year === config.schoolYear
-    );
-
-    const record = attendance.find(
-      a => a.studentId === studentId && a.term === config.term && a.year === config.schoolYear
-    );
-
-    let total = record?.totalDays || 60;
-    let present = record?.daysPresent;
-
-    if (studentDailyLogs.length > 0) {
-      const daysAbsentLog = studentDailyLogs.filter(r => r.status === 'ABSENT').length;
-      total = Math.max(total, studentDailyLogs.length, 60);
-      present = Math.max(0, total - daysAbsentLog);
-    } else if (present === undefined) {
-      present = 60;
+    const student = students.find(s => s.id === studentId);
+    if (!student) {
+      return { present: 0, total: 0, pct: 0 };
     }
 
-    const pct = total > 0 ? Math.round((present / total) * 100) : 100;
-    return { present, total, pct };
+    const calc = calculateStudentTermAttendance(
+      student,
+      config.term,
+      config.schoolYear,
+      dailyAttendance,
+      attendance,
+      students
+    );
+
+    return {
+      present: calc.daysPresent,
+      total: calc.totalDays,
+      pct: calc.rate
+    };
   };
 
   // ==========================================
