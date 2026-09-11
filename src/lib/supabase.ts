@@ -669,808 +669,7 @@ NOTIFY pgrst, 'reload schema';
 `;
 
 // SQL Script for setting up tables in Supabase Console
-export const SUPABASE_SQL_REPAIR = `-- DATABASE SYNC REPAIR SCRIPT (MIGRATION)
--- Execute this SQL script in your Supabase SQL Editor to add missing columns and reload the schema cache.
-
--- 1. Fix ea_config table columns and types
--- Force convert ID column from UUID to VARCHAR if needed
-ALTER TABLE public.ea_config ALTER COLUMN id TYPE VARCHAR;
-ALTER TABLE public.ea_config ALTER COLUMN id SET DEFAULT 'global_config';
-UPDATE public.ea_config SET id = 'global_config' WHERE id IS NOT NULL AND id <> 'global_config';
-
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_name VARCHAR DEFAULT 'Eastfield Academy';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_year VARCHAR DEFAULT '2025/2026';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS principal_name VARCHAR DEFAULT 'Dr. Evelyn Asare-Bediako';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS principal_signature_url VARCHAR;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_logo_text VARCHAR DEFAULT 'EA';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_logo_url VARCHAR;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS class_score_weight INTEGER DEFAULT 50;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS exam_score_weight INTEGER DEFAULT 50;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS grading_scale JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS report_template VARCHAR DEFAULT 'dynamic';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS reopening_date VARCHAR DEFAULT '2026-09-15';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS last_promoted_year VARCHAR;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS auto_promote_on_reopening BOOLEAN DEFAULT true;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_motto VARCHAR DEFAULT 'Knowledge, Character & Excellence';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS custom_notice_note TEXT;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_position_in_class BOOLEAN DEFAULT true;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_conduct_column BOOLEAN DEFAULT true;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_attendance_section BOOLEAN DEFAULT true;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS accent_color VARCHAR DEFAULT '#1e1b4b';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS watermark_text VARCHAR DEFAULT 'EASTFIELD ACADEMY';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
--- 2. Fix ea_students table columns
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS name VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS roll_number VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS level VARCHAR DEFAULT 'PRIMARY';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS class_name VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_name VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_email VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_phone VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS photo_url TEXT DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
--- 3. Fix ea_teachers table columns
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS name VARCHAR DEFAULT '';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS email VARCHAR DEFAULT '';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS role VARCHAR DEFAULT 'TEACHER';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS password VARCHAR;
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS level VARCHAR DEFAULT 'PRIMARY';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS subjects JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS classes JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS date_of_birth VARCHAR DEFAULT '';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS phone_number VARCHAR DEFAULT '';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS qualification VARCHAR DEFAULT '';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS profile_picture TEXT DEFAULT '';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS hometown VARCHAR DEFAULT '';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS ghana_card_number VARCHAR DEFAULT '';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
--- 4. Fix ea_grades table columns
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS student_id VARCHAR DEFAULT '';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS subject_id VARCHAR DEFAULT '';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS class_score NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS exam_score NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS total_score NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS grade_letter VARCHAR DEFAULT 'F';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS remarks VARCHAR DEFAULT '';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS nursery_remark VARCHAR DEFAULT '';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS year VARCHAR DEFAULT '2025/2026';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS teacher_id VARCHAR DEFAULT '';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
--- 5. Fix ea_attendance table columns
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS student_id VARCHAR DEFAULT '';
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS year VARCHAR DEFAULT '2025/2026';
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS total_days INTEGER DEFAULT 0;
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS days_present INTEGER DEFAULT 0;
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS remarks VARCHAR DEFAULT '';
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS teacher_id VARCHAR DEFAULT '';
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
--- 6. Create / Fix ea_bills table columns for per-student bills
-CREATE TABLE IF NOT EXISTS public.ea_bills (
-  student_id VARCHAR PRIMARY KEY,
-  arrears VARCHAR DEFAULT '0.00',
-  tuition VARCHAR DEFAULT '0.00',
-  computing VARCHAR DEFAULT '0.00',
-  utility VARCHAR DEFAULT '0.00',
-  stationery VARCHAR DEFAULT '0.00',
-  pta VARCHAR DEFAULT '0.00',
-  reopening_date VARCHAR,
-  contact_number VARCHAR,
-  term VARCHAR DEFAULT 'Term 1',
-  year VARCHAR DEFAULT '2025/2026',
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS arrears VARCHAR DEFAULT '0.00';
-ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS tuition VARCHAR DEFAULT '0.00';
-ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS computing VARCHAR DEFAULT '0.00';
-ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS utility VARCHAR DEFAULT '0.00';
-ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS stationery VARCHAR DEFAULT '0.00';
-ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS pta VARCHAR DEFAULT '0.00';
-ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS reopening_date VARCHAR;
-ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS contact_number VARCHAR;
-ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
-ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS year VARCHAR DEFAULT '2025/2026';
-ALTER TABLE public.ea_bills ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
--- 7. Create / Fix Additional Tables for Global Synchronisation (Fee Payments, Fee Structures, Daily Collections, Sync Logs)
-CREATE TABLE IF NOT EXISTS public.ea_fee_payments (
-  id VARCHAR PRIMARY KEY,
-  receipt_number VARCHAR NOT NULL,
-  student_id VARCHAR NOT NULL,
-  student_name VARCHAR NOT NULL,
-  class_name VARCHAR NOT NULL,
-  fee_type VARCHAR NOT NULL,
-  amount_paid NUMERIC DEFAULT 0,
-  total_fee_amount NUMERIC DEFAULT 0,
-  payment_method VARCHAR DEFAULT 'Cash',
-  payment_date VARCHAR NOT NULL,
-  status VARCHAR DEFAULT 'Paid',
-  remarks VARCHAR DEFAULT '',
-  recorded_by VARCHAR DEFAULT 'Admin',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS receipt_number VARCHAR;
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS student_id VARCHAR;
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS student_name VARCHAR;
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS class_name VARCHAR;
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS fee_type VARCHAR;
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS amount_paid NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS total_fee_amount NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS payment_method VARCHAR DEFAULT 'Cash';
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS payment_date VARCHAR;
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'Paid';
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS remarks VARCHAR DEFAULT '';
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS recorded_by VARCHAR DEFAULT 'Admin';
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-ALTER TABLE public.ea_fee_payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
-CREATE TABLE IF NOT EXISTS public.ea_fee_structures (
-  id VARCHAR PRIMARY KEY,
-  level VARCHAR NOT NULL,
-  tuition NUMERIC DEFAULT 0,
-  computing NUMERIC DEFAULT 0,
-  utility NUMERIC DEFAULT 0,
-  stationery NUMERIC DEFAULT 0,
-  pta NUMERIC DEFAULT 0,
-  uniform NUMERIC DEFAULT 0,
-  mock_exam NUMERIC DEFAULT 0,
-  term VARCHAR DEFAULT 'Term 1',
-  year VARCHAR DEFAULT '2025/2026',
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS level VARCHAR;
-ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS tuition NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS computing NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS utility NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS stationery NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS pta NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS uniform NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS mock_exam NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
-ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS year VARCHAR DEFAULT '2025/2026';
-ALTER TABLE public.ea_fee_structures ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
-CREATE TABLE IF NOT EXISTS public.ea_daily_collections (
-  id VARCHAR PRIMARY KEY,
-  collection_date VARCHAR NOT NULL,
-  total_cash NUMERIC DEFAULT 0,
-  total_momo NUMERIC DEFAULT 0,
-  total_bank NUMERIC DEFAULT 0,
-  total_cheque NUMERIC DEFAULT 0,
-  total_collected NUMERIC DEFAULT 0,
-  recorded_by VARCHAR DEFAULT 'Admin',
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS collection_date VARCHAR;
-ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS total_cash NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS total_momo NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS total_bank NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS total_cheque NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS total_collected NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS recorded_by VARCHAR DEFAULT 'Admin';
-ALTER TABLE public.ea_daily_collections ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
-CREATE TABLE IF NOT EXISTS public.ea_sync_logs (
-  id VARCHAR PRIMARY KEY,
-  action_type VARCHAR NOT NULL,
-  description TEXT NOT NULL,
-  performed_by VARCHAR DEFAULT 'System',
-  status VARCHAR DEFAULT 'SUCCESS',
-  details JSONB DEFAULT '{}'::jsonb,
-  timestamp VARCHAR NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS action_type VARCHAR;
-ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS description TEXT;
-ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS performed_by VARCHAR DEFAULT 'System';
-ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'SUCCESS';
-ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS details JSONB DEFAULT '{}'::jsonb;
-ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS timestamp VARCHAR;
-ALTER TABLE public.ea_sync_logs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
-CREATE TABLE IF NOT EXISTS public.ea_inventory (
-  id VARCHAR PRIMARY KEY,
-  location_name VARCHAR NOT NULL,
-  category VARCHAR DEFAULT 'Classroom',
-  student_chairs INTEGER DEFAULT 0,
-  student_tables INTEGER DEFAULT 0,
-  textbooks INTEGER DEFAULT 0,
-  washrooms INTEGER DEFAULT 0,
-  sinks INTEGER DEFAULT 0,
-  buses INTEGER DEFAULT 0,
-  teacher_chairs INTEGER DEFAULT 0,
-  teacher_tables INTEGER DEFAULT 0,
-  computers INTEGER DEFAULT 0,
-  projectors INTEGER DEFAULT 0,
-  notes TEXT,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS location_name VARCHAR;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS category VARCHAR DEFAULT 'Classroom';
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS student_chairs INTEGER DEFAULT 0;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS student_tables INTEGER DEFAULT 0;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS textbooks INTEGER DEFAULT 0;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS washrooms INTEGER DEFAULT 0;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS sinks INTEGER DEFAULT 0;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS buses INTEGER DEFAULT 0;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS teacher_chairs INTEGER DEFAULT 0;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS teacher_tables INTEGER DEFAULT 0;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS computers INTEGER DEFAULT 0;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS projectors INTEGER DEFAULT 0;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS custom_items TEXT;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS notes TEXT;
-ALTER TABLE public.ea_inventory ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
-CREATE TABLE IF NOT EXISTS public.ea_jhs_mock_exams (
-  id VARCHAR PRIMARY KEY,
-  student_id VARCHAR NOT NULL,
-  student_name VARCHAR NOT NULL,
-  roll_number VARCHAR,
-  class_name VARCHAR DEFAULT 'JHS 3',
-  exam_title VARCHAR DEFAULT 'Mock Examination 1',
-  academic_year VARCHAR DEFAULT '2025/2026',
-  scores JSONB DEFAULT '{}'::jsonb,
-  remarks TEXT,
-  updated_by VARCHAR,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-ALTER TABLE public.ea_jhs_mock_exams DISABLE ROW LEVEL SECURITY;
-
-CREATE TABLE IF NOT EXISTS public.ea_book_stock (
-  id VARCHAR PRIMARY KEY,
-  title VARCHAR NOT NULL,
-  category VARCHAR NOT NULL DEFAULT 'Textbook',
-  publication VARCHAR NOT NULL,
-  subject_type VARCHAR NOT NULL,
-  target_class VARCHAR DEFAULT 'All Classes',
-  unit_price NUMERIC DEFAULT 0,
-  cost_price NUMERIC DEFAULT 0,
-  quantity_in_stock INTEGER DEFAULT 0,
-  quantity_sold INTEGER DEFAULT 0,
-  quantity_remaining INTEGER DEFAULT 0,
-  low_stock_threshold INTEGER DEFAULT 20,
-  shelf_location VARCHAR,
-  notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-ALTER TABLE public.ea_book_stock DISABLE ROW LEVEL SECURITY;
-
-CREATE TABLE IF NOT EXISTS public.ea_book_sales (
-  id VARCHAR PRIMARY KEY,
-  receipt_number VARCHAR NOT NULL,
-  buyer_name VARCHAR NOT NULL,
-  buyer_type VARCHAR DEFAULT 'Parent',
-  student_id VARCHAR,
-  class_name VARCHAR,
-  contact_number VARCHAR,
-  items JSONB DEFAULT '[]'::jsonb,
-  subtotal NUMERIC DEFAULT 0,
-  discount NUMERIC DEFAULT 0,
-  total_amount NUMERIC DEFAULT 0,
-  payment_method VARCHAR DEFAULT 'Cash',
-  payment_reference VARCHAR,
-  sale_date VARCHAR NOT NULL,
-  sale_time VARCHAR,
-  recorded_by VARCHAR,
-  remarks TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-ALTER TABLE public.ea_book_sales DISABLE ROW LEVEL SECURITY;
-
--- 8. Disable Row Level Security (RLS) on all tables to ensure public frontend sync operates correctly
-ALTER TABLE public.ea_config DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_students DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_teachers DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_grades DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_attendance DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_bills DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_fee_payments DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_fee_structures DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_daily_collections DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_sync_logs DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_inventory DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_book_stock DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_book_sales DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_deleted_records DISABLE ROW LEVEL SECURITY;
-
--- 9. Reload PostgREST schema cache
-NOTIFY pgrst, 'reload schema';
-`;
-
-export const SUPABASE_SQL_SCHEMA = `-- ==============================================================================
--- OPTIONAL: NUKE AND RECREATE OPTION
--- If you want a complete clean slate (recommended if your existing tables are corrupt
--- or mismatched), uncomment the lines below to drop the old tables before creating them.
--- WARNING: This will delete existing database rows. You can back up your local data
--- first and push it to the fresh database afterward using the "Manual Push Backup"
--- button in the Admin Dashboard credentials panel.
--- ==============================================================================
--- DROP TABLE IF EXISTS public.ea_config CASCADE;
--- DROP TABLE IF EXISTS public.ea_students CASCADE;
--- DROP TABLE IF EXISTS public.ea_teachers CASCADE;
--- DROP TABLE IF EXISTS public.ea_grades CASCADE;
--- DROP TABLE IF EXISTS public.ea_attendance CASCADE;
--- ==============================================================================
-
--- 1. Create Config Table
-CREATE TABLE IF NOT EXISTS public.ea_config (
-  id VARCHAR PRIMARY KEY DEFAULT 'global_config',
-  school_name VARCHAR NOT NULL DEFAULT 'Eastfield Academy',
-  school_year VARCHAR NOT NULL DEFAULT '2025/2026',
-  term VARCHAR NOT NULL DEFAULT 'Term 1',
-  principal_name VARCHAR NOT NULL DEFAULT 'Dr. Evelyn Asare-Bediako',
-  principal_signature_url VARCHAR,
-  school_logo_text VARCHAR DEFAULT 'EA',
-  school_logo_url VARCHAR,
-  class_score_weight INTEGER NOT NULL DEFAULT 50,
-  exam_score_weight INTEGER NOT NULL DEFAULT 50,
-  grading_scale JSONB NOT NULL DEFAULT '[]'::jsonb,
-  report_template VARCHAR DEFAULT 'dynamic',
-  reopening_date VARCHAR DEFAULT '2026-09-15',
-  last_promoted_year VARCHAR,
-  auto_promote_on_reopening BOOLEAN DEFAULT true,
-  school_motto VARCHAR DEFAULT 'Knowledge, Character & Excellence',
-  custom_notice_note TEXT,
-  show_position_in_class BOOLEAN DEFAULT true,
-  show_conduct_column BOOLEAN DEFAULT true,
-  show_attendance_section BOOLEAN DEFAULT true,
-  accent_color VARCHAR DEFAULT '#1e1b4b',
-  watermark_text VARCHAR DEFAULT 'EASTFIELD ACADEMY',
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 2. Create Pupils/Students Table
-CREATE TABLE IF NOT EXISTS public.ea_students (
-  id VARCHAR PRIMARY KEY,
-  name VARCHAR NOT NULL,
-  roll_number VARCHAR NOT NULL,
-  level VARCHAR NOT NULL DEFAULT 'PRIMARY',
-  class_name VARCHAR NOT NULL,
-  guardian_name VARCHAR NOT NULL,
-  guardian_email VARCHAR NOT NULL,
-  guardian_phone VARCHAR DEFAULT '',
-  photo_url TEXT DEFAULT '',
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 3. Create Teachers Table
-CREATE TABLE IF NOT EXISTS public.ea_teachers (
-  id VARCHAR PRIMARY KEY,
-  name VARCHAR NOT NULL,
-  email VARCHAR NOT NULL,
-  role VARCHAR NOT NULL DEFAULT 'TEACHER',
-  password VARCHAR,
-  level VARCHAR,
-  subjects JSONB,
-  classes JSONB,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 4. Create Student Continuous Assessment Grades Table
-CREATE TABLE IF NOT EXISTS public.ea_grades (
-  student_id VARCHAR NOT NULL,
-  subject_id VARCHAR NOT NULL,
-  class_score NUMERIC NOT NULL DEFAULT 0,
-  exam_score NUMERIC NOT NULL DEFAULT 0,
-  total_score NUMERIC NOT NULL DEFAULT 0,
-  grade_letter VARCHAR NOT NULL DEFAULT 'F',
-  remarks VARCHAR NOT NULL DEFAULT '',
-  nursery_remark VARCHAR NOT NULL DEFAULT '',
-  term VARCHAR NOT NULL DEFAULT 'Term 1',
-  year VARCHAR NOT NULL DEFAULT '2025/2026',
-  teacher_id VARCHAR NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-  PRIMARY KEY (student_id, subject_id, term, year)
-);
-
--- 5. Create Attendance Table
-CREATE TABLE IF NOT EXISTS public.ea_attendance (
-  student_id VARCHAR NOT NULL,
-  term VARCHAR NOT NULL DEFAULT 'Term 1',
-  year VARCHAR NOT NULL DEFAULT '2025/2026',
-  total_days INTEGER NOT NULL DEFAULT 0,
-  days_present INTEGER NOT NULL DEFAULT 0,
-  remarks VARCHAR NOT NULL DEFAULT '',
-  teacher_id VARCHAR NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-  PRIMARY KEY (student_id, term, year)
-);
-
--- 6. Create Student Bills Table
-CREATE TABLE IF NOT EXISTS public.ea_bills (
-  student_id VARCHAR PRIMARY KEY,
-  arrears VARCHAR DEFAULT '0.00',
-  tuition VARCHAR DEFAULT '0.00',
-  computing VARCHAR DEFAULT '0.00',
-  utility VARCHAR DEFAULT '0.00',
-  stationery VARCHAR DEFAULT '0.00',
-  pta VARCHAR DEFAULT '0.00',
-  reopening_date VARCHAR,
-  contact_number VARCHAR,
-  term VARCHAR DEFAULT 'Term 1',
-  year VARCHAR DEFAULT '2025/2026',
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 7. Create Additional Tables (Fee Payments, Fee Structures, Daily Collections, Sync Logs)
-CREATE TABLE IF NOT EXISTS public.ea_fee_payments (
-  id VARCHAR PRIMARY KEY,
-  receipt_number VARCHAR NOT NULL,
-  student_id VARCHAR NOT NULL,
-  student_name VARCHAR NOT NULL,
-  class_name VARCHAR NOT NULL,
-  fee_type VARCHAR NOT NULL,
-  amount_paid NUMERIC DEFAULT 0,
-  total_fee_amount NUMERIC DEFAULT 0,
-  payment_method VARCHAR DEFAULT 'Cash',
-  payment_date VARCHAR NOT NULL,
-  status VARCHAR DEFAULT 'Paid',
-  remarks VARCHAR DEFAULT '',
-  recorded_by VARCHAR DEFAULT 'Admin',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public.ea_fee_structures (
-  id VARCHAR PRIMARY KEY,
-  level VARCHAR NOT NULL,
-  tuition NUMERIC DEFAULT 0,
-  computing NUMERIC DEFAULT 0,
-  utility NUMERIC DEFAULT 0,
-  stationery NUMERIC DEFAULT 0,
-  pta NUMERIC DEFAULT 0,
-  uniform NUMERIC DEFAULT 0,
-  mock_exam NUMERIC DEFAULT 0,
-  term VARCHAR DEFAULT 'Term 1',
-  year VARCHAR DEFAULT '2025/2026',
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public.ea_daily_collections (
-  id VARCHAR PRIMARY KEY,
-  collection_date VARCHAR NOT NULL,
-  total_cash NUMERIC DEFAULT 0,
-  total_momo NUMERIC DEFAULT 0,
-  total_bank NUMERIC DEFAULT 0,
-  total_cheque NUMERIC DEFAULT 0,
-  total_collected NUMERIC DEFAULT 0,
-  recorded_by VARCHAR DEFAULT 'Admin',
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS public.ea_sync_logs (
-  id VARCHAR PRIMARY KEY,
-  action_type VARCHAR NOT NULL,
-  description TEXT NOT NULL,
-  performed_by VARCHAR DEFAULT 'System',
-  status VARCHAR DEFAULT 'SUCCESS',
-  details JSONB DEFAULT '{}'::jsonb,
-  timestamp VARCHAR NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 12. Create Deleted Records / Tombstone Table (for permanent sync across all sessions & devices)
-CREATE TABLE IF NOT EXISTS public.ea_deleted_records (
-  id VARCHAR PRIMARY KEY,
-  record_type VARCHAR NOT NULL,
-  record_id VARCHAR NOT NULL,
-  roll_number VARCHAR,
-  name VARCHAR,
-  details JSONB DEFAULT '{}'::jsonb,
-  deleted_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- Ensure columns exist on older tables in case "IF NOT EXISTS" table creation was skipped
--- A. Fix ea_config table columns
-ALTER TABLE public.ea_config ALTER COLUMN id TYPE VARCHAR;
-ALTER TABLE public.ea_config ALTER COLUMN id SET DEFAULT 'global_config';
-UPDATE public.ea_config SET id = 'global_config' WHERE id IS NOT NULL AND id <> 'global_config';
-
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_name VARCHAR DEFAULT 'Eastfield Academy';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_year VARCHAR DEFAULT '2025/2026';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS principal_name VARCHAR DEFAULT 'Dr. Evelyn Asare-Bediako';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS principal_signature_url VARCHAR;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_logo_text VARCHAR DEFAULT 'EA';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_logo_url VARCHAR;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS class_score_weight INTEGER DEFAULT 50;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS exam_score_weight INTEGER DEFAULT 50;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS grading_scale JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS report_template VARCHAR DEFAULT 'dynamic';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS reopening_date VARCHAR DEFAULT '2026-09-15';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS last_promoted_year VARCHAR;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS auto_promote_on_reopening BOOLEAN DEFAULT true;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS school_motto VARCHAR DEFAULT 'Knowledge, Character & Excellence';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS custom_notice_note TEXT;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_position_in_class BOOLEAN DEFAULT true;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_conduct_column BOOLEAN DEFAULT true;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS show_attendance_section BOOLEAN DEFAULT true;
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS accent_color VARCHAR DEFAULT '#1e1b4b';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS watermark_text VARCHAR DEFAULT 'EASTFIELD ACADEMY';
-ALTER TABLE public.ea_config ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
--- B. Fix ea_students table columns
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS name VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS roll_number VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS level VARCHAR DEFAULT 'PRIMARY';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS class_name VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_name VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_email VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS guardian_phone VARCHAR DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS photo_url TEXT DEFAULT '';
-ALTER TABLE public.ea_students ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
--- C. Fix ea_teachers table columns
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS name VARCHAR DEFAULT '';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS email VARCHAR DEFAULT '';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS role VARCHAR DEFAULT 'TEACHER';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS password VARCHAR;
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS level VARCHAR DEFAULT 'PRIMARY';
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS subjects JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS classes JSONB DEFAULT '[]'::jsonb;
-ALTER TABLE public.ea_teachers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
--- D. Fix ea_grades table columns
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS student_id VARCHAR DEFAULT '';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS subject_id VARCHAR DEFAULT '';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS class_score NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS exam_score NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS total_score NUMERIC DEFAULT 0;
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS grade_letter VARCHAR DEFAULT 'F';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS remarks VARCHAR DEFAULT '';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS nursery_remark VARCHAR DEFAULT '';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS year VARCHAR DEFAULT '2025/2026';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS teacher_id VARCHAR DEFAULT '';
-ALTER TABLE public.ea_grades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
--- E. Fix ea_attendance table columns
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS student_id VARCHAR DEFAULT '';
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS term VARCHAR DEFAULT 'Term 1';
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS year VARCHAR DEFAULT '2025/2026';
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS total_days INTEGER DEFAULT 0;
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS days_present INTEGER DEFAULT 0;
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS remarks VARCHAR DEFAULT '';
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS teacher_id VARCHAR DEFAULT '';
-ALTER TABLE public.ea_attendance ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
-
--- Enable Realtime for all tables if needed (Optional)
--- Wrap in a DO block to prevent "relation already member of publication" errors
-DO $$
-DECLARE
-  tbl text;
-  realtime_tables text[] := ARRAY[
-    'ea_config',
-    'ea_students',
-    'ea_teachers',
-    'ea_grades',
-    'ea_attendance',
-    'ea_bills',
-    'ea_fee_payments',
-    'ea_fee_structures',
-    'ea_inventory',
-    'ea_book_stock',
-    'ea_book_sales',
-    'ea_deleted_records',
-    'ea_jhs_mock_exams',
-    'ea_sync_logs'
-  ];
-BEGIN
-  FOREACH tbl IN ARRAY realtime_tables LOOP
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_publication_tables 
-      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = tbl
-    ) THEN
-      BEGIN
-        EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I;', tbl);
-      EXCEPTION WHEN OTHERS THEN
-        NULL;
-      END;
-    END IF;
-  END LOOP;
-EXCEPTION
-  WHEN OTHERS THEN
-    -- Ignore if publication doesn't exist or other issues occur
-    NULL;
-END $$;
-
--- 6. Storage Bucket & Policies Setup
--- Create the public bucket if it does not exist
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('ea', 'ea', true)
-ON CONFLICT (id) DO NOTHING;
-
--- Policy 1: Allow Public Read Access (everyone can view/download images/files in 'ea')
-DROP POLICY IF EXISTS "Allow public read access on ea bucket" ON storage.objects;
-CREATE POLICY "Allow public read access on ea bucket"
-ON storage.objects
-FOR SELECT
-TO public
-USING (bucket_id = 'ea');
-
--- Policy 2: Allow Authenticated Users (Admins and Teachers) to upload/insert files
-DROP POLICY IF EXISTS "Allow authenticated users to upload files" ON storage.objects;
-CREATE POLICY "Allow authenticated users to upload files"
-ON storage.objects
-FOR INSERT
-TO authenticated
-WITH CHECK (bucket_id = 'ea');
-
--- Policy 3: Allow Authenticated Users to update files
-DROP POLICY IF EXISTS "Allow authenticated users to update files" ON storage.objects;
-CREATE POLICY "Allow authenticated users to update files"
-ON storage.objects
-FOR UPDATE
-TO authenticated
-USING (bucket_id = 'ea')
-WITH CHECK (bucket_id = 'ea');
-
--- Policy 4: Allow Authenticated Users to delete files
-DROP POLICY IF EXISTS "Allow authenticated users to delete files" ON storage.objects;
-CREATE POLICY "Allow authenticated users to delete files"
-ON storage.objects
-FOR DELETE
-TO authenticated
-USING (bucket_id = 'ea');
-
--- Option C: Folder-Level Security (Strict Auth Folder segregation for authenticated users)
--- Uncomment these if you want users to ONLY be able to modify files within their own folder named after their User ID.
--- Note: Make sure any file uploads prefix the path with the user's authenticated ID.
--- 
--- DROP POLICY IF EXISTS "Users can upload to own folder" ON storage.objects;
--- CREATE POLICY "Users can upload to own folder"
--- ON storage.objects FOR INSERT
--- TO authenticated
--- WITH CHECK (
---   bucket_id = 'ea'
---   AND name LIKE (auth.uid()::text || '/%')
--- );
--- 
--- DROP POLICY IF EXISTS "Users can update own files" ON storage.objects;
--- CREATE POLICY "Users can update own files"
--- ON storage.objects FOR UPDATE
--- TO authenticated
--- USING (
---   bucket_id = 'ea'
---   AND name LIKE (auth.uid()::text || '/%')
--- );
--- 
--- DROP POLICY IF EXISTS "Users can delete own files" ON storage.objects;
--- CREATE POLICY "Users can delete own files"
--- ON storage.objects FOR DELETE
--- TO authenticated
--- USING (
---   bucket_id = 'ea'
---   AND name LIKE (auth.uid()::text || '/%')
--- );
--- 
--- DROP POLICY IF EXISTS "Allow anyone to upload logos" ON storage.objects;
--- CREATE POLICY "Allow anyone to upload logos"
--- ON storage.objects FOR INSERT
--- TO public
--- WITH CHECK (
---   bucket_id = 'ea'
---   AND name LIKE 'logos/%'
--- );
-
--- Policy 5 (Fallback/Demo/Testing): Allow public/anonymous uploads & updates during local development or testing phase
-DROP POLICY IF EXISTS "Allow public uploads for testing" ON storage.objects;
-CREATE POLICY "Allow public uploads for testing"
-ON storage.objects
-FOR INSERT
-TO anon, authenticated, public
-WITH CHECK (bucket_id = 'ea');
-
-DROP POLICY IF EXISTS "Allow public updates for testing" ON storage.objects;
-CREATE POLICY "Allow public updates for testing"
-ON storage.objects
-FOR UPDATE
-TO anon, authenticated, public
-USING (bucket_id = 'ea')
-WITH CHECK (bucket_id = 'ea');
-
-DROP POLICY IF EXISTS "Allow public deletes for testing" ON storage.objects;
-CREATE POLICY "Allow public deletes for testing"
-ON storage.objects
-FOR DELETE
-TO anon, authenticated, public
-USING (bucket_id = 'ea');
-
--- 7. Row Level Security (RLS) & Policies for all ea_* Tables
--- Newer Supabase projects automatically enable RLS by default on newly created tables.
--- To allow your frontend app to synchronize data, you MUST either disable RLS or add public policies.
-
--- OPTION A: Disable RLS on all tables (Simplest & Recommended for offline-sync app design)
-ALTER TABLE public.ea_config DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_students DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_teachers DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_grades DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_attendance DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_bills DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_fee_payments DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_fee_structures DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_daily_collections DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ea_sync_logs DISABLE ROW LEVEL SECURITY;
-
--- OPTION B: Unrestricted policies (Ensure DELETE/INSERT/UPDATE/SELECT work even if RLS is enabled)
-DROP POLICY IF EXISTS "Allow public access on ea_config" ON public.ea_config;
-CREATE POLICY "Allow public access on ea_config" ON public.ea_config FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow public access on ea_students" ON public.ea_students;
-CREATE POLICY "Allow public access on ea_students" ON public.ea_students FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow public access on ea_teachers" ON public.ea_teachers;
-CREATE POLICY "Allow public access on ea_teachers" ON public.ea_teachers FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow public access on ea_grades" ON public.ea_grades;
-CREATE POLICY "Allow public access on ea_grades" ON public.ea_grades FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow public access on ea_attendance" ON public.ea_attendance;
-CREATE POLICY "Allow public access on ea_attendance" ON public.ea_attendance FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow public access on ea_bills" ON public.ea_bills;
-CREATE POLICY "Allow public access on ea_bills" ON public.ea_bills FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow public access on ea_fee_payments" ON public.ea_fee_payments;
-CREATE POLICY "Allow public access on ea_fee_payments" ON public.ea_fee_payments FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow public access on ea_fee_structures" ON public.ea_fee_structures;
-CREATE POLICY "Allow public access on ea_fee_structures" ON public.ea_fee_structures FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow public access on ea_daily_collections" ON public.ea_daily_collections;
-CREATE POLICY "Allow public access on ea_daily_collections" ON public.ea_daily_collections FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow public access on ea_sync_logs" ON public.ea_sync_logs;
-CREATE POLICY "Allow public access on ea_sync_logs" ON public.ea_sync_logs FOR ALL TO anon, authenticated, public USING (true) WITH CHECK (true);
-
--- 8. Automated Sync Trigger for Registered Users (Solves syntax errors like 'ERROR: 42601')
-CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF (new.raw_user_meta_data->>'role' = 'TEACHER') THEN
-    INSERT INTO public.ea_teachers (id, name, email, role, level, classes, subjects, password, updated_at)
-    VALUES (
-      new.id,
-      COALESCE(new.raw_user_meta_data->>'name', 'New Teacher'),
-      new.email,
-      'TEACHER',
-      new.raw_user_meta_data->>'level',
-      COALESCE((new.raw_user_meta_data->'classes')::jsonb, '[]'::jsonb),
-      COALESCE((new.raw_user_meta_data->'subjects')::jsonb, '[]'::jsonb),
-      new.raw_user_meta_data->>'password',
-      now()
-    )
-    ON CONFLICT (id) DO UPDATE SET
-      name = EXCLUDED.name,
-      email = EXCLUDED.email,
-      level = EXCLUDED.level,
-      classes = EXCLUDED.classes,
-      subjects = EXCLUDED.subjects,
-      password = EXCLUDED.password,
-      updated_at = now();
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();
-
--- Reload PostgREST schema cache
-NOTIFY pgrst, 'reload schema';
-`;
+export { SUPABASE_SQL_REPAIR } from './supabaseRepairSql';
 
 // Helper to verify connection by doing a simple query
 export async function testSupabaseConnection(): Promise<{ success: boolean; message: string }> {
@@ -1880,6 +1079,28 @@ export function removeDeletedTeacherId(id: string): void {
   } catch (e) {}
 }
 
+// Global helper to automatically prune deleted tombstones for any records that exist actively
+export function pruneDeletedTombstones(activeStudents: Student[], activeTeachers?: User[]): void {
+  try {
+    if (Array.isArray(activeStudents) && activeStudents.length > 0) {
+      const activeIds = new Set(activeStudents.map(s => String(s.id).toLowerCase().trim()));
+      const current = getDeletedStudentIds();
+      const pruned = current.filter(id => !activeIds.has(String(id).toLowerCase().trim()));
+      if (pruned.length !== current.length) {
+        localStorage.setItem('ea_deleted_student_ids', JSON.stringify(pruned));
+      }
+    }
+    if (Array.isArray(activeTeachers) && activeTeachers.length > 0) {
+      const activeTIds = new Set(activeTeachers.map(t => String(t.id).toLowerCase().trim()));
+      const currentT = getDeletedTeacherIds();
+      const prunedT = currentT.filter(id => !activeTIds.has(String(id).toLowerCase().trim()));
+      if (prunedT.length !== currentT.length) {
+        localStorage.setItem('ea_deleted_teacher_ids', JSON.stringify(prunedT));
+      }
+    }
+  } catch (e) {}
+}
+
 // 2. SYNC STUDENTS
 export async function fetchSupabaseStudents(): Promise<Student[] | null> {
   const filterDeleted = (list: Student[]) => {
@@ -1927,35 +1148,30 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
 
   const getMergedFallback = async (): Promise<Student[] | null> => {
     const serverResult = await fetchFromServer();
+    if (serverResult !== null && Array.isArray(serverResult)) {
+      // Remote server is authoritative: un-tombstone active pupils so no browser hides enrolled students
+      const activeIds = new Set(serverResult.map(s => String(s.id).toLowerCase().trim()));
+      const curDeleted = getDeletedStudentIds();
+      const pruned = curDeleted.filter(id => !activeIds.has(String(id).toLowerCase().trim()));
+      if (pruned.length !== curDeleted.length) {
+        try {
+          localStorage.setItem('ea_deleted_student_ids', JSON.stringify(pruned));
+        } catch (e) {}
+      }
+      const clean = filterDeleted(serverResult);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ea_students', JSON.stringify(clean));
+        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(clean));
+      }
+      return clean;
+    }
+
     const cached = localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students');
-    let localParsed: Student[] = [];
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) localParsed = filterDeleted(parsed);
+        if (Array.isArray(parsed) && parsed.length > 0) return filterDeleted(parsed);
       } catch (e) {}
-    }
-
-    if (serverResult !== null || localParsed.length > 0) {
-      const studentMap = new Map<string, Student>();
-      (serverResult || []).forEach(s => {
-        if (s && s.id) studentMap.set(s.id, s);
-      });
-      localParsed.forEach(s => {
-        if (s && s.id) {
-          const existing = studentMap.get(s.id);
-          if (!existing) {
-            studentMap.set(s.id, s);
-          } else {
-            const localTime = (s as any).updated_at || (s as any).updatedAt ? new Date((s as any).updated_at || (s as any).updatedAt).getTime() : 0;
-            const remoteTime = (existing as any).updated_at || (existing as any).updatedAt ? new Date((existing as any).updated_at || (existing as any).updatedAt).getTime() : 0;
-            if (localTime >= remoteTime) {
-              studentMap.set(s.id, s);
-            }
-          }
-        }
-      });
-      return Array.from(studentMap.values());
     }
     return null;
   };
@@ -2042,6 +1258,18 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       guardianPhone: item.guardian_phone || '',
       photoUrl: item.photo_url || '',
     }));
+
+    // The remote database is the source of truth for enrolled students.
+    // If a pupil exists in the active Supabase ea_students table, they are actively enrolled!
+    // Un-tombstone them from local deletion lists so they are never hidden on any device.
+    const activeStudentIds = new Set(mapped.map(s => String(s.id).toLowerCase().trim()));
+    const curDeleted = getDeletedStudentIds();
+    const prunedDeleted = curDeleted.filter(id => !activeStudentIds.has(String(id).toLowerCase().trim()));
+    if (prunedDeleted.length !== curDeleted.length) {
+      try {
+        localStorage.setItem('ea_deleted_student_ids', JSON.stringify(prunedDeleted));
+      } catch (e) {}
+    }
 
     const cleanMapped = filterDeleted(mapped);
 
@@ -2478,15 +1706,22 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
       ghanaCardNumber: item.ghana_card_number || item.ghanaCardNumber || undefined,
     }));
 
-    if (deletedTeacherIds.size > 0) {
-      const recordsToPurge = mapped.filter(t => deletedTeacherIds.has(t.id));
-      if (recordsToPurge.length > 0) {
-        const purgeIds = recordsToPurge.map(t => t.id);
-        client.from('ea_teachers').delete().in('id', purgeIds).then(() => {});
-      }
+    // Remote database is authoritative for teachers
+    const activeTeacherIds = new Set(mapped.map(t => String(t.id).toLowerCase().trim()));
+    const curDelT = getDeletedTeacherIds();
+    const prunedT = curDelT.filter(id => !activeTeacherIds.has(String(id).toLowerCase().trim()));
+    if (prunedT.length !== curDelT.length) {
+      try {
+        localStorage.setItem('ea_deleted_teacher_ids', JSON.stringify(prunedT));
+      } catch (e) {}
     }
 
-    return filterDeleted(mapped);
+    const cleanTeachers = filterDeleted(mapped);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('ea_teachers', JSON.stringify(cleanTeachers));
+    }
+
+    return cleanTeachers;
   } catch (err: any) {
     const serverTeachers = await fetchServerEntity<User[]>('/teachers');
     if (serverTeachers && serverTeachers.length > 0) {
@@ -5307,5 +4542,213 @@ export function subscribeToGlobalRealtime(callbacks: RealtimeSyncCallbacks = {})
         client.removeChannel(channelInstance);
       } catch (e) {}
     }
+  };
+}
+
+export interface DatabaseAuditReport {
+  timestamp: string;
+  supabaseConfigured: boolean;
+  supabaseConnected: boolean;
+  serverConnected: boolean;
+  counts: {
+    students: { local: number; supabase: number | null; server: number | null; inSync: boolean };
+    teachers: { local: number; supabase: number | null; server: number | null; inSync: boolean };
+    grades: { local: number; supabase: number | null; server: number | null; inSync: boolean };
+    attendance: { local: number; supabase: number | null; server: number | null; inSync: boolean };
+    dailyAttendance: { local: number; supabase: number | null; server: number | null; inSync: boolean };
+    bills: { local: number; supabase: number | null; server: number | null; inSync: boolean };
+    feePayments: { local: number; supabase: number | null; server: number | null; inSync: boolean };
+  };
+  missingTables: string[];
+  recentSyncLogs: Array<{
+    id: string;
+    action_type?: string;
+    actionType?: string;
+    description: string;
+    performed_by?: string;
+    performedBy?: string;
+    status: string;
+    timestamp: string;
+  }>;
+}
+
+export async function auditDatabaseCounts(): Promise<DatabaseAuditReport> {
+  const client = getSupabaseClient();
+  const isConfigured = !!client;
+  let isConnected = false;
+  let isServerConnected = false;
+  const missingTables: string[] = [];
+
+  const getLocalCount = (key: string): number => {
+    try {
+      const v = localStorage.getItem(key);
+      if (v) {
+        const parsed = JSON.parse(v);
+        if (Array.isArray(parsed)) return parsed.length;
+      }
+    } catch (e) {}
+    return 0;
+  };
+
+  const localCounts = {
+    students: getLocalCount('ea_students'),
+    teachers: getLocalCount('ea_teachers'),
+    grades: getLocalCount('ea_grades'),
+    attendance: getLocalCount('ea_attendance'),
+    dailyAttendance: getLocalCount('ea_daily_attendance'),
+    bills: getLocalCount('ea_bills'),
+    feePayments: getLocalCount('ea_fee_payments'),
+  };
+
+  let serverCounts: Record<string, number | null> = {
+    students: null,
+    teachers: null,
+    grades: null,
+    attendance: null,
+    dailyAttendance: null,
+    bills: null,
+    feePayments: null,
+  };
+
+  try {
+    const res = await fetch(`/api/sync/version?_t=${Date.now()}`);
+    if (res.ok) {
+      const json = await res.json();
+      isServerConnected = true;
+      if (json.counts) {
+        serverCounts.students = json.counts.students ?? null;
+        serverCounts.teachers = json.counts.teachers ?? null;
+        serverCounts.grades = json.counts.grades ?? null;
+        serverCounts.attendance = json.counts.attendance ?? null;
+        serverCounts.dailyAttendance = json.counts.dailyAttendance ?? null;
+        serverCounts.bills = json.counts.bills ?? null;
+        serverCounts.feePayments = json.counts.feePayments ?? null;
+      }
+    }
+  } catch (e) {}
+
+  let supabaseCounts: Record<string, number | null> = {
+    students: null,
+    teachers: null,
+    grades: null,
+    attendance: null,
+    dailyAttendance: null,
+    bills: null,
+    feePayments: null,
+  };
+
+  const tablesToCheck = [
+    { table: 'ea_students', key: 'students' },
+    { table: 'ea_teachers', key: 'teachers' },
+    { table: 'ea_grades', key: 'grades' },
+    { table: 'ea_attendance', key: 'attendance' },
+    { table: 'ea_daily_attendance', key: 'dailyAttendance' },
+    { table: 'ea_bills', key: 'bills' },
+    { table: 'ea_fee_payments', key: 'feePayments' },
+  ];
+
+  if (client) {
+    try {
+      const { error } = await client.from('ea_config').select('id', { count: 'exact', head: true });
+      if (!error) isConnected = true;
+    } catch (e) {}
+
+    for (const item of tablesToCheck) {
+      try {
+        const { count, error } = await client.from(item.table).select('*', { count: 'exact', head: true });
+        if (error) {
+          if (error.code === 'PGRST116' || error.code === '42P01' || error.message.includes('does not exist') || error.message.includes('schema cache')) {
+            missingTables.push(item.table);
+          }
+          supabaseCounts[item.key] = null;
+        } else {
+          isConnected = true;
+          supabaseCounts[item.key] = count !== null ? count : null;
+        }
+      } catch (err) {
+        supabaseCounts[item.key] = null;
+      }
+    }
+  }
+
+  let recentSyncLogs: any[] = [];
+  if (client) {
+    try {
+      const { data } = await client
+        .from('ea_sync_logs')
+        .select('*')
+        .order('timestamp', { ascending: false })
+        .limit(20);
+      if (data && Array.isArray(data)) {
+        recentSyncLogs = data;
+      }
+    } catch (e) {}
+  }
+  if (recentSyncLogs.length === 0) {
+    try {
+      const savedLogs = localStorage.getItem('ea_audit_sync_logs');
+      if (savedLogs) {
+        recentSyncLogs = JSON.parse(savedLogs);
+      }
+    } catch (e) {}
+  }
+
+  const checkSync = (loc: number, sup: number | null, srv: number | null) => {
+    if (sup !== null && sup !== loc) return false;
+    if (srv !== null && srv !== loc) return false;
+    return true;
+  };
+
+  return {
+    timestamp: new Date().toISOString(),
+    supabaseConfigured: isConfigured,
+    supabaseConnected: isConnected,
+    serverConnected: isServerConnected,
+    counts: {
+      students: {
+        local: localCounts.students,
+        supabase: supabaseCounts.students,
+        server: serverCounts.students,
+        inSync: checkSync(localCounts.students, supabaseCounts.students, serverCounts.students),
+      },
+      teachers: {
+        local: localCounts.teachers,
+        supabase: supabaseCounts.teachers,
+        server: serverCounts.teachers,
+        inSync: checkSync(localCounts.teachers, supabaseCounts.teachers, serverCounts.teachers),
+      },
+      grades: {
+        local: localCounts.grades,
+        supabase: supabaseCounts.grades,
+        server: serverCounts.grades,
+        inSync: checkSync(localCounts.grades, supabaseCounts.grades, serverCounts.grades),
+      },
+      attendance: {
+        local: localCounts.attendance,
+        supabase: supabaseCounts.attendance,
+        server: serverCounts.attendance,
+        inSync: checkSync(localCounts.attendance, supabaseCounts.attendance, serverCounts.attendance),
+      },
+      dailyAttendance: {
+        local: localCounts.dailyAttendance,
+        supabase: supabaseCounts.dailyAttendance,
+        server: serverCounts.dailyAttendance,
+        inSync: checkSync(localCounts.dailyAttendance, supabaseCounts.dailyAttendance, serverCounts.dailyAttendance),
+      },
+      bills: {
+        local: localCounts.bills,
+        supabase: supabaseCounts.bills,
+        server: serverCounts.bills,
+        inSync: checkSync(localCounts.bills, supabaseCounts.bills, serverCounts.bills),
+      },
+      feePayments: {
+        local: localCounts.feePayments,
+        supabase: supabaseCounts.feePayments,
+        server: serverCounts.feePayments,
+        inSync: checkSync(localCounts.feePayments, supabaseCounts.feePayments, serverCounts.feePayments),
+      },
+    },
+    missingTables,
+    recentSyncLogs,
   };
 }

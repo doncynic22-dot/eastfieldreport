@@ -41,14 +41,14 @@ import {
   saveSupabaseBills,
   saveSupabaseFeePayments,
   fetchSupabaseBookStock,
-  SUPABASE_SQL_SCHEMA,
   SUPABASE_SQL_REPAIR,
   isStudentDeleted,
   getDeletedStudentIds,
   recordDeletedStudentId,
   recordDeletedBookStockId,
   subscribeToGlobalRealtime,
-  broadcastSync
+  broadcastSync,
+  pruneDeletedTombstones
 } from './lib/supabase';
 import { isAutoPromotionDue, promoteStudents, restoreAllStudentsToAdmittedLevels, deduplicateStudents, restoreStudentsFromTerminalReport } from './services/promotionService';
 import { getCanonicalSubjectId } from './utils/subjectUtils';
@@ -325,6 +325,9 @@ export default function App() {
       const teacherIds = new Set(activeTeachers.map(t => t.id));
 
       if (studentsFetchSuccess && sStudents !== null) {
+        // Authoritative cloud pupils are active; ensure local browser deletion markers don't suppress enrolled pupils
+        pruneDeletedTombstones(sStudents, activeTeachers);
+
         let cleanStudents = sStudents.filter(
           s => !teacherIds.has(s.id) && !teacherEmails.has((s.guardianEmail || '').toLowerCase())
         );

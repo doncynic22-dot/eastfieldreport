@@ -64,6 +64,10 @@ function loadServerStudents(): any[] {
 function saveServerStudents(students: any[]): boolean {
   try {
     const db = loadServerDatabase();
+    if (Array.isArray(students) && students.length > 0 && Array.isArray(db.deletedStudentIds) && db.deletedStudentIds.length > 0) {
+      const incomingIdSet = new Set(students.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
+      db.deletedStudentIds = db.deletedStudentIds.filter(id => !incomingIdSet.has(id));
+    }
     const clean = (students || []).filter(s => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
     fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(clean, null, 2), "utf-8");
     // Also update unified server database
@@ -1012,6 +1016,10 @@ async function startServer() {
       });
     }
     if (Array.isArray(incoming.teachers)) {
+      if (incoming.teachers.length > 0 && Array.isArray(db.deletedTeacherIds) && db.deletedTeacherIds.length > 0) {
+        const incomingTeacherIds = new Set(incoming.teachers.map((t: any) => String(t.id || t.email || '').toLowerCase().trim()).filter(Boolean));
+        db.deletedTeacherIds = db.deletedTeacherIds.filter(id => !incomingTeacherIds.has(id));
+      }
       const deletedTeacherSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
       db.teachers = incoming.teachers.filter((t: any) => {
         if (t.id && deletedTeacherSet.has(String(t.id).toLowerCase().trim())) return false;
@@ -1029,6 +1037,10 @@ async function startServer() {
       db.deletedStudentIds = Array.from(currentDeleted);
     }
     if (Array.isArray(incoming.students)) {
+      if (incoming.students.length > 0 && Array.isArray(db.deletedStudentIds) && db.deletedStudentIds.length > 0) {
+        const incomingStudentIds = new Set(incoming.students.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
+        db.deletedStudentIds = db.deletedStudentIds.filter(id => !incomingStudentIds.has(id));
+      }
       const cleanStudents = incoming.students.filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
       db.students = cleanStudents;
       if (cleanStudents.length === 0) {

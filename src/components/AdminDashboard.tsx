@@ -16,6 +16,7 @@ import JHSTerminalAssessmentHistoryModule from './JHSTerminalAssessmentHistoryMo
 import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
+import DatabaseAuditTab from './DatabaseAuditTab';
 import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials } from '../lib/supabase';
 import { globalSyncEngine, uploadAssetToCDN } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
@@ -53,7 +54,7 @@ interface AdminDashboardProps {
 }
 
 
-type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'bulk-sms' | 'report-sms-alerts' | 'transcripts' | 'jhs3-mock' | 'terminal-history' | 'students' | 'teachers' | 'teacher-profiles' | 'class-assignments' | 'inventory' | 'book-inventory' | 'config';
+type AdminTab = 'analytics' | 'fees-dashboard' | 'fees' | 'bulk-sms' | 'report-sms-alerts' | 'transcripts' | 'jhs3-mock' | 'terminal-history' | 'students' | 'teachers' | 'teacher-profiles' | 'class-assignments' | 'inventory' | 'book-inventory' | 'config' | 'database-audit';
 
 export default function AdminDashboard({
   students,
@@ -86,11 +87,14 @@ export default function AdminDashboard({
       const hash = window.location.hash || '';
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab') || params.get('adminTab');
+      if (tabParam === 'database-audit' || tabParam === 'audit' || hash === '#database-audit' || hash === '#audit') {
+        return 'database-audit';
+      }
       if (tabParam === 'book-inventory' || tabParam === 'textbook' || tabParam === 'textbook-portal' || hash === '#book-inventory' || hash === '#textbook' || hash === '#textbook-portal') {
         return 'book-inventory';
       }
       const savedTab = localStorage.getItem('ea_admin_active_tab');
-      if (savedTab && ['analytics', 'fees-dashboard', 'fees', 'bulk-sms', 'report-sms-alerts', 'transcripts', 'jhs3-mock', 'terminal-history', 'students', 'teachers', 'teacher-profiles', 'class-assignments', 'inventory', 'book-inventory', 'config'].includes(savedTab)) {
+      if (savedTab && ['analytics', 'fees-dashboard', 'fees', 'bulk-sms', 'report-sms-alerts', 'transcripts', 'jhs3-mock', 'terminal-history', 'students', 'teachers', 'teacher-profiles', 'class-assignments', 'inventory', 'book-inventory', 'config', 'database-audit'].includes(savedTab)) {
         return savedTab as AdminTab;
       }
     }
@@ -2071,6 +2075,7 @@ export default function AdminDashboard({
                 <option value="students">🎓 Admissions & Student Roster</option>
                 <option value="teachers">👨‍🏫 Staff Directory & Accounts</option>
                 <option value="class-assignments">🏫 Assign Class Teachers</option>
+                <option value="database-audit">🔍 Database Audit & Global Sync</option>
                 <option value="config">⚙️ System & Report Settings</option>
               </optgroup>
             </select>
@@ -2093,11 +2098,13 @@ export default function AdminDashboard({
             { id: 'students', label: 'Admissions', icon: GraduationCap },
             { id: 'teachers', label: 'Staff Directory', icon: BookOpen },
             { id: 'class-assignments', label: 'Assign Class Teacher', icon: School },
+            { id: 'database-audit', label: 'Database Audit', icon: Database, isAudit: true },
             { id: 'config', label: 'Settings', icon: Settings }
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             const isFeatured = (tab as any).isFeatured;
+            const isAudit = (tab as any).isAudit;
             return (
               <button
                 key={tab.id}
@@ -2107,15 +2114,22 @@ export default function AdminDashboard({
                     ? 'bg-amber-400 text-slate-950 shadow-md border-2 border-amber-500 ring-2 ring-amber-300 font-black'
                     : isFeatured
                     ? 'bg-gradient-to-r from-purple-950 via-[#21053d] to-indigo-950 text-amber-300 hover:text-slate-950 hover:bg-amber-300 border-2 border-purple-500/80 font-black ring-1 ring-purple-400/40 shadow-sm'
+                    : isAudit
+                    ? 'bg-indigo-950 text-indigo-200 hover:bg-amber-300 hover:text-slate-950 border border-indigo-700/80 font-bold'
                     : 'bg-mauve-900 text-white/90 hover:bg-amber-300 hover:text-slate-950 border-mauve-700/80 font-bold'
                 }`}
                 id={`admin-tab-${tab.id}`}
               >
-                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-slate-950' : isFeatured ? 'text-amber-400' : 'text-amber-300/80'}`} />
+                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-slate-950' : isFeatured ? 'text-amber-400' : isAudit ? 'text-indigo-400' : 'text-amber-300/80'}`} />
                 <span className="truncate">{tab.label}</span>
                 {isFeatured && !isActive && (
                   <span className="ml-auto px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[8px] font-black uppercase shrink-0 hidden sm:inline-block">
                     HOT
+                  </span>
+                )}
+                {isAudit && !isActive && (
+                  <span className="ml-auto px-1 py-0.2 rounded bg-indigo-800 text-indigo-200 text-[8px] font-bold uppercase shrink-0 hidden xl:inline-block">
+                    SYNC
                   </span>
                 )}
               </button>
@@ -5661,6 +5675,22 @@ export default function AdminDashboard({
         <BookInventoryModule
           students={students}
           config={config}
+        />
+      )}
+
+      {/* DATABASE AUDIT & GLOBAL SYNCHRONIZATION TAB VIEW */}
+      {activeTab === 'database-audit' && (
+        <DatabaseAuditTab
+          students={students}
+          setStudents={setStudents}
+          teachers={teachers}
+          setTeachers={setTeachers}
+          grades={grades}
+          attendance={attendance}
+          dailyAttendance={dailyAttendance}
+          bills={bills}
+          onPullFromSupabase={onPullFromSupabase}
+          onPushToSupabase={onPushToSupabase}
         />
       )}
 

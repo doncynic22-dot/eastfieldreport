@@ -212,8 +212,22 @@ class GlobalSyncManager {
       const json = await res.json();
       const serverVersion = json.version || 0;
 
-      if (serverVersion > this.lastKnownVersion) {
-        console.log(`[GlobalSync] Detected newer server version (${serverVersion} > ${this.lastKnownVersion}). Triggering refresh...`);
+      let localStudentCount = 0;
+      let localTeacherCount = 0;
+      try {
+        const s = localStorage.getItem('ea_students');
+        if (s) localStudentCount = JSON.parse(s).length;
+        const t = localStorage.getItem('ea_teachers');
+        if (t) localTeacherCount = JSON.parse(t).length;
+      } catch (e) {}
+
+      const hasCountDivergence = json.counts && (
+        (json.counts.students > 0 && json.counts.students !== localStudentCount) ||
+        (json.counts.teachers > 0 && json.counts.teachers !== localTeacherCount)
+      );
+
+      if (serverVersion > this.lastKnownVersion || hasCountDivergence || this.lastKnownVersion === 0) {
+        console.log(`[GlobalSync] Server sync triggered (server: ${serverVersion}, local: ${this.lastKnownVersion}, divergence: ${hasCountDivergence}). Refreshing...`);
         this.lastKnownVersion = serverVersion;
         window.dispatchEvent(new CustomEvent('ea_global_sync_outdated', { detail: { serverVersion } }));
 
@@ -221,6 +235,22 @@ class GlobalSyncManager {
         fetchMasterServerSync().then(fresh => {
           if (fresh && (fresh.data || fresh.students || fresh.teachers)) {
             const fullPayload = fresh.data || fresh;
+
+            // Prune any stale deletion markers for students present in authoritative payload
+            if (Array.isArray(fullPayload.students) && fullPayload.students.length > 0) {
+              try {
+                const activeIds = new Set(fullPayload.students.map((s: any) => String(s.id).toLowerCase().trim()));
+                const savedDel = localStorage.getItem('ea_deleted_student_ids');
+                if (savedDel) {
+                  const delArr: string[] = JSON.parse(savedDel);
+                  const pruned = delArr.filter(id => !activeIds.has(String(id).toLowerCase().trim()));
+                  if (pruned.length !== delArr.length) {
+                    localStorage.setItem('ea_deleted_student_ids', JSON.stringify(pruned));
+                  }
+                }
+              } catch (e) {}
+            }
+
             const streamEvent: SyncStreamEvent = {
               type: 'FULL_SYNC',
               entity: 'all',
