@@ -1512,9 +1512,8 @@ export default function App() {
 
         if (remoteStudents && Array.isArray(remoteStudents)) {
           setStudents(prev => {
-            const deletedIds = new Set(getDeletedStudentIds().map(x => String(x).toLowerCase().trim()));
-            const cleanRemote = deduplicateStudents(remoteStudents.filter(s => s && s.id && !deletedIds.has(s.id.toLowerCase().trim()) && !isDemoStudent(s)));
-            const cleanPrev = prev.filter(s => s && s.id && !deletedIds.has(s.id.toLowerCase().trim()) && !isDemoStudent(s));
+            const cleanRemote = deduplicateStudents(remoteStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s)));
+            const cleanPrev = prev.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
             const prevSig = cleanPrev.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
             const remoteSig = cleanRemote.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');

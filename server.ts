@@ -30,7 +30,7 @@ function isDemoStudent(s: any): boolean {
 }
 
 function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
-  if (!s || !s.id) return false;
+  if (!s) return false;
   const db = dbCache || (fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, "utf-8")) : null);
   const allDeleted = new Set([
     ...(db?.deletedStudentIds || []),
@@ -38,7 +38,26 @@ function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
   ].map(x => String(x).toLowerCase().trim()));
   if (allDeleted.size === 0) return false;
 
-  return allDeleted.has(String(s.id).toLowerCase().trim());
+  if (s.id) {
+    const cleanId = String(s.id).toLowerCase().trim();
+    if (allDeleted.has(cleanId)) return true;
+    const alphaId = cleanId.replace(/[^a-z0-9]/g, '');
+    if (alphaId && allDeleted.has(alphaId)) return true;
+  }
+  if (s.rollNumber) {
+    const cleanRoll = String(s.rollNumber).toLowerCase().trim();
+    if (allDeleted.has(cleanRoll)) return true;
+    const alphaRoll = cleanRoll.replace(/[^a-z0-9]/g, '');
+    if (alphaRoll && allDeleted.has(alphaRoll)) return true;
+  }
+  if (s.name) {
+    const cleanName = String(s.name).toLowerCase().trim();
+    if (allDeleted.has(cleanName)) return true;
+    const alphaName = cleanName.replace(/[^a-z0-9]/g, '');
+    if (alphaName && allDeleted.has(alphaName)) return true;
+  }
+
+  return false;
 }
 
 function loadServerStudents(): any[] {
@@ -64,10 +83,7 @@ function loadServerStudents(): any[] {
 function saveServerStudents(students: any[]): boolean {
   try {
     const db = loadServerDatabase();
-    if (Array.isArray(students) && students.length > 0 && Array.isArray(db.deletedStudentIds) && db.deletedStudentIds.length > 0) {
-      const incomingIdSet = new Set(students.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
-      db.deletedStudentIds = db.deletedStudentIds.filter(id => !incomingIdSet.has(id));
-    }
+    // Do NOT prune deletedStudentIds! Student deletions are permanent and must persist indefinitely.
     const clean = (students || []).filter(s => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
     fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(clean, null, 2), "utf-8");
     // Also update unified server database
@@ -1032,15 +1048,16 @@ async function startServer() {
       const currentDeleted = new Set((db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
       incoming.deletedStudentIds.forEach((id: any) => {
         const clean = String(id).toLowerCase().trim();
-        if (clean) currentDeleted.add(clean);
+        if (clean) {
+          currentDeleted.add(clean);
+          const alpha = clean.replace(/[^a-z0-9]/g, '');
+          if (alpha) currentDeleted.add(alpha);
+        }
       });
       db.deletedStudentIds = Array.from(currentDeleted);
     }
     if (Array.isArray(incoming.students)) {
-      if (incoming.students.length > 0 && Array.isArray(db.deletedStudentIds) && db.deletedStudentIds.length > 0) {
-        const incomingStudentIds = new Set(incoming.students.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
-        db.deletedStudentIds = db.deletedStudentIds.filter(id => !incomingStudentIds.has(id));
-      }
+      // NOTE: Never prune db.deletedStudentIds! Student deletions are permanent.
       const cleanStudents = incoming.students.filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
       db.students = cleanStudents;
       if (cleanStudents.length === 0) {

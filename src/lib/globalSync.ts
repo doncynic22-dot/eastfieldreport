@@ -236,17 +236,52 @@ class GlobalSyncManager {
           if (fresh && (fresh.data || fresh.students || fresh.teachers)) {
             const fullPayload = fresh.data || fresh;
 
-            // Prune any stale deletion markers for students present in authoritative payload
-            if (Array.isArray(fullPayload.students) && fullPayload.students.length > 0) {
+            // Merge any deleted student IDs from server payload into localStorage
+            const serverDeletedIds = fresh.deletedStudentIds || (fresh.data && fresh.data.deletedStudentIds);
+            if (Array.isArray(serverDeletedIds) && serverDeletedIds.length > 0) {
               try {
-                const activeIds = new Set(fullPayload.students.map((s: any) => String(s.id).toLowerCase().trim()));
                 const savedDel = localStorage.getItem('ea_deleted_student_ids');
-                if (savedDel) {
-                  const delArr: string[] = JSON.parse(savedDel);
-                  const pruned = delArr.filter(id => !activeIds.has(String(id).toLowerCase().trim()));
-                  if (pruned.length !== delArr.length) {
-                    localStorage.setItem('ea_deleted_student_ids', JSON.stringify(pruned));
+                const delArr: string[] = savedDel ? JSON.parse(savedDel) : [];
+                const currentSet = new Set(delArr.map(x => String(x).toLowerCase().trim()));
+                let updated = false;
+                serverDeletedIds.forEach((id: string) => {
+                  const clean = String(id).toLowerCase().trim();
+                  if (clean && !currentSet.has(clean)) {
+                    delArr.push(clean);
+                    currentSet.add(clean);
+                    updated = true;
                   }
+                  const alphanum = clean.replace(/[^a-z0-9]/g, '');
+                  if (alphanum && alphanum !== clean && !currentSet.has(alphanum)) {
+                    delArr.push(alphanum);
+                    currentSet.add(alphanum);
+                    updated = true;
+                  }
+                });
+                if (updated) {
+                  localStorage.setItem('ea_deleted_student_ids', JSON.stringify(delArr));
+                }
+              } catch (e) {}
+            }
+
+            // CRITICAL: NEVER prune student deletion tombstones! Student deletions are permanent.
+            // Filter incoming students payload against deleted student tombstones so deleted students are never resurrected
+            if (Array.isArray(fullPayload.students)) {
+              try {
+                const savedDel = localStorage.getItem('ea_deleted_student_ids');
+                const delArr: string[] = savedDel ? JSON.parse(savedDel) : [];
+                if (delArr.length > 0) {
+                  const delSet = new Set(delArr.map(x => String(x).toLowerCase().trim()));
+                  fullPayload.students = fullPayload.students.filter((s: any) => {
+                    if (!s) return false;
+                    const id = s.id ? String(s.id).toLowerCase().trim() : '';
+                    if (id && (delSet.has(id) || delSet.has(id.replace(/[^a-z0-9]/g, '')))) return false;
+                    const roll = s.rollNumber ? String(s.rollNumber).toLowerCase().trim() : '';
+                    if (roll && (delSet.has(roll) || delSet.has(roll.replace(/[^a-z0-9]/g, '')))) return false;
+                    const name = s.name ? String(s.name).toLowerCase().trim() : '';
+                    if (name && (delSet.has(name) || delSet.has(name.replace(/[^a-z0-9]/g, '')))) return false;
+                    return true;
+                  });
                 }
               } catch (e) {}
             }

@@ -1381,19 +1381,26 @@ export default function AdminDashboard({
   };
 
   const handleDeleteStudent = async (id: string) => {
-    const studentToDelete = students.find(s => s.id === id);
+    const studentToDelete = students.find(s => s.id === id || String(s.id).toLowerCase().trim() === String(id).toLowerCase().trim());
     const rollNumber = studentToDelete?.rollNumber;
     const studentName = studentToDelete?.name;
     const photoUrl = studentToDelete?.photoUrl;
 
-    const remainingStudents = students.filter(s => s.id !== id);
+    const remainingStudents = students.filter(s => {
+      if (s.id === id || String(s.id).toLowerCase().trim() === String(id).toLowerCase().trim()) return false;
+      if (rollNumber && s.rollNumber && s.rollNumber.trim().toLowerCase() === rollNumber.trim().toLowerCase()) return false;
+      if (studentName && s.name && s.name.trim().toLowerCase() === studentName.trim().toLowerCase()) return false;
+      return true;
+    });
     setStudents(remainingStudents);
     if (selectedStudentId === id) setSelectedStudentId('');
 
     // Clean up grades and attendance for this student in local state
-    const remainingGrades = grades ? grades.filter(g => g.studentId !== id && (!rollNumber || g.studentId !== rollNumber)) : [];
-    const remainingAttendance = attendance ? attendance.filter(a => a.studentId !== id && (!rollNumber || a.studentId !== rollNumber)) : [];
-    const remainingBills = bills ? bills.filter(b => b.studentId !== id && (!rollNumber || b.studentId !== rollNumber)) : [];
+    const studentKeys = [id, rollNumber, studentName].filter(Boolean) as string[];
+    const keySet = new Set(studentKeys.map(k => String(k).toLowerCase().trim()));
+    const remainingGrades = grades ? grades.filter(g => !keySet.has(String(g.studentId).toLowerCase().trim())) : [];
+    const remainingAttendance = attendance ? attendance.filter(a => !keySet.has(String(a.studentId).toLowerCase().trim())) : [];
+    const remainingBills = bills ? bills.filter(b => !keySet.has(String(b.studentId).toLowerCase().trim())) : [];
 
     if (setGrades) {
       setGrades(remainingGrades);

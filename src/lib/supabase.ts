@@ -979,13 +979,7 @@ export function getDeletedStudentIds(): string[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        return parsed.filter(x => {
-          if (typeof x !== 'string' || !x.trim()) return false;
-          const clean = x.trim().toLowerCase();
-          // Exclude roll numbers with slashes and multi-word names so only true student IDs are tracked
-          if (clean.includes('/') || clean.includes(' ') || clean.startsWith('ea/')) return false;
-          return true;
-        });
+        return parsed.filter(x => typeof x === 'string' && x.trim().length > 0);
       }
     }
   } catch (e) {}
@@ -993,15 +987,24 @@ export function getDeletedStudentIds(): string[] {
 }
 
 export function recordDeletedStudentId(id: string, rollNumber?: string, studentName?: string): void {
-  if (!id) return;
+  if (!id && !rollNumber && !studentName) return;
   try {
     const current = getDeletedStudentIds();
     const currentLower = new Set(current.map(x => String(x).toLowerCase().trim()));
     const toAdd: string[] = [];
 
-    const cleanId = id.trim().toLowerCase();
-    if (cleanId && !currentLower.has(cleanId)) {
-      toAdd.push(cleanId);
+    const candidates = [id, rollNumber, studentName].filter(Boolean) as string[];
+    for (const c of candidates) {
+      const clean = String(c).toLowerCase().trim();
+      if (clean && !currentLower.has(clean)) {
+        toAdd.push(clean);
+        currentLower.add(clean);
+      }
+      const alphanum = clean.replace(/[^a-z0-9]/g, '');
+      if (alphanum && alphanum !== clean && !currentLower.has(alphanum)) {
+        toAdd.push(alphanum);
+        currentLower.add(alphanum);
+      }
     }
 
     if (toAdd.length > 0) {
@@ -1011,12 +1014,30 @@ export function recordDeletedStudentId(id: string, rollNumber?: string, studentN
 }
 
 export function isStudentDeleted(student?: { id?: string; rollNumber?: string; name?: string } | null): boolean {
-  if (!student || !student.id) return false;
+  if (!student) return false;
   const deleted = getDeletedStudentIds();
   if (deleted.length === 0) return false;
   const deletedSet = new Set(deleted.map(x => String(x).toLowerCase().trim()));
   
-  return deletedSet.has(String(student.id).toLowerCase().trim());
+  if (student.id) {
+    const cleanId = String(student.id).toLowerCase().trim();
+    if (deletedSet.has(cleanId)) return true;
+    const alphaId = cleanId.replace(/[^a-z0-9]/g, '');
+    if (alphaId && deletedSet.has(alphaId)) return true;
+  }
+  if (student.rollNumber) {
+    const cleanRoll = String(student.rollNumber).toLowerCase().trim();
+    if (deletedSet.has(cleanRoll)) return true;
+    const alphaRoll = cleanRoll.replace(/[^a-z0-9]/g, '');
+    if (alphaRoll && deletedSet.has(alphaRoll)) return true;
+  }
+  if (student.name) {
+    const cleanName = String(student.name).toLowerCase().trim();
+    if (deletedSet.has(cleanName)) return true;
+    const alphaName = cleanName.replace(/[^a-z0-9]/g, '');
+    if (alphaName && deletedSet.has(alphaName)) return true;
+  }
+  return false;
 }
 
 export function removeDeletedStudentId(id?: string, rollNumber?: string, studentName?: string): void {
@@ -1024,12 +1045,24 @@ export function removeDeletedStudentId(id?: string, rollNumber?: string, student
   try {
     const current = getDeletedStudentIds();
     const toRemove = new Set<string>();
-    if (id) toRemove.add(id.toLowerCase().trim());
-    if (rollNumber) {
-      toRemove.add(rollNumber.toLowerCase().trim());
-      toRemove.add(rollNumber.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
+    if (id) {
+      const clean = id.toLowerCase().trim();
+      toRemove.add(clean);
+      const alpha = clean.replace(/[^a-z0-9]/g, '');
+      if (alpha) toRemove.add(alpha);
     }
-    if (studentName) toRemove.add(studentName.toLowerCase().trim());
+    if (rollNumber) {
+      const clean = rollNumber.toLowerCase().trim();
+      toRemove.add(clean);
+      const alpha = clean.replace(/[^a-z0-9]/g, '');
+      if (alpha) toRemove.add(alpha);
+    }
+    if (studentName) {
+      const clean = studentName.toLowerCase().trim();
+      toRemove.add(clean);
+      const alpha = clean.replace(/[^a-z0-9]/g, '');
+      if (alpha) toRemove.add(alpha);
+    }
     const filtered = current.filter(item => !toRemove.has(item.toLowerCase().trim()));
     localStorage.setItem('ea_deleted_student_ids', JSON.stringify(filtered));
   } catch (e) {}
@@ -1080,16 +1113,9 @@ export function removeDeletedTeacherId(id: string): void {
 }
 
 // Global helper to automatically prune deleted tombstones for any records that exist actively
-export function pruneDeletedTombstones(activeStudents: Student[], activeTeachers?: User[]): void {
+// NOTE: Student deletion tombstones are PERMANENT and must never be pruned. Only active staff credentials can be reconciled.
+export function pruneDeletedTombstones(_activeStudents: Student[], activeTeachers?: User[]): void {
   try {
-    if (Array.isArray(activeStudents) && activeStudents.length > 0) {
-      const activeIds = new Set(activeStudents.map(s => String(s.id).toLowerCase().trim()));
-      const current = getDeletedStudentIds();
-      const pruned = current.filter(id => !activeIds.has(String(id).toLowerCase().trim()));
-      if (pruned.length !== current.length) {
-        localStorage.setItem('ea_deleted_student_ids', JSON.stringify(pruned));
-      }
-    }
     if (Array.isArray(activeTeachers) && activeTeachers.length > 0) {
       const activeTIds = new Set(activeTeachers.map(t => String(t.id).toLowerCase().trim()));
       const currentT = getDeletedTeacherIds();
@@ -1149,15 +1175,6 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
   const getMergedFallback = async (): Promise<Student[] | null> => {
     const serverResult = await fetchFromServer();
     if (serverResult !== null && Array.isArray(serverResult)) {
-      // Remote server is authoritative: un-tombstone active pupils so no browser hides enrolled students
-      const activeIds = new Set(serverResult.map(s => String(s.id).toLowerCase().trim()));
-      const curDeleted = getDeletedStudentIds();
-      const pruned = curDeleted.filter(id => !activeIds.has(String(id).toLowerCase().trim()));
-      if (pruned.length !== curDeleted.length) {
-        try {
-          localStorage.setItem('ea_deleted_student_ids', JSON.stringify(pruned));
-        } catch (e) {}
-      }
       const clean = filterDeleted(serverResult);
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem('ea_students', JSON.stringify(clean));
@@ -1259,16 +1276,21 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       photoUrl: item.photo_url || '',
     }));
 
-    // The remote database is the source of truth for enrolled students.
-    // If a pupil exists in the active Supabase ea_students table, they are actively enrolled!
-    // Un-tombstone them from local deletion lists so they are never hidden on any device.
-    const activeStudentIds = new Set(mapped.map(s => String(s.id).toLowerCase().trim()));
-    const curDeleted = getDeletedStudentIds();
-    const prunedDeleted = curDeleted.filter(id => !activeStudentIds.has(String(id).toLowerCase().trim()));
-    if (prunedDeleted.length !== curDeleted.length) {
-      try {
-        localStorage.setItem('ea_deleted_student_ids', JSON.stringify(prunedDeleted));
-      } catch (e) {}
+    // If any records returned from Supabase match isStudentDeleted, purge them permanently from Supabase
+    const ghostRecords = mapped.filter(s => isStudentDeleted(s));
+    if (ghostRecords.length > 0 && client) {
+      const ghostIds = ghostRecords.map(g => g.id).filter(Boolean) as string[];
+      const ghostRolls = ghostRecords.map(g => g.rollNumber).filter(Boolean) as string[];
+      const ghostNames = ghostRecords.map(g => g.name).filter(Boolean) as string[];
+      for (let i = 0; i < ghostIds.length; i += 30) {
+        client.from('ea_students').delete().in('id', ghostIds.slice(i, i + 30)).then(() => {});
+      }
+      for (let i = 0; i < ghostRolls.length; i += 30) {
+        client.from('ea_students').delete().in('roll_number', ghostRolls.slice(i, i + 30)).then(() => {});
+      }
+      for (let i = 0; i < ghostNames.length; i += 30) {
+        client.from('ea_students').delete().in('name', ghostNames.slice(i, i + 30)).then(() => {});
+      }
     }
 
     const cleanMapped = filterDeleted(mapped);
@@ -1454,6 +1476,8 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
         const chunk = deletedIds.slice(i, i + 50);
         try {
           await client.from('ea_students').delete().in('id', chunk);
+          await client.from('ea_students').delete().in('roll_number', chunk);
+          await client.from('ea_students').delete().in('name', chunk);
         } catch (e) {}
       }
     }
@@ -1815,8 +1839,10 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
   // 1. Immediately purge from local caches
   try {
     const isTargetStudent = (s: any) => {
-      if (id && s.id && s.id === id) return true;
-      if (rollNumber && s.rollNumber && s.rollNumber.trim().toLowerCase() === rollNumber.trim().toLowerCase()) return true;
+      if (!s) return false;
+      if (id && s.id && (s.id === id || String(s.id).toLowerCase().trim() === id.toLowerCase().trim())) return true;
+      if (rollNumber && s.rollNumber && (s.rollNumber.trim().toLowerCase() === rollNumber.trim().toLowerCase() || s.rollNumber.toUpperCase().replace(/[^A-Z0-9]/g, '') === normRoll)) return true;
+      if (normName && s.name && s.name.toLowerCase().trim() === normName) return true;
       return false;
     };
 
@@ -1968,6 +1994,7 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
       for (const k of studentKeys) {
         await client.from('ea_grades').delete().eq('student_id', k);
         await client.from('ea_attendance').delete().eq('student_id', k);
+        await client.from('ea_daily_attendance').delete().eq('student_id', k);
         await client.from('ea_bills').delete().eq('student_id', k);
         await client.from('ea_fee_payments').delete().eq('student_id', k);
         await client.from('ea_jhs_mock_exams').delete().eq('student_id', k);
@@ -1975,9 +2002,13 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
       if (id) {
         await client.from('ea_students').delete().eq('id', id);
         await client.from('ea_students').delete().eq('id', id.trim());
+        await client.from('ea_students').delete().eq('id', id.toLowerCase().trim());
       }
       if (rollNumber) {
         await client.from('ea_students').delete().eq('roll_number', rollNumber.trim());
+      }
+      if (studentName) {
+        await client.from('ea_students').delete().eq('name', studentName.trim());
       }
 
       // Log deletion in ea_sync_logs and ea_deleted_records to sync across other client devices & sessions

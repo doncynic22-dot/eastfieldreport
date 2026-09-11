@@ -667,7 +667,7 @@ export function restoreAllStudentsToAdmittedLevels(students: Student[]): Student
     return isStudentDeleted({ id, rollNumber: _roll, name: _name });
   };
 
-  const initialFiltered = INITIAL_STUDENTS.filter(s => !isDeleted(s.id, s.rollNumber));
+  const initialFiltered = INITIAL_STUDENTS.filter(s => !isDeleted(s.id, s.rollNumber, s.name));
   const initialMap = new Map(initialFiltered.map(s => [s.id, s]));
   const initialNameMap = new Map(initialFiltered.map(s => [(s.name || '').toLowerCase().trim(), s]));
   const initialRollMap = new Map(initialFiltered.map(s => [(s.rollNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), s]));
@@ -912,13 +912,11 @@ export function restoreStudentsFromTerminalReport(
   }
 
   // 3. Reconcile with INITIAL_STUDENTS (the foundational registered students, excluding deleted)
-  const deletedIds = new Set(getDeletedStudentIds().map(id => id.trim().toLowerCase()));
   const isDeleted = (id?: string, _roll?: string, _name?: string) => {
-    if (id && deletedIds.has(id.trim().toLowerCase())) return true;
-    return false;
+    return isStudentDeleted({ id, rollNumber: _roll, name: _name });
   };
 
-  const initialFiltered = INITIAL_STUDENTS.filter(s => !isDeleted(s.id, s.rollNumber));
+  const initialFiltered = INITIAL_STUDENTS.filter(s => !isDeleted(s.id, s.rollNumber, s.name));
   const initialMap = new Map(initialFiltered.map(s => [s.id, s]));
   const initialNameMap = new Map(initialFiltered.map(s => [(s.name || '').toLowerCase().trim(), s]));
   const initialRollMap = new Map(initialFiltered.map(s => [(s.rollNumber || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), s]));
