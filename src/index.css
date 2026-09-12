@@ -1004,7 +1004,7 @@
   }
 
   .printable-noticeboard .p-4,
-  .printable-noticeboard .p-2.5 {
+  .printable-noticeboard .p-2\.5 {
     padding: 2px 3px !important;
   }
 

@@ -154,6 +154,17 @@
     "photoUrl": ""
   },
   {
+    "id": "st-j3-93",
+    "name": "Mireku Emmanuel",
+    "rollNumber": "EA/J3/2026/006-2493",
+    "level": "JHS",
+    "className": "JHS 3",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
     "id": "st-j3-00",
     "name": "Adipah Manasseh",
     "rollNumber": "EA/J3/2026/002-7100",
@@ -407,6 +418,17 @@
     "photoUrl": ""
   },
   {
+    "id": "st-1788785902492",
+    "name": "Frimpong Constance",
+    "rollNumber": "EA/J2/2026/017",
+    "level": "JHS",
+    "className": "JHS 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
     "id": "st-1788806885314",
     "name": "Adorvlo Angel Agyekumwaa",
     "rollNumber": "EA/P4/2026/004",
@@ -572,6 +594,17 @@
     "photoUrl": ""
   },
   {
+    "id": "st-1788784947002",
+    "name": "Odonkor Michael",
+    "rollNumber": "EA/P5/2026/016",
+    "level": "PRIMARY",
+    "className": "Primary 5",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
     "id": "st-1788483968733",
     "name": "OTU RICHARD SETUDOR",
     "rollNumber": "EA/J3/2026/004",
@@ -682,6 +715,17 @@
     "photoUrl": ""
   },
   {
+    "id": "st-1788856147136",
+    "name": "Asumadu Grace.",
+    "rollNumber": "EA/J1/2026/005",
+    "level": "JHS",
+    "className": "JHS 1",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
     "id": "st-1788803579456",
     "name": "Addobea Natalina",
     "rollNumber": "EA/KG2/2026/004",
@@ -726,6 +770,17 @@
     "photoUrl": ""
   },
   {
+    "id": "st-1788785572493",
+    "name": "Mireku Emmanuel",
+    "rollNumber": "EA/J2/2026/006-2493",
+    "level": "JHS",
+    "className": "JHS 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
     "id": "st-1788781547058",
     "name": "Asare Adom David",
     "rollNumber": "EA/N2/2026/007",
@@ -764,6 +819,17 @@
     "rollNumber": "EA/KG2/2026/003",
     "level": "KINDERGARTEN",
     "className": "Kindergarten 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788785117494",
+    "name": "Brobbey Barimah Owusu",
+    "rollNumber": "EA/P6/2026/005",
+    "level": "PRIMARY",
+    "className": "Primary 6",
     "guardianName": "",
     "guardianEmail": "",
     "guardianPhone": "",
@@ -935,39 +1001,6 @@
     "photoUrl": ""
   },
   {
-    "id": "st-1788780962238",
-    "name": "Akwasi Opoku Appiah-Kubi",
-    "rollNumber": "EA/N2/2026/002",
-    "level": "NURSERY",
-    "className": "Nursery 2",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788807210011",
-    "name": "Buobu laura",
-    "rollNumber": "EA/P4/2026/008",
-    "level": "PRIMARY",
-    "className": "Primary 4",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-p3-75",
-    "name": "Acheampong Augustine",
-    "rollNumber": "EA/P3/2026/001-3775",
-    "level": "PRIMARY",
-    "className": "Primary 3",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
     "id": "st-1788785227369",
     "name": "Obiri Emmanuel Nyamekye",
     "rollNumber": "EA/P6/2026/008",
@@ -1111,6 +1144,17 @@
     "photoUrl": ""
   },
   {
+    "id": "st-1788785555136",
+    "name": "Mintah John Gyasi Kwaku",
+    "rollNumber": "EA/J2/2026/005",
+    "level": "JHS",
+    "className": "JHS 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
     "id": "st-1788805128294",
     "name": "Tamatey Jochabed",
     "rollNumber": "EA/KG2/2026/013",
@@ -1149,250 +1193,6 @@
     "rollNumber": "EA/N2/2026/010",
     "level": "NURSERY",
     "className": "Nursery 2",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788805739773",
-    "name": "Appiah Diana Nyame",
-    "rollNumber": "EA/P1/2026/005",
-    "level": "PRIMARY",
-    "className": "Primary 1",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788781296648",
-    "name": "Obiri Henry Nkunim",
-    "rollNumber": "EA/N2/2026/003",
-    "level": "NURSERY",
-    "className": "Nursery 2",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788785859587",
-    "name": "Darko Mary Abena",
-    "rollNumber": "EA/J2/2026/015-9587",
-    "level": "JHS",
-    "className": "JHS 2",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788805930911",
-    "name": "Doe Dickson Dela",
-    "rollNumber": "EA/P1/2026/008",
-    "level": "PRIMARY",
-    "className": "Primary 1",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788804219368",
-    "name": "Alugchaab Jessica",
-    "rollNumber": "EA/KG2/2026/006",
-    "level": "KINDERGARTEN",
-    "className": "Kindergarten 2",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788776171706",
-    "name": "Ahorbu Prosper Elikprim",
-    "rollNumber": "EA/P3/2026/001",
-    "level": "PRIMARY",
-    "className": "Primary 3",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788776485461",
-    "name": "Asomani Joel Boadi",
-    "rollNumber": "EA/P3/2026/005",
-    "level": "PRIMARY",
-    "className": "Primary 3",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788856367502",
-    "name": "Siaw Bernice Tawaih",
-    "rollNumber": "EA/J1/2026/009",
-    "level": "JHS",
-    "className": "JHS 1",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788784964727",
-    "name": "Osei Mark Brown",
-    "rollNumber": "EA/P5/2026/017-4727",
-    "level": "PRIMARY",
-    "className": "Primary 5",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788777929808",
-    "name": "LARBI DAVID KOI",
-    "rollNumber": "EA/P3/2026/011",
-    "level": "PRIMARY",
-    "className": "Primary 3",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788778492079",
-    "name": "Asiamah Oheneba-Ayeyi O. Yaw",
-    "rollNumber": "EA/P2/2026/003",
-    "level": "PRIMARY",
-    "className": "Primary 2",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788781843439",
-    "name": "Emirald Adjei",
-    "rollNumber": "EA/N2/2026/012",
-    "level": "NURSERY",
-    "className": "Nursery 2",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788785830733",
-    "name": "Bilson Matina Yaaba",
-    "rollNumber": "EA/J2/2026/014",
-    "level": "JHS",
-    "className": "JHS 2",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": "",
-    "updated_at": "2026-09-12T07:49:02.708Z",
-    "updatedAt": "2026-09-12T07:49:02.708Z"
-  },
-  {
-    "id": "st-1788784688370",
-    "name": "Amediku Emelia",
-    "rollNumber": "EA/P5/2026/004",
-    "level": "PRIMARY",
-    "className": "Primary 5",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788780818598",
-    "name": "Jophiel",
-    "rollNumber": "EA/KG1/2026/013",
-    "level": "KINDERGARTEN",
-    "className": "Kindergarten 1",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788808194590",
-    "name": "Yirenkyi Fredolina",
-    "rollNumber": "EA/P4/2026/016",
-    "level": "PRIMARY",
-    "className": "Primary 4",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788780721249",
-    "name": "Twumasi S. Brobbey",
-    "rollNumber": "EA/KG1/2026/010",
-    "level": "KINDERGARTEN",
-    "className": "Kindergarten 1",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788785364224",
-    "name": "Aboagye Messiah",
-    "rollNumber": "EA/J2/2026/001-4224",
-    "level": "JHS",
-    "className": "JHS 2",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788785599222",
-    "name": "Amini Mukaila",
-    "rollNumber": "EA/J2/2026/007",
-    "level": "JHS",
-    "className": "JHS 2",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788781339178",
-    "name": "Danso Boateng A. Winner",
-    "rollNumber": "EA/N2/2026/004",
-    "level": "NURSERY",
-    "className": "Nursery 2",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788784702338",
-    "name": "Ansah Ebenzer Asare",
-    "rollNumber": "EA/P5/2026/005",
-    "level": "PRIMARY",
-    "className": "Primary 5",
-    "guardianName": "",
-    "guardianEmail": "",
-    "guardianPhone": "",
-    "photoUrl": ""
-  },
-  {
-    "id": "st-1788785657590",
-    "name": "Acheampong Kyria",
-    "rollNumber": "EA/J2/2026/009",
-    "level": "JHS",
-    "className": "JHS 2",
     "guardianName": "",
     "guardianEmail": "",
     "guardianPhone": "",
@@ -1542,6 +1342,17 @@
     "photoUrl": ""
   },
   {
+    "id": "st-1788783639883",
+    "name": "Kelvin Asamoah larbi",
+    "rollNumber": "EA/J3/2026/005",
+    "level": "JHS",
+    "className": "JHS 3",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
     "id": "st-1788780782693",
     "name": "Yahaya Yusra",
     "rollNumber": "EA/KG1/2026/012",
@@ -1597,6 +1408,281 @@
     "photoUrl": ""
   },
   {
+    "id": "st-1788780962238",
+    "name": "Akwasi Opoku Appiah-Kubi",
+    "rollNumber": "EA/N2/2026/002",
+    "level": "NURSERY",
+    "className": "Nursery 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788807210011",
+    "name": "Buobu laura",
+    "rollNumber": "EA/P4/2026/008",
+    "level": "PRIMARY",
+    "className": "Primary 4",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-p3-75",
+    "name": "Acheampong Augustine",
+    "rollNumber": "EA/P3/2026/001-3775",
+    "level": "PRIMARY",
+    "className": "Primary 3",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788805739773",
+    "name": "Appiah Diana Nyame",
+    "rollNumber": "EA/P1/2026/005",
+    "level": "PRIMARY",
+    "className": "Primary 1",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788781296648",
+    "name": "Obiri Henry Nkunim",
+    "rollNumber": "EA/N2/2026/003",
+    "level": "NURSERY",
+    "className": "Nursery 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788785859587",
+    "name": "Darko Mary Abena",
+    "rollNumber": "EA/J2/2026/015-9587",
+    "level": "JHS",
+    "className": "JHS 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788805930911",
+    "name": "Doe Dickson Dela",
+    "rollNumber": "EA/P1/2026/008",
+    "level": "PRIMARY",
+    "className": "Primary 1",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788804219368",
+    "name": "Alugchaab Jessica",
+    "rollNumber": "EA/KG2/2026/006",
+    "level": "KINDERGARTEN",
+    "className": "Kindergarten 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788776171706",
+    "name": "Ahorbu Prosper Elikprim",
+    "rollNumber": "EA/P3/2026/001",
+    "level": "PRIMARY",
+    "className": "Primary 3",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788776485461",
+    "name": "Asomani Joel Boadi",
+    "rollNumber": "EA/P3/2026/005",
+    "level": "PRIMARY",
+    "className": "Primary 3",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788856367502",
+    "name": "Siaw Bernice Tawaih",
+    "rollNumber": "EA/J1/2026/009",
+    "level": "JHS",
+    "className": "JHS 1",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788784964727",
+    "name": "Osei Mark Brown",
+    "rollNumber": "EA/P5/2026/017-4727",
+    "level": "PRIMARY",
+    "className": "Primary 5",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788777929808",
+    "name": "LARBI DAVID KOI",
+    "rollNumber": "EA/P3/2026/011",
+    "level": "PRIMARY",
+    "className": "Primary 3",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788778492079",
+    "name": "Asiamah Oheneba-Ayeyi O. Yaw",
+    "rollNumber": "EA/P2/2026/003",
+    "level": "PRIMARY",
+    "className": "Primary 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788781843439",
+    "name": "Emirald Adjei",
+    "rollNumber": "EA/N2/2026/012",
+    "level": "NURSERY",
+    "className": "Nursery 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788785830733",
+    "name": "Bilson Matina Yaaba",
+    "rollNumber": "EA/J2/2026/014-0733",
+    "level": "JHS",
+    "className": "JHS 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788784688370",
+    "name": "Amediku Emelia",
+    "rollNumber": "EA/P5/2026/004",
+    "level": "PRIMARY",
+    "className": "Primary 5",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788780818598",
+    "name": "Jophiel",
+    "rollNumber": "EA/KG1/2026/013",
+    "level": "KINDERGARTEN",
+    "className": "Kindergarten 1",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788808194590",
+    "name": "Yirenkyi Fredolina",
+    "rollNumber": "EA/P4/2026/016",
+    "level": "PRIMARY",
+    "className": "Primary 4",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788780721249",
+    "name": "Twumasi S. Brobbey",
+    "rollNumber": "EA/KG1/2026/010",
+    "level": "KINDERGARTEN",
+    "className": "Kindergarten 1",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788785364224",
+    "name": "Aboagye Messiah",
+    "rollNumber": "EA/J2/2026/001-4224",
+    "level": "JHS",
+    "className": "JHS 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788785599222",
+    "name": "Amini Mukaila",
+    "rollNumber": "EA/J2/2026/007",
+    "level": "JHS",
+    "className": "JHS 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788781339178",
+    "name": "Danso Boateng A. Winner",
+    "rollNumber": "EA/N2/2026/004",
+    "level": "NURSERY",
+    "className": "Nursery 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788784702338",
+    "name": "Ansah Ebenzer Asare",
+    "rollNumber": "EA/P5/2026/005",
+    "level": "PRIMARY",
+    "className": "Primary 5",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788785657590",
+    "name": "Acheampong Kyria",
+    "rollNumber": "EA/J2/2026/009",
+    "level": "JHS",
+    "className": "JHS 2",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
     "id": "st-1788780749508",
     "name": "Tamatey, Melody",
     "rollNumber": "EA/KG1/2026/011",
@@ -1624,6 +1710,17 @@
     "rollNumber": "EA/P6/2026/003",
     "level": "PRIMARY",
     "className": "Primary 6",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
+  },
+  {
+    "id": "st-1788783813196",
+    "name": "Asumadu S. David Taylor",
+    "rollNumber": "EA/J3/2026/007",
+    "level": "JHS",
+    "className": "JHS 3",
     "guardianName": "",
     "guardianEmail": "",
     "guardianPhone": "",

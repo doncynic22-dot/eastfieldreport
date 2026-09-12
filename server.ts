@@ -29,33 +29,35 @@ function isDemoStudent(s: any): boolean {
   return false;
 }
 
+function sanitizeDeletedStudentIds(ids: any[]): string[] {
+  if (!Array.isArray(ids)) return [];
+  return ids.filter(item => {
+    if (typeof item !== 'string') return false;
+    const s = item.trim().toLowerCase();
+    if (!s) return false;
+    // Never allow roll numbers (with / or class prefixes) or student names to be tombstoned
+    if (s.includes('/') || s.includes(' ') || s.includes('\\')) return false;
+    if (s.startsWith('ea') || s.startsWith('kg') || s.startsWith('p') || s.startsWith('j') || s.startsWith('n')) return false;
+    if (!s.startsWith('st-') && !s.startsWith('st')) return false;
+    return true;
+  });
+}
+
 function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
-  if (!s) return false;
+  if (!s || !s.id) return false;
   const db = dbCache || (fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, "utf-8")) : null);
-  const allDeleted = new Set([
+  const rawList = [
     ...(db?.deletedStudentIds || []),
     ...(deletedIds || [])
-  ].map(x => String(x).toLowerCase().trim()));
+  ];
+  const allDeleted = new Set(sanitizeDeletedStudentIds(rawList).map(x => String(x).toLowerCase().trim()));
   if (allDeleted.size === 0) return false;
 
-  if (s.id) {
-    const cleanId = String(s.id).toLowerCase().trim();
-    if (allDeleted.has(cleanId)) return true;
-    const alphaId = cleanId.replace(/[^a-z0-9]/g, '');
-    if (alphaId && allDeleted.has(alphaId)) return true;
-  }
-  if (s.rollNumber) {
-    const cleanRoll = String(s.rollNumber).toLowerCase().trim();
-    if (allDeleted.has(cleanRoll)) return true;
-    const alphaRoll = cleanRoll.replace(/[^a-z0-9]/g, '');
-    if (alphaRoll && allDeleted.has(alphaRoll)) return true;
-  }
-  if (s.name) {
-    const cleanName = String(s.name).toLowerCase().trim();
-    if (allDeleted.has(cleanName)) return true;
-    const alphaName = cleanName.replace(/[^a-z0-9]/g, '');
-    if (alphaName && allDeleted.has(alphaName)) return true;
-  }
+  // ONLY match record unique ID. Roll numbers and pupil names MUST NEVER be tombstoned.
+  const cleanId = String(s.id).toLowerCase().trim();
+  if (allDeleted.has(cleanId)) return true;
+  const alphaId = cleanId.replace(/[^a-z0-9]/g, '');
+  if (alphaId && allDeleted.has(alphaId)) return true;
 
   return false;
 }
@@ -120,6 +122,7 @@ interface ServerDatabase {
   bookStock: any[];
   bookSales: any[];
   jhsMockExams: any[];
+  classTeacherAssignments?: Record<string, string>;
   deletedStudentIds: string[];
   deletedTeacherIds: string[];
   deletedBookStockIds?: string[];
@@ -185,6 +188,7 @@ function getDefaultDatabase(): ServerDatabase {
     bookStock: [],
     bookSales: [],
     jhsMockExams: [],
+    classTeacherAssignments: {},
     deletedStudentIds: [],
     deletedTeacherIds: [],
     deletedBookStockIds: [],
@@ -208,6 +212,7 @@ function loadServerDatabase(): ServerDatabase {
         dbCache = {
           ...getDefaultDatabase(),
           ...parsed,
+          deletedStudentIds: sanitizeDeletedStudentIds(parsed.deletedStudentIds || []),
           students: parsed.rosterCleared ? [] : (parsed.students || []).filter((s: any) => !isDemoStudent(s))
         };
         return dbCache!;
@@ -747,15 +752,13 @@ async function startServer() {
     // If this pupil was previously tombstoned, remove from deleted list
     if (Array.isArray(db.deletedStudentIds)) {
       const lowerId = cleanId.toLowerCase();
-      const lowerRoll = cleanRoll.toLowerCase();
-      const lowerName = String(student.name || '').trim().toLowerCase();
-      db.deletedStudentIds = db.deletedStudentIds.filter(id => {
-        const item = String(id).toLowerCase().trim();
-        if (item === lowerId) return false;
-        if (lowerRoll && item === lowerRoll) return false;
-        if (lowerName && item === lowerName) return false;
-        return true;
-      });
+      const alphaId = lowerId.replace(/[^a-z0-9]/g, '');
+      db.deletedStudentIds = sanitizeDeletedStudentIds(
+        db.deletedStudentIds.filter(id => {
+          const item = String(id).toLowerCase().trim();
+          return item !== lowerId && item !== alphaId;
+        })
+      );
     }
 
     // Check if student already exists by unique ID
@@ -787,7 +790,12 @@ async function startServer() {
     }
 
     db.rosterCleared = false;
-    saveServerStudents(updatedList);
+    db.students = updatedList;
+    saveServerDatabase(db, "students", updatedList);
+    try {
+      fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(updatedList, null, 2), "utf-8");
+    } catch (e) {}
+
     // Broadcast specific ADMIT event in addition to general update
     broadcastSse("ADMIT", "students", { action: "ADMIT", student: normalizedStudent, count: updatedList.length });
     console.log(`[Global Student Sync & CDN] Pupil '${normalizedStudent.name}' admitted / updated. Total pupils: ${updatedList.length}`);
@@ -895,20 +903,17 @@ async function startServer() {
     const { rollNumber, studentName } = req.body || {};
 
     const db = loadServerDatabase();
-    const toTombstone = [targetId, rollNumber, studentName].filter(Boolean) as string[];
-    const currentDeleted = new Set((db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
-    toTombstone.forEach(item => {
-      const trimmed = String(item).toLowerCase().trim();
-      if (trimmed) currentDeleted.add(trimmed);
-      const cleanAlphanum = trimmed.replace(/[^a-z0-9]/g, '');
-      if (cleanAlphanum) currentDeleted.add(cleanAlphanum);
-    });
-    db.deletedStudentIds = Array.from(currentDeleted);
+    const currentDeleted = new Set(sanitizeDeletedStudentIds(db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
+    const cleanTargetId = String(targetId).toLowerCase().trim();
+    if (cleanTargetId) {
+      currentDeleted.add(cleanTargetId);
+      const cleanAlpha = cleanTargetId.replace(/[^a-z0-9]/g, '');
+      if (cleanAlpha) currentDeleted.add(cleanAlpha);
+    }
+    db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(currentDeleted));
 
     const isMatch = (s: any) => {
       if (s.id && (s.id === targetId || String(s.id).toLowerCase().trim() === targetId.toLowerCase().trim())) return true;
-      if (rollNumber && s.rollNumber && String(s.rollNumber).toLowerCase().trim() === String(rollNumber).toLowerCase().trim()) return true;
-      if (studentName && s.name && String(s.name).toLowerCase().trim() === String(studentName).toLowerCase().trim()) return true;
       return false;
     };
 
@@ -916,6 +921,7 @@ async function startServer() {
     const updated = currentStudents.filter(s => !isMatch(s));
 
     // Also clean up grades, attendance, bills, mock exams for deleted student
+    const toTombstone = [targetId, rollNumber, studentName].filter(Boolean) as string[];
     const keysToRemove = new Set(toTombstone.map(x => String(x).toLowerCase().trim()));
     if (Array.isArray(db.grades)) {
       db.grades = db.grades.filter(g => !keysToRemove.has(String(g.studentId).toLowerCase().trim()));
@@ -933,7 +939,12 @@ async function startServer() {
       db.jhsMockExams = db.jhsMockExams.filter(m => !keysToRemove.has(String(m.studentId).toLowerCase().trim()));
     }
 
-    saveServerStudents(updated);
+    db.students = updated;
+    saveServerDatabase(db, "students", updated);
+    try {
+      fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(updated, null, 2), "utf-8");
+    } catch (e) {}
+
     // Broadcast specific DELETE event across SSE
     broadcastSse("DELETE", "students", { action: "DELETE", id: targetId, rollNumber, studentName, remainingCount: updated.length });
     console.log(`[Global Student Sync & CDN] Student ID '${targetId}' permanently deleted. Remaining pupils: ${updated.length}`);
@@ -1021,7 +1032,20 @@ async function startServer() {
 
     const db = loadServerDatabase();
 
-    if (incoming.config) db.config = incoming.config;
+    if (incoming.classTeacherAssignments && typeof incoming.classTeacherAssignments === "object") {
+      db.classTeacherAssignments = {
+        ...(db.classTeacherAssignments || {}),
+        ...incoming.classTeacherAssignments
+      };
+    }
+    if (incoming.config) {
+      db.config = {
+        ...incoming.config,
+        classTeacherAssignments: db.classTeacherAssignments || incoming.config.classTeacherAssignments || {}
+      };
+    } else if (db.classTeacherAssignments && db.config) {
+      db.config.classTeacherAssignments = db.classTeacherAssignments;
+    }
     if (Array.isArray(incoming.deletedTeacherIds)) {
       if (!db.deletedTeacherIds) db.deletedTeacherIds = [];
       incoming.deletedTeacherIds.forEach((id: any) => {
@@ -1045,8 +1069,9 @@ async function startServer() {
       });
     }
     if (Array.isArray(incoming.deletedStudentIds)) {
-      const currentDeleted = new Set((db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
-      incoming.deletedStudentIds.forEach((id: any) => {
+      const sanitizedIncoming = sanitizeDeletedStudentIds(incoming.deletedStudentIds);
+      const currentDeleted = new Set(sanitizeDeletedStudentIds(db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
+      sanitizedIncoming.forEach((id: any) => {
         const clean = String(id).toLowerCase().trim();
         if (clean) {
           currentDeleted.add(clean);
@@ -1054,7 +1079,7 @@ async function startServer() {
           if (alpha) currentDeleted.add(alpha);
         }
       });
-      db.deletedStudentIds = Array.from(currentDeleted);
+      db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(currentDeleted));
     }
     if (Array.isArray(incoming.students)) {
       // NOTE: Never prune db.deletedStudentIds! Student deletions are permanent.
@@ -1161,15 +1186,28 @@ async function startServer() {
   // Config: GET & POST
   app.get("/api/config", (req, res) => {
     const db = loadServerDatabase();
-    return res.status(200).json({ status: "success", data: db.config, version: db.version });
+    const effectiveConfig = {
+      ...(db.config || {}),
+      classTeacherAssignments: db.classTeacherAssignments || db.config?.classTeacherAssignments || {}
+    };
+    return res.status(200).json({ status: "success", data: effectiveConfig, version: db.version });
   });
 
   app.post("/api/config", (req, res) => {
     const config = req.body?.config || req.body;
     if (!config) return res.status(400).json({ status: "error", message: "Missing config" });
     const db = loadServerDatabase();
-    db.config = config;
-    saveServerDatabase(db, "config", config);
+    if (config.classTeacherAssignments && typeof config.classTeacherAssignments === "object") {
+      db.classTeacherAssignments = {
+        ...(db.classTeacherAssignments || {}),
+        ...config.classTeacherAssignments
+      };
+    }
+    db.config = {
+      ...config,
+      classTeacherAssignments: db.classTeacherAssignments || config.classTeacherAssignments || {}
+    };
+    saveServerDatabase(db, "config", db.config);
     return res.status(200).json({ status: "success", version: db.version });
   });
 
@@ -1230,6 +1268,57 @@ async function startServer() {
     saveServerDatabase(db, "teachers", remaining);
     console.log(`[Global Teacher Sync] Teacher '${targetId}' deleted. Remaining active staff: ${remaining.length}`);
     return res.status(200).json({ status: "success", count: remaining.length, version: db.version });
+  });
+
+  // Class Teacher Assignments: GET & POST
+  app.get("/api/class-teacher-assignments", (req, res) => {
+    const db = loadServerDatabase();
+    const assignments = db.classTeacherAssignments || db.config?.classTeacherAssignments || {};
+    return res.status(200).json({
+      status: "success",
+      data: assignments,
+      version: db.version
+    });
+  });
+
+  app.post("/api/class-teacher-assignments", (req, res) => {
+    const assignments = req.body?.assignments || req.body;
+    if (!assignments || typeof assignments !== "object") {
+      return res.status(400).json({ status: "error", message: "Expected assignments object" });
+    }
+    const db = loadServerDatabase();
+    db.classTeacherAssignments = assignments;
+    if (db.config) {
+      db.config.classTeacherAssignments = assignments;
+    }
+
+    // Reconcile teachers in db if assignments were provided
+    if (Array.isArray(db.teachers) && db.teachers.length > 0) {
+      const map = db.classTeacherAssignments;
+      const assignedClasses = Object.keys(map);
+      db.teachers = db.teachers.map((t: any) => {
+        if (t.role !== "TEACHER") return t;
+        const remaining = (t.classes || []).filter((c: string) => !assignedClasses.includes(c));
+        const added: string[] = [];
+        Object.entries(map).forEach(([cls, tid]) => {
+          if (tid && String(tid) === String(t.id)) added.push(cls);
+        });
+        return {
+          ...t,
+          classes: Array.from(new Set([...remaining, ...added])),
+          updatedAt: new Date().toISOString()
+        };
+      });
+    }
+
+    saveServerDatabase(db, "classTeacherAssignments", db.classTeacherAssignments);
+    console.log("[Class Teacher Sync] Saved assignments on server.");
+    return res.status(200).json({
+      status: "success",
+      data: db.classTeacherAssignments,
+      teachers: db.teachers,
+      version: db.version
+    });
   });
 
   // Grades: GET & POST

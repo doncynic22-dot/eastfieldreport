@@ -18,10 +18,12 @@ import AdminDashboard from './components/AdminDashboard';
 import TeacherDashboard from './components/TeacherDashboard';
 import StudentAttendancePortal from './components/StudentAttendancePortal';
 import academyHubBg from './assets/images/academy_hub_bg_sharp_1786006863900.jpg';
-import { School, ShieldCheck, GraduationCap, Users2, FileCheck, CheckCircle2, Lock, Sparkles, BookOpen, Eye, EyeOff, Database, AlertTriangle, X, Menu } from 'lucide-react';
+import { School, ShieldCheck, GraduationCap, Users2, FileCheck, CheckCircle2, Lock, Sparkles, BookOpen, Eye, EyeOff, Database, AlertTriangle, X, Menu, RefreshCw, Check, ExternalLink, Activity, Server, AlertCircle, Copy } from 'lucide-react';
 import {
   getSupabaseCredentials,
   testSupabaseConnection,
+  SupabaseDetailedStatusReport,
+  TableHealthStatus,
   fetchSupabaseConfig,
   fetchSupabaseStudents,
   fetchSupabaseTeachers,
@@ -54,13 +56,27 @@ import { isAutoPromotionDue, promoteStudents, restoreAllStudentsToAdmittedLevels
 import { getCanonicalSubjectId } from './utils/subjectUtils';
 import { isDemoStudent } from './data/demoPupils';
 import { globalSyncEngine, GlobalDatabaseState, pushMasterServerSync, syncTeachersToCDN, syncAttendanceToCDN } from './lib/globalSync';
+import { reconcileTeachersWithClassAssignments, getClassTeacherAssignments, saveClassTeacherAssignmentsLocally } from './services/classTeacherService';
 
 
 export default function App() {
   // Master States
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [students, setStudents] = useState<Student[]>([]);
-  const [teachers, setTeachers] = useState<User[]>([]);
+  const [teachers, setTeachers] = useState<User[]>(() => {
+    try {
+      const cached = localStorage.getItem('ea_teachers') || localStorage.getItem('mock_supabase_ea_teachers');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return reconcileTeachersWithClassAssignments(parsed);
+        }
+      }
+      return reconcileTeachersWithClassAssignments(INITIAL_USERS);
+    } catch {
+      return INITIAL_USERS;
+    }
+  });
   const [grades, setGrades] = useState<Grade[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>(() => {
     try {
@@ -161,18 +177,29 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Supabase Sync States
-  const [supabaseStatus, setSupabaseStatus] = useState<{ isConfigured: boolean; isConnected: boolean; message: string }>({
+  const [supabaseStatus, setSupabaseStatus] = useState<SupabaseDetailedStatusReport>({
+    success: false,
     isConfigured: false,
     isConnected: false,
-    message: 'Supabase is not configured.'
+    message: 'Supabase is not configured.',
+    healthyTables: [],
+    failingTables: [],
+    allTablesStatus: [],
+    totalTablesChecked: 0,
+    healthyCount: 0,
+    failingCount: 0,
+    suggestedSqlFix: '',
+    checkedAt: new Date().toISOString()
   });
   const [isSupabaseSyncing, setIsSupabaseSyncing] = useState(false);
+  const [isAuditingSupabase, setIsAuditingSupabase] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'offline'>('offline');
   const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'connecting' | 'error' | 'disconnected'>('connecting');
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(new Date());
   const [lastSyncError, setLastSyncError] = useState<string>('');
   const [showSyncErrorModal, setShowSyncErrorModal] = useState(false);
   const [copiedRepair, setCopiedRepair] = useState(false);
+  const [copiedCustomSql, setCopiedCustomSql] = useState(false);
   const isPullingRemoteRef = useRef(false);
   const lastSavedStudentsSigRef = useRef<string>('');
   const lastSavedTeachersSigRef = useRef<string>('');
@@ -182,26 +209,65 @@ export default function App() {
   const lastSavedBillsSigRef = useRef<string>('');
   const lastSavedDailyAttendanceSigRef = useRef<string>('');
 
-  // Check connection status
-  const checkSupabaseStatus = async () => {
+  // Check connection status with detailed table diagnostics and suggested SQL fixes
+  const checkSupabaseStatus = async (): Promise<SupabaseDetailedStatusReport> => {
+    setIsAuditingSupabase(true);
     const creds = getSupabaseCredentials();
     if (!creds.isConfigured) {
-      setSupabaseStatus({
+      const emptyReport: SupabaseDetailedStatusReport = {
+        success: false,
         isConfigured: false,
         isConnected: false,
-        message: 'No credentials found. Please configure Supabase in settings.'
-      });
-      return false;
+        message: 'No credentials found. Please configure Supabase in settings.',
+        healthyTables: [],
+        failingTables: [],
+        allTablesStatus: [],
+        totalTablesChecked: 0,
+        healthyCount: 0,
+        failingCount: 0,
+        suggestedSqlFix: '',
+        checkedAt: new Date().toISOString()
+      };
+      setSupabaseStatus(emptyReport);
+      setIsAuditingSupabase(false);
+      return emptyReport;
     }
 
-    setSupabaseStatus(prev => ({ ...prev, isConfigured: true, message: 'Verifying connection...' }));
-    const result = await testSupabaseConnection();
-    setSupabaseStatus({
+    setSupabaseStatus(prev => ({
+      ...prev,
       isConfigured: true,
-      isConnected: result.success,
-      message: result.message
-    });
-    return result.success;
+      message: 'Auditing 18 Supabase tables and cloud sync health...'
+    }));
+
+    try {
+      const result = await testSupabaseConnection();
+      setSupabaseStatus(result.report);
+      if (!result.success || result.report.failingCount > 0) {
+        setLastSyncError(result.message);
+      }
+      return result.report;
+    } catch (err: any) {
+      const errorMsg = err?.message || 'Failed to communicate with Supabase.';
+      const fallbackReport: SupabaseDetailedStatusReport = {
+        success: false,
+        isConfigured: true,
+        isConnected: false,
+        message: errorMsg,
+        healthyTables: [],
+        failingTables: [],
+        allTablesStatus: [],
+        totalTablesChecked: 0,
+        healthyCount: 0,
+        failingCount: 0,
+        suggestedSqlFix: '',
+        checkedAt: new Date().toISOString()
+      };
+      setSupabaseStatus(fallbackReport);
+      setLastSyncError(errorMsg);
+      return fallbackReport;
+    } finally {
+      setIsAuditingSupabase(false);
+    }
   };
 
   // Pull all tables from Supabase with smart fallbacks and automatic seeding
@@ -209,8 +275,8 @@ export default function App() {
     isPullingRemoteRef.current = true;
     setIsSupabaseSyncing(true);
     try {
-      const active = await checkSupabaseStatus();
-      if (!active) {
+      const activeReport = await checkSupabaseStatus();
+      if (!activeReport.isConnected) {
         setIsSupabaseSyncing(false);
         isPullingRemoteRef.current = false;
         return false;
@@ -299,13 +365,13 @@ export default function App() {
             console.error("Failed seeding teachers to Supabase:", seedErr);
           });
         } else {
-          activeTeachers = sTeachers;
-          setTeachers(sTeachers);
-          localStorage.setItem('ea_teachers', JSON.stringify(sTeachers));
+          activeTeachers = reconcileTeachersWithClassAssignments(sTeachers);
+          setTeachers(activeTeachers);
+          localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
         }
       } else {
         // Query failed or fallback -> populate local teachers or defaults
-        activeTeachers = (localTeachers && localTeachers.length > 0) ? localTeachers : INITIAL_USERS;
+        activeTeachers = reconcileTeachersWithClassAssignments((localTeachers && localTeachers.length > 0) ? localTeachers : INITIAL_USERS);
         setTeachers(activeTeachers);
         localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
       }
@@ -359,6 +425,12 @@ export default function App() {
         localStorage.setItem('ea_students', JSON.stringify(activeStudents));
         localStorage.setItem('mock_supabase_ea_students', JSON.stringify(activeStudents));
         localStorage.setItem('ea_has_initialized', 'true');
+        // Keep server cache in lockstep with authoritative ea_students records
+        fetch('/api/sync/all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ students: activeStudents })
+        }).catch(() => {});
       } else {
         let cleanLocalStudents = localStudents.filter(
           s => !teacherIds.has(s.id)
@@ -666,6 +738,7 @@ export default function App() {
     if (!Array.isArray(finalTeachers) || finalTeachers.length === 0) {
       finalTeachers = INITIAL_USERS;
     }
+    finalTeachers = reconcileTeachersWithClassAssignments(finalTeachers);
     setTeachers(finalTeachers);
     localStorage.setItem('ea_teachers', JSON.stringify(finalTeachers));
 
@@ -778,8 +851,8 @@ export default function App() {
         setSyncStatus('syncing');
         isPullingRemoteRef.current = true;
         try {
-          const ok = await checkSupabaseStatus();
-          if (ok) {
+          const statusReport = await checkSupabaseStatus();
+          if (statusReport.isConnected) {
             // Pull latest records to keep local states synced
             const pullResult = await handlePullFromSupabase();
             if (pullResult) {
@@ -790,7 +863,7 @@ export default function App() {
             }
           } else {
             setSyncStatus('error');
-            setLastSyncError('Failed to verify cloud credentials.');
+            setLastSyncError(statusReport.message || 'Failed to verify cloud credentials.');
           }
         } finally {
           setTimeout(() => {
@@ -817,8 +890,12 @@ export default function App() {
             localStorage.setItem('ea_config', JSON.stringify(master.config));
           }
           if (Array.isArray(master.teachers) && master.teachers.length > 0) {
-            setTeachers(master.teachers);
-            localStorage.setItem('ea_teachers', JSON.stringify(master.teachers));
+            if (master.classTeacherAssignments && typeof master.classTeacherAssignments === 'object') {
+              saveClassTeacherAssignmentsLocally(master.classTeacherAssignments);
+            }
+            const reconciledTeachers = reconcileTeachersWithClassAssignments(master.teachers, master.classTeacherAssignments);
+            setTeachers(reconciledTeachers);
+            localStorage.setItem('ea_teachers', JSON.stringify(reconciledTeachers));
           }
           if (Array.isArray((master as any).deletedStudentIds)) {
             (master as any).deletedStudentIds.forEach((id: string) => {
@@ -826,16 +903,21 @@ export default function App() {
             });
           }
           if (Array.isArray(master.students)) {
-            const filtered = master.students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
-            setStudents(filtered);
-            localStorage.setItem('ea_students', JSON.stringify(filtered));
-            localStorage.setItem('mock_supabase_ea_students', JSON.stringify(filtered));
-            if (filtered.length > 0) {
-              localStorage.removeItem('ea_students_cleared');
-            } else {
-              localStorage.setItem('ea_students_cleared', 'true');
+            const creds = getSupabaseCredentials();
+            // User requirement: Authoritative enrolled pupils are fetched directly from ea_students table.
+            // Do not let background server polling overwrite the 159 pupils from Supabase.
+            if (!creds.isConfigured) {
+              const filtered = master.students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
+              setStudents(filtered);
+              localStorage.setItem('ea_students', JSON.stringify(filtered));
+              localStorage.setItem('mock_supabase_ea_students', JSON.stringify(filtered));
+              if (filtered.length > 0) {
+                localStorage.removeItem('ea_students_cleared');
+              } else {
+                localStorage.setItem('ea_students_cleared', 'true');
+              }
+              lastSavedStudentsSigRef.current = filtered.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
             }
-            lastSavedStudentsSigRef.current = filtered.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
           }
           if (Array.isArray(master.grades) && master.grades.length > 0) {
             setGrades(master.grades);
@@ -940,22 +1022,30 @@ export default function App() {
           localStorage.setItem('ea_config', JSON.stringify(p.config));
         }
         if (Array.isArray(p.teachers)) {
-          setTeachers(p.teachers);
-          localStorage.setItem('ea_teachers', JSON.stringify(p.teachers));
-          lastSavedTeachersSigRef.current = p.teachers.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
-          window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: p.teachers }));
+          if (p.classTeacherAssignments && typeof p.classTeacherAssignments === 'object') {
+            saveClassTeacherAssignmentsLocally(p.classTeacherAssignments);
+          }
+          const reconciled = reconcileTeachersWithClassAssignments(p.teachers, p.classTeacherAssignments);
+          setTeachers(reconciled);
+          localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+          lastSavedTeachersSigRef.current = reconciled.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
+          window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: reconciled }));
         }
         if (Array.isArray(p.students)) {
-          const filtered = p.students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
-          setStudents(filtered);
-          localStorage.setItem('ea_students', JSON.stringify(filtered));
-          localStorage.setItem('mock_supabase_ea_students', JSON.stringify(filtered));
-          lastSavedStudentsSigRef.current = filtered.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
-          window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: filtered }));
-          if (filtered.length === 0) {
-            localStorage.setItem('ea_students_cleared', 'true');
-          } else {
-            localStorage.removeItem('ea_students_cleared');
+          const creds = getSupabaseCredentials();
+          // Keep ea_students table authoritative when cloud is active
+          if (!creds.isConfigured) {
+            const filtered = p.students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
+            setStudents(filtered);
+            localStorage.setItem('ea_students', JSON.stringify(filtered));
+            localStorage.setItem('mock_supabase_ea_students', JSON.stringify(filtered));
+            lastSavedStudentsSigRef.current = filtered.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+            window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: filtered }));
+            if (filtered.length === 0) {
+              localStorage.setItem('ea_students_cleared', 'true');
+            } else {
+              localStorage.removeItem('ea_students_cleared');
+            }
           }
         }
         if (Array.isArray(p.grades)) {
@@ -1277,13 +1367,33 @@ export default function App() {
   useEffect(() => {
     if (!isInitialized) return;
     localStorage.setItem('ea_teachers', JSON.stringify(teachers));
-    if (isPullingRemoteRef.current) return;
+
     const sig = teachers.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
     if (lastSavedTeachersSigRef.current === sig) return;
+
+    // If pulling remote, wait slightly for pull to settle then commit user change
+    if (isPullingRemoteRef.current) {
+      const retryTimer = setTimeout(() => {
+        if (lastSavedTeachersSigRef.current !== sig) {
+          lastSavedTeachersSigRef.current = sig;
+          const assignments = getClassTeacherAssignments(teachers);
+          pushMasterServerSync({ teachers, classTeacherAssignments: assignments }).catch(() => {});
+          syncTeachersToCDN(teachers).catch(() => {});
+          broadcastSync('teachers', teachers);
+          const creds = getSupabaseCredentials();
+          if (creds.isConfigured) {
+            saveSupabaseTeachers(teachers).catch(() => {});
+          }
+        }
+      }, 600);
+      return () => clearTimeout(retryTimer);
+    }
+
     lastSavedTeachersSigRef.current = sig;
 
+    const assignments = getClassTeacherAssignments(teachers);
     // Always push to master server and edge CDN
-    pushMasterServerSync({ teachers }).catch(() => {});
+    pushMasterServerSync({ teachers, classTeacherAssignments: assignments }).catch(() => {});
     syncTeachersToCDN(teachers).catch(() => {});
     broadcastSync('teachers', teachers);
 
@@ -1471,6 +1581,33 @@ export default function App() {
     };
   }, []);
 
+  // Listen for real-time class teacher assignment updates across tabs or components
+  useEffect(() => {
+    const handleClassAssignmentsUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const assignments = customEvent.detail;
+      if (assignments && typeof assignments === 'object') {
+        setConfig(prev => {
+          const updated = {
+            ...prev,
+            classTeacherAssignments: assignments,
+            updatedAt: new Date().toISOString()
+          };
+          try {
+            localStorage.setItem('ea_config', JSON.stringify(updated));
+            localStorage.setItem('ea_class_teacher_assignments', JSON.stringify(assignments));
+          } catch {}
+          return updated;
+        });
+        setTeachers(prev => reconcileTeachersWithClassAssignments(prev, assignments));
+      }
+    };
+    window.addEventListener('ea_class_assignments_updated', handleClassAssignmentsUpdated);
+    return () => {
+      window.removeEventListener('ea_class_assignments_updated', handleClassAssignmentsUpdated);
+    };
+  }, []);
+
   // Global Realtime WebSockets & Background multi-tab / device synchronization
   useEffect(() => {
     if (!isInitialized) return;
@@ -1515,11 +1652,41 @@ export default function App() {
             const cleanRemote = deduplicateStudents(remoteStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s)));
             const cleanPrev = prev.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
-            const prevSig = cleanPrev.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
-            const remoteSig = cleanRemote.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
+            const isRosterCleared = typeof window !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
+            if (cleanRemote.length === 0 && cleanPrev.length > 0 && !isRosterCleared) {
+              return prev;
+            }
 
-            if (prevSig !== remoteSig) {
-              if (cleanRemote.length > 0) {
+            // Create map with remote students
+            const studentMap = new Map<string, Student>();
+            cleanRemote.forEach(s => {
+              if (s && s.id) studentMap.set(s.id, s);
+            });
+
+            // Preserve local non-deleted students so newly admitted pupils are never automatically deleted
+            if (!isRosterCleared) {
+              cleanPrev.forEach(s => {
+                if (s && s.id && !isStudentDeleted(s) && !isDemoStudent(s)) {
+                  const existingRemote = studentMap.get(s.id);
+                  if (!existingRemote) {
+                    studentMap.set(s.id, s);
+                  } else {
+                    const localTime = s.updatedAt || s.updated_at ? new Date(s.updatedAt || s.updated_at || '').getTime() : 0;
+                    const remoteTime = existingRemote.updatedAt || existingRemote.updated_at ? new Date(existingRemote.updatedAt || existingRemote.updated_at || '').getTime() : 0;
+                    if (localTime > remoteTime) {
+                      studentMap.set(s.id, { ...existingRemote, ...s });
+                    }
+                  }
+                }
+              });
+            }
+
+            const merged = deduplicateStudents(Array.from(studentMap.values()).filter(s => !isStudentDeleted(s)));
+            const prevSig = cleanPrev.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
+            const mergedSig = merged.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
+
+            if (prevSig !== mergedSig) {
+              if (merged.length > 0) {
                 try {
                   localStorage.removeItem('ea_students_cleared');
                 } catch (e) {}
@@ -1528,23 +1695,25 @@ export default function App() {
                   localStorage.setItem('ea_students_cleared', 'true');
                 } catch (e) {}
               }
-              localStorage.setItem('ea_students', JSON.stringify(cleanRemote));
-              localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanRemote));
-              lastSavedStudentsSigRef.current = cleanRemote.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
-              return cleanRemote;
+              localStorage.setItem('ea_students', JSON.stringify(merged));
+              localStorage.setItem('mock_supabase_ea_students', JSON.stringify(merged));
+              lastSavedStudentsSigRef.current = merged.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+              return merged;
             }
             return prev;
           });
         }
 
         if (remoteTeachers && Array.isArray(remoteTeachers) && remoteTeachers.length > 0) {
+          const assignments = getClassTeacherAssignments(remoteTeachers);
+          const reconciled = reconcileTeachersWithClassAssignments(remoteTeachers, assignments);
           setTeachers(prev => {
-            const prevIds = prev.map(t => t.id).sort().join(',');
-            const remoteIds = remoteTeachers.map(t => t.id).sort().join(',');
-            if (prevIds !== remoteIds) {
-              localStorage.setItem('ea_teachers', JSON.stringify(remoteTeachers));
-              localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(remoteTeachers));
-              return remoteTeachers;
+            const prevSig = prev.map(t => `${t.id}:${(t.classes || []).join(',')}`).join('|');
+            const remoteSig = reconciled.map(t => `${t.id}:${(t.classes || []).join(',')}`).join('|');
+            if (prevSig !== remoteSig) {
+              localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+              localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(reconciled));
+              return reconciled;
             }
             return prev;
           });
@@ -1555,12 +1724,20 @@ export default function App() {
             const localTime = prev.updatedAt ? new Date(prev.updatedAt).getTime() : 0;
             const remoteTime = remoteConfig.updatedAt ? new Date(remoteConfig.updatedAt).getTime() : 0;
 
+            const effectiveAssignments = {
+              ...(prev.classTeacherAssignments || {}),
+              ...(remoteConfig.classTeacherAssignments || {})
+            };
+
             // If local config has a newer timestamp than remote, retain local
             if (remoteTime && localTime && remoteTime < localTime) {
               return prev;
             }
 
+            const assignmentsChanged = JSON.stringify(prev.classTeacherAssignments || {}) !== JSON.stringify(effectiveAssignments);
+
             if (
+              assignmentsChanged ||
               remoteConfig.reopeningDate !== prev.reopeningDate ||
               remoteConfig.term !== prev.term ||
               remoteConfig.schoolYear !== prev.schoolYear ||
@@ -1570,8 +1747,11 @@ export default function App() {
               remoteConfig.schoolLogoUrl !== prev.schoolLogoUrl ||
               remoteConfig.principalSignatureUrl !== prev.principalSignatureUrl
             ) {
-              const updated = { ...prev, ...remoteConfig };
+              const updated = { ...prev, ...remoteConfig, classTeacherAssignments: effectiveAssignments };
               localStorage.setItem('ea_config', JSON.stringify(updated));
+              if (assignmentsChanged) {
+                localStorage.setItem('ea_class_teacher_assignments', JSON.stringify(effectiveAssignments));
+              }
               return updated;
             }
             return prev;
@@ -1844,8 +2024,9 @@ export default function App() {
         localStorage.setItem('mock_supabase_ea_students', JSON.stringify(clean));
       }
       if (remoteTeachers && Array.isArray(remoteTeachers)) {
-        setTeachers(remoteTeachers);
-        localStorage.setItem('ea_teachers', JSON.stringify(remoteTeachers));
+        const reconciled = reconcileTeachersWithClassAssignments(remoteTeachers);
+        setTeachers(reconciled);
+        localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
       }
       if (remoteConfig) {
         setConfig(prev => ({ ...prev, ...remoteConfig }));
@@ -1972,10 +2153,61 @@ export default function App() {
             >
               Admin Portal
             </button>
+
+            {/* Supabase Cloud Health & Audit Badge */}
+            <button
+              type="button"
+              onClick={() => {
+                checkSupabaseStatus().catch(() => {});
+                setShowSyncErrorModal(true);
+              }}
+              title="Click to view detailed Supabase tables sync health & SQL repairs"
+              className={`ml-2 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition cursor-pointer border ${
+                !supabaseStatus.isConfigured
+                  ? 'bg-[#2A085A] text-violet-200 border-violet-500/40 hover:bg-violet-900'
+                  : supabaseStatus.failingCount > 0
+                  ? 'bg-rose-950 text-rose-200 border-rose-500 hover:bg-rose-900'
+                  : supabaseStatus.isConnected
+                  ? 'bg-emerald-950 text-emerald-200 border-emerald-500 hover:bg-emerald-900'
+                  : 'bg-amber-950 text-amber-200 border-amber-500 hover:bg-amber-900'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 shrink-0 text-amber-300" />
+              <span className="hidden xl:inline font-mono">
+                {!supabaseStatus.isConfigured
+                  ? 'Cloud: Offline'
+                  : isAuditingSupabase
+                  ? 'Auditing Tables...'
+                  : supabaseStatus.failingCount > 0
+                  ? `Cloud Alert (${supabaseStatus.failingCount} Table${supabaseStatus.failingCount > 1 ? 's' : ''})`
+                  : `Cloud Synced (${supabaseStatus.healthyCount}/18 Tables)`}
+              </span>
+              <span className="xl:hidden font-mono">
+                {supabaseStatus.isConnected ? (supabaseStatus.failingCount > 0 ? `${supabaseStatus.failingCount} Err` : 'Cloud') : 'Cloud'}
+              </span>
+              {isAuditingSupabase && <RefreshCw className="w-3 h-3 animate-spin" />}
+            </button>
           </nav>
 
-          {/* Mobile Menu Toggle Button */}
+          {/* Mobile Menu & Quick Diagnostic Toggle */}
           <div className="flex md:hidden items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                checkSupabaseStatus().catch(() => {});
+                setShowSyncErrorModal(true);
+              }}
+              className={`p-2 rounded-lg text-white transition border shadow-sm ${
+                supabaseStatus.failingCount > 0
+                  ? 'bg-rose-900 border-rose-400/50'
+                  : supabaseStatus.isConnected
+                  ? 'bg-emerald-900 border-emerald-400/50'
+                  : 'bg-violet-900 border-violet-400/40'
+              }`}
+              title="Open Cloud Diagnostic"
+            >
+              <Database className="w-4 h-4 text-amber-300" />
+            </button>
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -2365,49 +2597,195 @@ export default function App() {
         </div>
       </footer>
 
-      {/* DB SYNC ERROR DIAGNOSTIC MODAL */}
+      {/* DB SYNC ERROR & HEALTH DIAGNOSTIC MODAL */}
       {showSyncErrorModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn no-print">
-          <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden border border-rose-100 shadow-2xl text-left flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-2xl max-w-2xl w-full overflow-hidden border border-mauve-200 shadow-2xl text-left flex flex-col max-h-[92vh]">
             {/* Header */}
-            <div className="p-5 bg-gradient-to-r from-rose-50 to-amber-50 border-b border-rose-100 flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-rose-100 text-rose-700">
-                <AlertTriangle className="w-5 h-5 animate-pulse" />
+            <div className={`p-5 border-b flex items-center gap-3 ${
+              supabaseStatus.failingCount > 0 
+                ? 'bg-gradient-to-r from-rose-50 via-amber-50 to-rose-50 border-rose-100' 
+                : 'bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border-emerald-100'
+            }`}>
+              <div className={`p-2.5 rounded-xl ${
+                supabaseStatus.failingCount > 0 
+                  ? 'bg-rose-100 text-rose-700' 
+                  : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                {supabaseStatus.failingCount > 0 ? (
+                  <AlertTriangle className="w-5 h-5 animate-pulse" />
+                ) : (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                )}
               </div>
-              <div>
-                <h3 className="font-display font-extrabold text-mauve-900 text-base uppercase tracking-wide">
-                  Cloud Sync Diagnostic
+              <div className="flex-1 min-w-0">
+                <h3 className="font-display font-extrabold text-mauve-900 text-base uppercase tracking-wide truncate">
+                  Cloud Database & Table Sync Diagnostic
                 </h3>
                 <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">
-                  Real-Time Database Trouble-Shooter
+                  Automated 18-Table Audit & Dynamic SQL Fix Generator
                 </p>
               </div>
-              <button 
-                type="button"
-                onClick={() => setShowSyncErrorModal(false)}
-                className="ml-auto p-1.5 hover:bg-white/60 rounded-lg text-gray-400 hover:text-gray-600 transition"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => checkSupabaseStatus().catch(() => {})}
+                  disabled={isAuditingSupabase}
+                  className="px-2.5 py-1.5 bg-white/80 hover:bg-white text-mauve-900 border border-mauve-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="Re-run database table audit"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isAuditingSupabase ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Audit Now</span>
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowSyncErrorModal(false)}
+                  className="p-1.5 hover:bg-white/80 rounded-lg text-gray-400 hover:text-gray-600 transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Scrollable Content */}
-            <div className="p-6 overflow-y-auto space-y-4 text-xs leading-relaxed text-gray-600">
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider">
-                  Last Reported Database Exception:
-                </span>
-                <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl font-mono text-[11px] text-rose-800 break-words leading-relaxed">
-                  {lastSyncError || 'An unspecified network or query error occurred while communicating with Supabase.'}
+            <div className="p-6 overflow-y-auto space-y-5 text-xs leading-relaxed text-gray-600">
+              {/* Quick Status Stats Row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-center">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase block">Tables Monitored</span>
+                  <span className="font-mono text-base font-extrabold text-mauve-900">{supabaseStatus.totalTablesChecked || 18}</span>
+                </div>
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                  <span className="text-[10px] font-bold text-emerald-700 uppercase block">Healthy Tables</span>
+                  <span className="font-mono text-base font-extrabold text-emerald-800">{supabaseStatus.healthyCount}</span>
+                </div>
+                <div className={`p-3 border rounded-xl text-center ${
+                  supabaseStatus.failingCount > 0 ? 'bg-rose-50 border-rose-200' : 'bg-gray-50 border-gray-200'
+                }`}>
+                  <span className={`text-[10px] font-bold uppercase block ${
+                    supabaseStatus.failingCount > 0 ? 'text-rose-700' : 'text-gray-500'
+                  }`}>Failing Tables</span>
+                  <span className={`font-mono text-base font-extrabold ${
+                    supabaseStatus.failingCount > 0 ? 'text-rose-700' : 'text-gray-700'
+                  }`}>{supabaseStatus.failingCount}</span>
+                </div>
+                <div className="p-3 bg-violet-50 border border-violet-200 rounded-xl text-center">
+                  <span className="text-[10px] font-bold text-violet-700 uppercase block">Enrolled Pupils</span>
+                  <span className="font-mono text-base font-extrabold text-violet-900">{students.length}</span>
                 </div>
               </div>
 
-              {/* QUICK REPAIR BOX */}
-              <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2">
+              {/* Status Message */}
+              <div className={`p-3.5 rounded-xl border font-mono text-xs break-words ${
+                supabaseStatus.failingCount > 0
+                  ? 'bg-rose-50 border-rose-200 text-rose-800'
+                  : supabaseStatus.isConnected
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-amber-50 border-amber-200 text-amber-800'
+              }`}>
+                <div className="flex items-center gap-2 font-bold mb-1">
+                  {supabaseStatus.isConnected ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>Status Summary:</span>
+                </div>
+                <p className="text-[11px] leading-relaxed font-sans">{supabaseStatus.message}</p>
+              </div>
+
+              {/* DYNAMIC SUGGESTED SQL FIX FOR DETECTED TABLE MISMATCHES */}
+              {supabaseStatus.suggestedSqlFix && (
+                <div className="p-4 bg-amber-50/90 border-2 border-amber-300 rounded-xl space-y-3">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs uppercase tracking-wider">
+                      <Sparkles className="w-4 h-4 text-amber-600" />
+                      <span>Suggested SQL Fix for Detected Table Mismatches:</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(supabaseStatus.suggestedSqlFix);
+                        setCopiedCustomSql(true);
+                        setTimeout(() => setCopiedCustomSql(false), 3000);
+                      }}
+                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold cursor-pointer transition uppercase tracking-wider flex items-center gap-1 shadow-xs"
+                    >
+                      {copiedCustomSql ? (
+                        <>
+                          <Check className="w-3 h-3" />
+                          <span>Copied SQL Fix!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy SQL Fix</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-amber-900">
+                    The audit detected missing or mismatched tables (<code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold text-amber-900">{supabaseStatus.failingTables.map(t => t.table).join(', ')}</code>). Run the script below in your <strong>Supabase SQL Editor</strong> to automatically create them and restore real-time syncing:
+                  </p>
+                  <pre className="p-3 bg-gray-900 text-emerald-400 rounded-lg text-[10px] font-mono overflow-x-auto max-h-48 border border-gray-700 select-all leading-tight">
+                    {supabaseStatus.suggestedSqlFix}
+                  </pre>
+                </div>
+              )}
+
+              {/* TABLE HEALTH STATUS BREAKDOWN */}
+              <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Quick Database Repair SQL</span>
+                  <h4 className="font-bold text-mauve-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                    <Database className="w-3.5 h-3.5 text-mauve-700" />
+                    <span>Table Audit Breakdown (18 Tables):</span>
+                  </h4>
+                  <span className="text-[10px] font-mono text-gray-500">
+                    Last audited: {new Date(supabaseStatus.checkedAt).toLocaleTimeString()}
+                  </span>
+                </div>
+
+                <div className="border border-mauve-100 rounded-xl overflow-hidden divide-y divide-mauve-50 max-h-60 overflow-y-auto">
+                  {supabaseStatus.allTablesStatus.length > 0 ? (
+                    supabaseStatus.allTablesStatus.map(table => (
+                      <div key={table.table} className={`p-2.5 flex items-center justify-between text-xs transition ${
+                        table.status === 'healthy' ? 'hover:bg-emerald-50/40' : 'bg-rose-50/50 hover:bg-rose-50'
+                      }`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          {table.status === 'healthy' ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          ) : (
+                            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                          )}
+                          <span className="font-mono font-bold text-mauve-900 truncate">{table.table}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {table.status === 'healthy' ? (
+                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-mono text-[10px] font-bold">
+                              {table.count !== null ? `${table.count} row${table.count === 1 ? '' : 's'}` : 'Healthy'}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded font-mono text-[10px] font-bold" title={table.errorMessage || 'Error'}>
+                              {table.errorCode ? `Err: ${table.errorCode}` : (table.errorMessage ? table.errorMessage.slice(0, 20) : 'Failing')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="p-4 text-center text-gray-400 text-xs">
+                      No table health status data. Click "Audit Now" to test table connectivity.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* GENERAL REPAIR BOX */}
+              <div className="p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-mauve-600" />
+                    <span>Comprehensive Master Schema Repair SQL</span>
                   </span>
                   <button
                     type="button"
@@ -2416,46 +2794,14 @@ export default function App() {
                       setCopiedRepair(true);
                       setTimeout(() => setCopiedRepair(false), 3000);
                     }}
-                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[10px] font-bold cursor-pointer transition uppercase tracking-wider"
+                    className="px-2.5 py-1 bg-mauve-900 hover:bg-mauve-800 text-white rounded text-[10px] font-bold cursor-pointer transition uppercase tracking-wider"
                   >
-                    {copiedRepair ? 'Copied Repair SQL!' : 'Copy Repair SQL'}
+                    {copiedRepair ? 'Copied Master SQL!' : 'Copy Master SQL'}
                   </button>
                 </div>
-                <p className="text-[10px] text-amber-800 leading-normal">
-                  If your database was created earlier and is missing columns like <code className="bg-amber-100 px-1 py-0.2 rounded font-mono font-bold">class_score_weight</code> or <code className="bg-amber-100 px-1 py-0.2 rounded font-mono font-bold">class_score</code>, click above to copy the repair SQL. Run it in your Supabase SQL Editor to upgrade your tables instantly without resetting your data!
+                <p className="text-[10px] text-gray-600 leading-normal">
+                  If you need the complete baseline schema definition for all tables, columns, and indexes, click above to copy the full repair script for the Supabase SQL Editor.
                 </p>
-              </div>
-
-              <div className="space-y-2.5">
-                <h4 className="font-bold text-mauve-900 text-xs uppercase tracking-wider">
-                  Why is this happening?
-                </h4>
-                <p>
-                  The report card app synchronizes record states (such as pupil logs, exam scores, and uploaded school logos) with your configured Supabase Cloud database automatically. A sync error typically means:
-                </p>
-                <ul className="list-disc list-inside space-y-2 text-[11px] pl-1.5 text-gray-500">
-                  <li>
-                    <strong className="text-gray-700">Database Tables Missing:</strong> If this is a fresh Supabase project, you must run the schema setup script in the Supabase SQL editor so the tables exist.
-                  </li>
-                  <li>
-                    <strong className="text-gray-700">Incorrect Credentials:</strong> The Supabase Project URL or Anon API Key in your configurations is invalid or has expired.
-                  </li>
-                  <li>
-                    <strong className="text-gray-700">Logo Size Limit:</strong> Highly complex or large logo uploads can exceed the default payload limits of some database configurations. Try removing the logo or using a smaller image.
-                  </li>
-                </ul>
-              </div>
-
-              <div className="p-3.5 bg-mauve-50/50 border border-mauve-100 rounded-xl space-y-1.5">
-                <h5 className="font-bold text-mauve-900 text-[11px] flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-mauve-700" />
-                  <span>How to Resolve This:</span>
-                </h5>
-                <ol className="list-decimal list-inside space-y-1 text-[11px] pl-0.5 text-gray-600">
-                  <li>Click the <span className="font-bold text-mauve-800">"Go to Credentials Panel"</span> button below.</li>
-                  <li>Click on the <span className="font-bold text-mauve-800">"How to Set Up Your Supabase Database Schema"</span> accordion.</li>
-                  <li>Copy the provided SQL setup script and run it in your Supabase SQL Editor.</li>
-                </ol>
               </div>
             </div>
 
@@ -2464,7 +2810,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowSyncErrorModal(false)}
-                className="px-4 py-2 hover:bg-gray-100 text-gray-600 font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer text-center"
+                className="px-4 py-2 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer text-center"
               >
                 Close Diagnostic
               </button>

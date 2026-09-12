@@ -669,31 +669,186 @@ NOTIFY pgrst, 'reload schema';
 `;
 
 // SQL Script for setting up tables in Supabase Console
-export { SUPABASE_SQL_REPAIR } from './supabaseRepairSql';
+export { SUPABASE_SQL_REPAIR, TABLE_SQL_DEFINITIONS, generateSuggestedSqlFix } from './supabaseRepairSql';
+import { generateSuggestedSqlFix } from './supabaseRepairSql';
 
-// Helper to verify connection by doing a simple query
-export async function testSupabaseConnection(): Promise<{ success: boolean; message: string }> {
+export interface TableHealthStatus {
+  table: string;
+  displayName: string;
+  status: 'healthy' | 'missing' | 'error';
+  error?: string;
+  errorCode?: string;
+  count?: number | null;
+  suggestedFix?: string;
+}
+
+export interface SupabaseDetailedStatusReport {
+  success: boolean;
+  isConfigured: boolean;
+  isConnected: boolean;
+  message: string;
+  healthyTables: string[];
+  failingTables: TableHealthStatus[];
+  allTablesStatus: TableHealthStatus[];
+  totalTablesChecked: number;
+  healthyCount: number;
+  failingCount: number;
+  suggestedSqlFix?: string;
+  checkedAt: string;
+}
+
+export const MONITORED_SUPABASE_TABLES: Array<{ name: string; displayName: string }> = [
+  { name: 'ea_config', displayName: 'School Configuration' },
+  { name: 'ea_students', displayName: 'Enrolled Pupils / Students' },
+  { name: 'ea_teachers', displayName: 'Teachers & Staff' },
+  { name: 'ea_grades', displayName: 'Terminal Assessment Grades' },
+  { name: 'ea_attendance', displayName: 'Termly Attendance Summaries' },
+  { name: 'ea_daily_attendance', displayName: 'Daily Student Attendance' },
+  { name: 'ea_bills', displayName: 'Student Bills & Invoices' },
+  { name: 'ea_fee_payments', displayName: 'Fee Payment Receipts' },
+  { name: 'ea_fee_structures', displayName: 'Class Fee Structures' },
+  { name: 'ea_daily_collections', displayName: 'Daily Revenue Collections' },
+  { name: 'ea_inventory', displayName: 'School Asset Inventory' },
+  { name: 'ea_book_stock', displayName: 'Book & Stationery Stock' },
+  { name: 'ea_book_sales', displayName: 'Book Sales Transactions' },
+  { name: 'ea_jhs_mock_exams', displayName: 'JHS 3 BECE Mock Exams' },
+  { name: 'ea_deleted_records', displayName: 'Audit Deletion Tombstones' },
+  { name: 'ea_sync_logs', displayName: 'Sync Activity Logs' },
+  { name: 'ea_sync_state', displayName: 'Realtime Sync State' },
+  { name: 'ea_notifications', displayName: 'Broadcast Notifications' }
+];
+
+export async function checkTableHealth(client: SupabaseClient, table: { name: string; displayName: string }): Promise<TableHealthStatus> {
+  try {
+    const { error, count } = await client
+      .from(table.name)
+      .select('count', { count: 'exact', head: true });
+
+    if (!error) {
+      return {
+        table: table.name,
+        displayName: table.displayName,
+        status: 'healthy',
+        count: typeof count === 'number' ? count : null
+      };
+    }
+
+    const isMissing = error.code === 'PGRST205' || 
+                      error.code === '42P01' || 
+                      error.message?.includes('does not exist') ||
+                      error.message?.includes('schema cache');
+
+    let fixAdvice = '';
+    if (isMissing) {
+      fixAdvice = `Table '${table.name}' does not exist in the Supabase schema cache. Run the CREATE TABLE script in Supabase SQL editor.`;
+    } else if (error.code === '42501' || error.message?.includes('permission') || error.message?.includes('policy')) {
+      fixAdvice = `RLS permission denied on '${table.name}'. Run 'ALTER TABLE public.${table.name} DISABLE ROW LEVEL SECURITY;'.`;
+    } else {
+      fixAdvice = `Table error (${error.code || 'unknown'}): ${error.message}.`;
+    }
+
+    return {
+      table: table.name,
+      displayName: table.displayName,
+      status: isMissing ? 'missing' : 'error',
+      error: error.message || 'Unknown database error',
+      errorCode: error.code || 'UNKNOWN',
+      count: null,
+      suggestedFix: fixAdvice
+    };
+  } catch (err: any) {
+    return {
+      table: table.name,
+      displayName: table.displayName,
+      status: 'error',
+      error: err.message || 'Network request failed',
+      errorCode: 'FETCH_ERROR',
+      count: null,
+      suggestedFix: 'Supabase cloud endpoint is unreachable or network timeout.'
+    };
+  }
+}
+
+// Helper to verify connection with full table health auditing and suggested SQL fixes
+export async function testSupabaseConnection(): Promise<{ success: boolean; message: string; report: SupabaseDetailedStatusReport }> {
   const client = getSupabaseClient();
   if (!client) {
-    return { success: false, message: 'Supabase is not configured yet.' };
+    const report: SupabaseDetailedStatusReport = {
+      success: false,
+      isConfigured: false,
+      isConnected: false,
+      message: 'Supabase is not configured yet. Please configure URL and Key in Settings.',
+      healthyTables: [],
+      failingTables: [],
+      allTablesStatus: [],
+      totalTablesChecked: 0,
+      healthyCount: 0,
+      failingCount: 0,
+      suggestedSqlFix: '',
+      checkedAt: new Date().toISOString()
+    };
+    return { success: false, message: report.message, report };
   }
+
   try {
-    const { error } = await client.from('ea_config').select('id').limit(1);
-    if (error) {
-      if (error.code === 'PGRST116' || error.message.includes('relation "public.ea_config" does not exist')) {
-        return { 
-          success: true, 
-          message: 'Connected to Supabase, but schema tables are missing! Please click "Execute Setup Script" or run the SQL schema in your Supabase SQL editor.' 
-        };
-      }
-      if (isMissingTableOrConnectionError(error)) {
-        return { success: false, message: 'Supabase cloud endpoint is unreachable. Local offline storage is active.' };
-      }
-      return { success: false, message: `Supabase Error: ${error.message} (Code ${error.code})` };
+    // Audit all monitored tables in parallel
+    const tableStatuses: TableHealthStatus[] = await Promise.all(
+      MONITORED_SUPABASE_TABLES.map(tbl => checkTableHealth(client, tbl))
+    );
+
+    const healthy = tableStatuses.filter(t => t.status === 'healthy');
+    const failing = tableStatuses.filter(t => t.status !== 'healthy');
+    const failingNames = failing.map(t => t.table);
+
+    const isConnected = tableStatuses.some(t => t.errorCode !== 'FETCH_ERROR') && healthy.length > 0;
+    const suggestedSql = generateSuggestedSqlFix(failingNames);
+
+    let message = '';
+    if (!isConnected) {
+      message = 'Supabase cloud endpoint is unreachable. Local offline storage is active.';
+    } else if (failing.length === 0) {
+      message = `All ${healthy.length} database tables are healthy and synced!`;
+    } else {
+      const missingCount = failing.filter(f => f.status === 'missing').length;
+      message = `Connected: ${healthy.length} of ${tableStatuses.length} tables healthy. ${failing.length} table${failing.length > 1 ? 's' : ''} require attention (${missingCount} missing).`;
     }
-    return { success: true, message: 'Successfully connected and verified database tables!' };
+
+    const report: SupabaseDetailedStatusReport = {
+      success: isConnected && failing.length === 0,
+      isConfigured: true,
+      isConnected,
+      message,
+      healthyTables: healthy.map(h => h.table),
+      failingTables: failing,
+      allTablesStatus: tableStatuses,
+      totalTablesChecked: tableStatuses.length,
+      healthyCount: healthy.length,
+      failingCount: failing.length,
+      suggestedSqlFix: suggestedSql,
+      checkedAt: new Date().toISOString()
+    };
+
+    return {
+      success: isConnected,
+      message,
+      report
+    };
   } catch (err: any) {
-    return { success: false, message: 'Supabase cloud endpoint is unreachable. Local offline storage is active.' };
+    const report: SupabaseDetailedStatusReport = {
+      success: false,
+      isConfigured: true,
+      isConnected: false,
+      message: 'Supabase cloud endpoint is unreachable. Local offline storage is active.',
+      healthyTables: [],
+      failingTables: [],
+      allTablesStatus: [],
+      totalTablesChecked: 0,
+      healthyCount: 0,
+      failingCount: 0,
+      suggestedSqlFix: '',
+      checkedAt: new Date().toISOString()
+    };
+    return { success: false, message: report.message, report };
   }
 }
 
@@ -853,6 +1008,19 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
       return null;
     }
 
+    let assignments = data.class_teacher_assignments || data.classTeacherAssignments || undefined;
+    if (!assignments || Object.keys(assignments).length === 0) {
+      const serverAssignments = await fetchServerEntity<Record<string, string>>('/class-teacher-assignments');
+      if (serverAssignments && typeof serverAssignments === 'object' && Object.keys(serverAssignments).length > 0) {
+        assignments = serverAssignments;
+      }
+    }
+    if (assignments && typeof assignments === 'object' && Object.keys(assignments).length > 0) {
+      try {
+        localStorage.setItem('ea_class_teacher_assignments', JSON.stringify(assignments));
+      } catch {}
+    }
+
     return {
       schoolName: data.school_name || 'Eastfield Academy',
       schoolYear: data.school_year || '2025/2026',
@@ -877,6 +1045,7 @@ export async function fetchSupabaseConfig(): Promise<ReportConfig | null> {
       showAttendanceSection: data.show_attendance_section !== undefined ? data.show_attendance_section : true,
       accentColor: data.accent_color || '#1e1b4b',
       watermarkText: data.watermark_text || undefined,
+      classTeacherAssignments: assignments,
       updatedAt: data.updated_at || undefined
     };
   } catch (err: any) {
@@ -903,6 +1072,9 @@ export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean>
 
   // Persist to central server database and broadcast to other devices
   saveServerEntity('/config', configWithTimestamp).catch(e => console.warn('[Server Sync Config Notice]', e));
+  if (config.classTeacherAssignments && typeof config.classTeacherAssignments === 'object') {
+    saveServerEntity('/class-teacher-assignments', config.classTeacherAssignments).catch(e => console.warn('[Server Sync Assignments Notice]', e));
+  }
 
   const client = getSupabaseClient();
   if (!client) return true;
@@ -944,6 +1116,7 @@ export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean>
       show_attendance_section: config.showAttendanceSection !== undefined ? config.showAttendanceSection : true,
       accent_color: config.accentColor || null,
       watermark_text: config.watermarkText || null,
+      class_teacher_assignments: config.classTeacherAssignments || null,
       updated_at: new Date().toISOString()
     };
     let { error } = await safeUpsert('ea_config', payload, client);
@@ -972,39 +1145,44 @@ export async function saveSupabaseConfig(config: ReportConfig): Promise<boolean>
   }
 }
 
-// Helper to track deleted student IDs and identifiers in localStorage
+// Helper to track deleted student IDs in localStorage
 export function getDeletedStudentIds(): string[] {
   try {
     const saved = localStorage.getItem('ea_deleted_student_ids');
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        return parsed.filter(x => typeof x === 'string' && x.trim().length > 0);
+        return parsed.filter(x => {
+          if (typeof x !== 'string' || !x.trim()) return false;
+          const clean = x.trim().toLowerCase();
+          // Never allow roll numbers or student names to be tombstoned
+          if (clean.includes('/') || clean.includes(' ') || clean.includes('\\')) return false;
+          if (clean.startsWith('ea') || clean.startsWith('kg') || /^[a-z]+$/.test(clean)) return false;
+          return true;
+        });
       }
     }
   } catch (e) {}
   return [];
 }
 
-export function recordDeletedStudentId(id: string, rollNumber?: string, studentName?: string): void {
-  if (!id && !rollNumber && !studentName) return;
+export function recordDeletedStudentId(id: string, _rollNumber?: string, _studentName?: string): void {
+  if (!id) return;
   try {
     const current = getDeletedStudentIds();
     const currentLower = new Set(current.map(x => String(x).toLowerCase().trim()));
     const toAdd: string[] = [];
 
-    const candidates = [id, rollNumber, studentName].filter(Boolean) as string[];
-    for (const c of candidates) {
-      const clean = String(c).toLowerCase().trim();
-      if (clean && !currentLower.has(clean)) {
-        toAdd.push(clean);
-        currentLower.add(clean);
-      }
-      const alphanum = clean.replace(/[^a-z0-9]/g, '');
-      if (alphanum && alphanum !== clean && !currentLower.has(alphanum)) {
-        toAdd.push(alphanum);
-        currentLower.add(alphanum);
-      }
+    // ONLY tombstone unique record ID. Roll numbers and pupil names must never be tombstoned.
+    const clean = String(id).toLowerCase().trim();
+    if (clean && !clean.includes('/') && !clean.includes(' ') && !currentLower.has(clean)) {
+      toAdd.push(clean);
+      currentLower.add(clean);
+    }
+    const alphanum = clean.replace(/[^a-z0-9]/g, '');
+    if (alphanum && alphanum !== clean && !currentLower.has(alphanum)) {
+      toAdd.push(alphanum);
+      currentLower.add(alphanum);
     }
 
     if (toAdd.length > 0) {
@@ -1014,29 +1192,17 @@ export function recordDeletedStudentId(id: string, rollNumber?: string, studentN
 }
 
 export function isStudentDeleted(student?: { id?: string; rollNumber?: string; name?: string } | null): boolean {
-  if (!student) return false;
+  if (!student || !student.id) return false;
   const deleted = getDeletedStudentIds();
   if (deleted.length === 0) return false;
   const deletedSet = new Set(deleted.map(x => String(x).toLowerCase().trim()));
   
-  if (student.id) {
-    const cleanId = String(student.id).toLowerCase().trim();
-    if (deletedSet.has(cleanId)) return true;
-    const alphaId = cleanId.replace(/[^a-z0-9]/g, '');
-    if (alphaId && deletedSet.has(alphaId)) return true;
-  }
-  if (student.rollNumber) {
-    const cleanRoll = String(student.rollNumber).toLowerCase().trim();
-    if (deletedSet.has(cleanRoll)) return true;
-    const alphaRoll = cleanRoll.replace(/[^a-z0-9]/g, '');
-    if (alphaRoll && deletedSet.has(alphaRoll)) return true;
-  }
-  if (student.name) {
-    const cleanName = String(student.name).toLowerCase().trim();
-    if (deletedSet.has(cleanName)) return true;
-    const alphaName = cleanName.replace(/[^a-z0-9]/g, '');
-    if (alphaName && deletedSet.has(alphaName)) return true;
-  }
+  // ONLY match unique record ID
+  const cleanId = String(student.id).toLowerCase().trim();
+  if (deletedSet.has(cleanId)) return true;
+  const alphaId = cleanId.replace(/[^a-z0-9]/g, '');
+  if (alphaId && deletedSet.has(alphaId)) return true;
+
   return false;
 }
 
@@ -1276,26 +1442,31 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       photoUrl: item.photo_url || '',
     }));
 
-    // If any records returned from Supabase match isStudentDeleted, purge them permanently from Supabase
+    // If any records returned from Supabase match isStudentDeleted, purge them permanently from Supabase by ID only
     const ghostRecords = mapped.filter(s => isStudentDeleted(s));
     if (ghostRecords.length > 0 && client) {
       const ghostIds = ghostRecords.map(g => g.id).filter(Boolean) as string[];
-      const ghostRolls = ghostRecords.map(g => g.rollNumber).filter(Boolean) as string[];
-      const ghostNames = ghostRecords.map(g => g.name).filter(Boolean) as string[];
       for (let i = 0; i < ghostIds.length; i += 30) {
         client.from('ea_students').delete().in('id', ghostIds.slice(i, i + 30)).then(() => {});
       }
-      for (let i = 0; i < ghostRolls.length; i += 30) {
-        client.from('ea_students').delete().in('roll_number', ghostRolls.slice(i, i + 30)).then(() => {});
-      }
-      for (let i = 0; i < ghostNames.length; i += 30) {
-        client.from('ea_students').delete().in('name', ghostNames.slice(i, i + 30)).then(() => {});
-      }
     }
 
-    const cleanMapped = filterDeleted(mapped);
+    let cleanMapped = filterDeleted(mapped);
 
     if (typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('ea_students');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const mappedIds = new Set(cleanMapped.map(s => s.id));
+            const unsynced = parsed.filter(s => s && s.id && !mappedIds.has(s.id) && !isStudentDeleted(s) && !isDemoStudent(s));
+            if (unsynced.length > 0) {
+              cleanMapped = [...cleanMapped, ...unsynced];
+            }
+          }
+        }
+      } catch (e) {}
       localStorage.removeItem('ea_students_cleared');
       localStorage.setItem('ea_students', JSON.stringify(cleanMapped));
       localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanMapped));
@@ -1431,16 +1602,20 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
 }
 
 export async function saveSupabaseStudents(students: Student[]): Promise<boolean> {
-  // Defensive check: When empty array is passed, clear all student records across all layers
+  // Defensive check: When an empty array is passed, do NOT wipe the database!
+  // Empty saves often happen during component initialization or transient states.
+  // Full wipe is strictly handled when the user explicitly triggers clearAllSupabaseStudents().
   if (!Array.isArray(students) || students.length === 0) {
-    return await clearAllSupabaseStudents();
+    console.warn('[Supabase Student Sync] Empty or invalid students array received. Skipping remote push to protect pupil roster.');
+    return true;
   }
 
   // Filter out any students that have been marked deleted or demo
   const validStudents = students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
   if (validStudents.length === 0) {
-    return await clearAllSupabaseStudents();
+    console.warn('[Supabase Student Sync] Zero valid students after filter. Skipping remote push to protect pupil roster.');
+    return true;
   }
 
   console.log(`[Supabase Student Sync Diagnostic] saveSupabaseStudents: Pushing ${validStudents.length} students to Supabase (raw count: ${students.length})`);
@@ -4591,6 +4766,9 @@ export interface DatabaseAuditReport {
     feePayments: { local: number; supabase: number | null; server: number | null; inSync: boolean };
   };
   missingTables: string[];
+  tableHealthStatus: TableHealthStatus[];
+  suggestedSqlFix: string;
+  failingTablesCount: number;
   recentSyncLogs: Array<{
     id: string;
     action_type?: string;
@@ -4668,15 +4846,7 @@ export async function auditDatabaseCounts(): Promise<DatabaseAuditReport> {
     feePayments: null,
   };
 
-  const tablesToCheck = [
-    { table: 'ea_students', key: 'students' },
-    { table: 'ea_teachers', key: 'teachers' },
-    { table: 'ea_grades', key: 'grades' },
-    { table: 'ea_attendance', key: 'attendance' },
-    { table: 'ea_daily_attendance', key: 'dailyAttendance' },
-    { table: 'ea_bills', key: 'bills' },
-    { table: 'ea_fee_payments', key: 'feePayments' },
-  ];
+  let allTableHealthStatuses: TableHealthStatus[] = [];
 
   if (client) {
     try {
@@ -4684,22 +4854,27 @@ export async function auditDatabaseCounts(): Promise<DatabaseAuditReport> {
       if (!error) isConnected = true;
     } catch (e) {}
 
-    for (const item of tablesToCheck) {
-      try {
-        const { count, error } = await client.from(item.table).select('*', { count: 'exact', head: true });
-        if (error) {
-          if (error.code === 'PGRST116' || error.code === '42P01' || error.message.includes('does not exist') || error.message.includes('schema cache')) {
-            missingTables.push(item.table);
-          }
-          supabaseCounts[item.key] = null;
-        } else {
-          isConnected = true;
-          supabaseCounts[item.key] = count !== null ? count : null;
-        }
-      } catch (err) {
-        supabaseCounts[item.key] = null;
+    // Audit all 18 tables in parallel
+    allTableHealthStatuses = await Promise.all(
+      MONITORED_SUPABASE_TABLES.map(tbl => checkTableHealth(client, tbl))
+    );
+
+    allTableHealthStatuses.forEach(t => {
+      if (t.status !== 'healthy') {
+        missingTables.push(t.table);
+      } else {
+        isConnected = true;
       }
-    }
+    });
+
+    const statusMap = new Map(allTableHealthStatuses.map(s => [s.table, s.count]));
+    supabaseCounts.students = statusMap.get('ea_students') ?? null;
+    supabaseCounts.teachers = statusMap.get('ea_teachers') ?? null;
+    supabaseCounts.grades = statusMap.get('ea_grades') ?? null;
+    supabaseCounts.attendance = statusMap.get('ea_attendance') ?? null;
+    supabaseCounts.dailyAttendance = statusMap.get('ea_daily_attendance') ?? null;
+    supabaseCounts.bills = statusMap.get('ea_bills') ?? null;
+    supabaseCounts.feePayments = statusMap.get('ea_fee_payments') ?? null;
   }
 
   let recentSyncLogs: any[] = [];
@@ -4729,6 +4904,9 @@ export async function auditDatabaseCounts(): Promise<DatabaseAuditReport> {
     if (srv !== null && srv !== loc) return false;
     return true;
   };
+
+  const failingTables = allTableHealthStatuses.filter(t => t.status !== 'healthy');
+  const suggestedSql = generateSuggestedSqlFix(failingTables.map(t => t.table));
 
   return {
     timestamp: new Date().toISOString(),
@@ -4780,6 +4958,9 @@ export async function auditDatabaseCounts(): Promise<DatabaseAuditReport> {
       },
     },
     missingTables,
+    tableHealthStatus: allTableHealthStatuses,
+    suggestedSqlFix: suggestedSql,
+    failingTablesCount: failingTables.length,
     recentSyncLogs,
   };
 }

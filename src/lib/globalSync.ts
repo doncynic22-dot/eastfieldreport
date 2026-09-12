@@ -24,6 +24,7 @@ export interface GlobalSyncPayload {
   deletedBookStockIds?: string[];
   deletedBookSaleIds?: string[];
   jhsMockExams?: any[];
+  classTeacherAssignments?: Record<string, string>;
   deletedStudentIds?: string[];
   deletedTeacherIds?: string[];
   rosterCleared?: boolean;

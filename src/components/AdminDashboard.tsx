@@ -17,14 +17,15 @@ import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
 import DatabaseAuditTab from './DatabaseAuditTab';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials } from '../lib/supabase';
-import { globalSyncEngine, uploadAssetToCDN } from '../lib/globalSync';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials, SupabaseDetailedStatusReport } from '../lib/supabase';
+import { globalSyncEngine, uploadAssetToCDN, saveServerEntity } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
 import { INITIAL_SUBJECTS, INITIAL_USERS } from '../data/mockData';
 import { matchesSubject } from '../utils/subjectUtils';
 import { calculateStudentTermAttendance } from '../utils/attendanceUtils';
+import { assignClassTeacherDirectly, getClassTeacherAssignments, saveClassTeacherAssignmentsLocally, saveAllClassAssignmentsDirectly, ALL_STANDARD_CLASSROOMS } from '../services/classTeacherService';
 
 interface AdminDashboardProps {
   students: Student[];
@@ -44,11 +45,11 @@ interface AdminDashboardProps {
   setConfig: React.Dispatch<React.SetStateAction<ReportConfig>>;
   classes: { NURSERY: string[]; KINDERGARTEN?: string[]; PRIMARY: string[]; JHS: string[] };
   onSignOut?: () => void;
-  supabaseStatus?: { isConfigured: boolean; isConnected: boolean; message: string };
+  supabaseStatus?: SupabaseDetailedStatusReport | { isConfigured: boolean; isConnected: boolean; message: string };
   isSupabaseSyncing?: boolean;
   onPullFromSupabase?: () => Promise<boolean>;
   onPushToSupabase?: (customStudents?: Student[], customConfig?: ReportConfig, customTeachers?: User[], customGrades?: Grade[], customAttendance?: Attendance[], customBills?: StudentBill[]) => Promise<boolean>;
-  onCheckSupabaseStatus?: () => Promise<boolean>;
+  onCheckSupabaseStatus?: () => Promise<any>;
   storedAdminPassword?: string;
   onUpdateAdminPassword?: (newPass: string) => void;
 }
@@ -325,6 +326,60 @@ export default function AdminDashboard({
     } finally {
       setIsSyncingStaff(false);
       setTimeout(() => setStaffSyncMsg(''), 8000);
+    }
+  };
+
+  // Class Teacher Assignment & Cloud Persistence states
+  const [assigningClass, setAssigningClass] = useState<string | null>(null);
+  const [assignmentSuccessToast, setAssignmentSuccessToast] = useState<string | null>(null);
+  const [isBulkSyncingAssignments, setIsBulkSyncingAssignments] = useState(false);
+  const [classAssignmentFilter, setClassAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
+  const [classAssignmentSearch, setClassAssignmentSearch] = useState('');
+
+  const handleAssignClassTeacher = async (clsName: string, newTeacherId: string) => {
+    setAssigningClass(clsName);
+    try {
+      const result = await assignClassTeacherDirectly(clsName, newTeacherId, teachers, config);
+      if (result.success) {
+        setTeachers(result.updatedTeachers);
+        if (onPushToSupabase) {
+          onPushToSupabase(undefined, undefined, result.updatedTeachers).catch(() => {});
+        }
+        const assignedT = result.updatedTeachers.find(t => t.id === newTeacherId);
+        setAssignmentSuccessToast(
+          assignedT 
+            ? `Assigned ${assignedT.name} to ${clsName} — Saved & Persisted to Cloud & Master Database`
+            : `Unassigned teacher from ${clsName} — Updated in Cloud & Master Database`
+        );
+        setTimeout(() => setAssignmentSuccessToast(null), 4500);
+      } else {
+        alert('Failed to save class teacher assignment. Please check connectivity.');
+      }
+    } catch (err: any) {
+      console.error('Error assigning class teacher:', err);
+      alert('Error saving class teacher: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setAssigningClass(null);
+    }
+  };
+
+  const handleSyncAllAssignments = async () => {
+    setIsBulkSyncingAssignments(true);
+    try {
+      const currentMap = getClassTeacherAssignments(teachers);
+      const res = await saveAllClassAssignmentsDirectly(currentMap, teachers, config);
+      if (res.success) {
+        setTeachers(res.updatedTeachers);
+        if (onPushToSupabase) {
+          await onPushToSupabase(undefined, undefined, res.updatedTeachers);
+        }
+        setAssignmentSuccessToast('All classroom assignments verified and permanently synced to Cloud & Database!');
+        setTimeout(() => setAssignmentSuccessToast(null), 4500);
+      }
+    } catch (e: any) {
+      alert('Sync error: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setIsBulkSyncingAssignments(false);
     }
   };
 
@@ -1568,6 +1623,23 @@ export default function AdminDashboard({
         return [...updated, newTeacher];
       });
     }
+
+    // Synchronize class teacher assignments map for selectedClasses
+    try {
+      const currentTeacherId = editingTeacher ? editingTeacher.id : teacherForm.email.trim().toLowerCase();
+      const assignments = { ...getClassTeacherAssignments(teachers) };
+      Object.entries(assignments).forEach(([cls, tid]) => {
+        if (tid === currentTeacherId && !selectedClasses.includes(cls)) {
+          delete assignments[cls];
+        }
+      });
+      selectedClasses.forEach(cls => {
+        assignments[cls] = currentTeacherId;
+      });
+      saveClassTeacherAssignmentsLocally(assignments);
+      window.dispatchEvent(new CustomEvent('ea_class_assignments_updated', { detail: assignments }));
+      saveServerEntity('/class-teacher-assignments', assignments).catch(() => {});
+    } catch (e) {}
 
     // Reset
     setTeacherForm({
@@ -4546,20 +4618,41 @@ export default function AdminDashboard({
       {/* E. CLASS TEACHER ASSIGNMENTS VIEW */}
       {activeTab === 'class-assignments' && (
         <div className="space-y-6 animate-fadeIn no-print">
+          {/* Success Toast */}
+          {assignmentSuccessToast && (
+            <div className="bg-emerald-600 text-white px-5 py-3.5 rounded-xl shadow-lg flex items-center justify-between gap-3 animate-fadeIn border border-emerald-500">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-200 shrink-0" />
+                <span className="text-xs sm:text-sm font-bold">{assignmentSuccessToast}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAssignmentSuccessToast(null)}
+                className="text-emerald-200 hover:text-white text-xs uppercase tracking-wider font-bold"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {/* Header Banner */}
-          <div className="bg-gradient-to-r from-mauve-900 via-purple-900 to-indigo-900 text-white p-6 rounded-2xl shadow-sm border border-mauve-800 space-y-3">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="bg-gradient-to-r from-mauve-900 via-purple-900 to-indigo-900 text-white p-6 rounded-2xl shadow-sm border border-mauve-800 space-y-4">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div>
                 <div className="flex items-center gap-2">
                   <School className="w-6 h-6 text-amber-400" />
                   <h3 className="font-display font-bold text-lg sm:text-xl uppercase tracking-wide">Classroom Roll Call Teacher Assignments</h3>
                 </div>
                 <p className="text-xs text-purple-100 font-medium mt-1 max-w-2xl leading-relaxed">
-                  Assign official Class Teachers to each classroom across Nursery, Kindergarten, Primary, and JHS divisions. Assigned teachers gain immediate real-time access to take daily attendance roll calls for their assigned classroom in the Attendance Portal. (Note: Assigning a JHS teacher to a class affects only the attendance roll call register; in the assessment register, JHS teachers retain access to all JHS classes: JHS 1, JHS 2, JHS 3).
+                  Assign official Class Teachers to each classroom across Nursery, Kindergarten, Primary, and JHS divisions. All assignments are centrally persisted across Cloud Supabase and the Master Server, preventing background sync overwrites.
                 </p>
+                <div className="flex items-center gap-2 mt-2 text-[11px] text-emerald-300 font-semibold bg-emerald-950/60 border border-emerald-500/40 px-3 py-1 rounded-lg w-fit">
+                  <BadgeCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Authoritative Cloud Persistence Active — Permanent Teacher Assignments</span>
+                </div>
               </div>
 
-              {/* Assignment Quick Summary Stats */}
+              {/* Assignment Quick Summary Stats & Action Button */}
               {(() => {
                 const allSchoolClasses = [
                   ...(classes.NURSERY || []),
@@ -4567,125 +4660,213 @@ export default function AdminDashboard({
                   ...(classes.PRIMARY || []),
                   ...(classes.JHS || [])
                 ];
-                const assignedCount = allSchoolClasses.filter(c => teachers.some(t => t.classes?.includes(c))).length;
+                const curAssignments = getClassTeacherAssignments(teachers);
+                const assignedCount = allSchoolClasses.filter(c => curAssignments[c] || teachers.some(t => t.classes?.includes(c))).length;
                 const unassignedCount = allSchoolClasses.length - assignedCount;
 
                 return (
-                  <div className="flex gap-2 sm:gap-3 shrink-0">
-                    <div className="bg-blue-600 px-3.5 py-2 rounded-xl text-center border border-blue-300 shadow-md">
-                      <div className="text-lg font-black text-white">{allSchoolClasses.length}</div>
-                      <div className="text-[10px] font-black uppercase tracking-wider text-blue-100">Classes</div>
+                  <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3 shrink-0 w-full lg:w-auto">
+                    <div className="flex gap-2 sm:gap-3">
+                      <div className="bg-mauve-800/80 px-3.5 py-2 rounded-xl text-center border border-mauve-700 shadow-md">
+                        <div className="text-lg font-black text-white">{allSchoolClasses.length}</div>
+                        <div className="text-[10px] font-black uppercase tracking-wider text-mauve-200">Classes</div>
+                      </div>
+                      <div className="bg-emerald-800/80 px-3.5 py-2 rounded-xl text-center border border-emerald-600 shadow-md">
+                        <div className="text-lg font-black text-white">{assignedCount}</div>
+                        <div className="text-[10px] font-black uppercase tracking-wider text-emerald-200">Assigned</div>
+                      </div>
+                      <div className="bg-amber-800/80 px-3.5 py-2 rounded-xl text-center border border-amber-600 shadow-md">
+                        <div className="text-lg font-black text-white">{unassignedCount}</div>
+                        <div className="text-[10px] font-black uppercase tracking-wider text-amber-200">Pending</div>
+                      </div>
                     </div>
-                    <div className="bg-blue-600 px-3.5 py-2 rounded-xl text-center border border-blue-300 shadow-md">
-                      <div className="text-lg font-black text-white">{assignedCount}</div>
-                      <div className="text-[10px] font-black uppercase tracking-wider text-blue-100">Assigned</div>
-                    </div>
-                    <div className="bg-blue-600 px-3.5 py-2 rounded-xl text-center border border-blue-300 shadow-md">
-                      <div className="text-lg font-black text-white">{unassignedCount}</div>
-                      <div className="text-[10px] font-black uppercase tracking-wider text-blue-100">Pending</div>
-                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSyncAllAssignments}
+                      disabled={isBulkSyncingAssignments}
+                      className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-mauve-950 rounded-xl font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isBulkSyncingAssignments ? 'animate-spin' : ''}`} />
+                      <span>{isBulkSyncingAssignments ? 'Syncing...' : 'Lock & Sync All'}</span>
+                    </button>
                   </div>
                 );
               })()}
             </div>
+
+            {/* Filter Bar */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-purple-800/60">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-xs font-bold text-purple-200 uppercase tracking-wider">Filter:</span>
+                <div className="flex gap-1.5 bg-mauve-950/50 p-1 rounded-xl border border-purple-700/50">
+                  <button
+                    type="button"
+                    onClick={() => setClassAssignmentFilter('all')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${classAssignmentFilter === 'all' ? 'bg-amber-400 text-mauve-950 shadow-xs' : 'text-purple-200 hover:text-white'}`}
+                  >
+                    All Classes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClassAssignmentFilter('assigned')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${classAssignmentFilter === 'assigned' ? 'bg-emerald-400 text-emerald-950 shadow-xs' : 'text-purple-200 hover:text-white'}`}
+                  >
+                    Assigned Only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClassAssignmentFilter('unassigned')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${classAssignmentFilter === 'unassigned' ? 'bg-amber-400 text-mauve-950 shadow-xs' : 'text-purple-200 hover:text-white'}`}
+                  >
+                    Unassigned Only
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 text-purple-300 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search classroom..."
+                  value={classAssignmentSearch}
+                  onChange={(e) => setClassAssignmentSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 bg-mauve-950/60 border border-purple-700/60 rounded-xl text-xs text-white placeholder-purple-300 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Academic Divisions Assignment Grid */}
-          {[
-            { levelKey: 'NURSERY', title: 'Nursery Division', color: 'border-pink-200 bg-pink-50/20', classList: classes.NURSERY || [] },
-            { levelKey: 'KINDERGARTEN', title: 'Kindergarten Division', color: 'border-purple-200 bg-purple-50/20', classList: classes.KINDERGARTEN || ["Kindergarten 1", "Kindergarten 2"] },
-            { levelKey: 'PRIMARY', title: 'Primary School Division (P1 - P6)', color: 'border-indigo-200 bg-indigo-50/20', classList: classes.PRIMARY || [] },
-            { levelKey: 'JHS', title: 'Junior High School Division (JHS 1 - JHS 3)', color: 'border-amber-200 bg-amber-50/20', classList: classes.JHS || [] }
-          ].map(div => (
-            <div key={div.levelKey} className={`bg-white rounded-2xl border ${div.color} p-5 space-y-4 shadow-2xs`}>
-              <div className="flex items-center justify-between border-b border-mauve-100 pb-3">
-                <h4 className="font-display font-bold text-mauve-900 text-sm uppercase tracking-wide flex items-center gap-2">
-                  <School className="w-4 h-4 text-mauve-700" />
-                  <span>{div.title}</span>
-                </h4>
-                <span className="text-xs font-bold text-mauve-600 bg-mauve-100/80 px-2.5 py-0.5 rounded-full">
-                  {div.classList.length} Classrooms
-                </span>
+          {(() => {
+            const currentAssignments = getClassTeacherAssignments(teachers);
+            return [
+              { levelKey: 'NURSERY', title: 'Nursery Division', color: 'border-pink-200 bg-pink-50/20', classList: classes.NURSERY || [] },
+              { levelKey: 'KINDERGARTEN', title: 'Kindergarten Division', color: 'border-purple-200 bg-purple-50/20', classList: classes.KINDERGARTEN || ["Kindergarten 1", "Kindergarten 2"] },
+              { levelKey: 'PRIMARY', title: 'Primary School Division (P1 - P6)', color: 'border-indigo-200 bg-indigo-50/20', classList: classes.PRIMARY || [] },
+              { levelKey: 'JHS', title: 'Junior High School Division (JHS 1 - JHS 3)', color: 'border-amber-200 bg-amber-50/20', classList: classes.JHS || [] }
+            ].map(div => {
+              const filteredClasses = div.classList.filter(clsName => {
+                if (classAssignmentSearch && !clsName.toLowerCase().includes(classAssignmentSearch.toLowerCase())) {
+                  return false;
+                }
+                const assignedTeacherId = currentAssignments[clsName];
+                const isAssigned = Boolean(
+                  (assignedTeacherId && teachers.some(t => t.id === assignedTeacherId)) ||
+                  teachers.some(t => t.classes?.includes(clsName))
+                );
+                if (classAssignmentFilter === 'assigned' && !isAssigned) return false;
+                if (classAssignmentFilter === 'unassigned' && isAssigned) return false;
+                return true;
+              });
+
+              if (filteredClasses.length === 0 && (classAssignmentSearch || classAssignmentFilter !== 'all')) {
+                return null;
+              }
+
+              return (
+                <div key={div.levelKey} className={`bg-white rounded-2xl border ${div.color} p-5 space-y-4 shadow-2xs`}>
+                  <div className="flex items-center justify-between border-b border-mauve-100 pb-3">
+                    <h4 className="font-display font-bold text-mauve-900 text-sm uppercase tracking-wide flex items-center gap-2">
+                      <School className="w-4 h-4 text-mauve-700" />
+                      <span>{div.title}</span>
+                    </h4>
+                    <span className="text-xs font-bold text-mauve-600 bg-mauve-100/80 px-2.5 py-0.5 rounded-full">
+                      {filteredClasses.length} of {div.classList.length} Classrooms
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredClasses.map(clsName => {
+                      const assignedTeacherId = currentAssignments[clsName];
+                      const assignedTeacher = (assignedTeacherId && teachers.find(t => t.id === assignedTeacherId)) || teachers.find(t => t.classes?.includes(clsName));
+                      const classPupils = students.filter(s => s.className === clsName || s.level === clsName);
+                      const isSaving = assigningClass === clsName;
+
+                      return (
+                        <div key={clsName} className={`p-4 rounded-xl border transition-all ${assignedTeacher ? 'bg-emerald-50/40 border-emerald-200' : 'bg-amber-50/40 border-amber-200'}`}>
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <h5 className="font-bold text-mauve-900 text-sm">{clsName}</h5>
+                              <span className="text-[11px] text-mauve-800 font-bold">
+                                {classPupils.length} Enrolled Pupils
+                              </span>
+                            </div>
+                            {assignedTeacher ? (
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300/60 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shrink-0">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Assigned
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300/60 rounded text-[10px] font-bold uppercase tracking-wider shrink-0">
+                                Unassigned
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Current Teacher Info */}
+                          {assignedTeacher ? (
+                            <div className="p-2.5 bg-white rounded-lg border border-emerald-200 text-xs mb-3 space-y-1 shadow-2xs">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-emerald-950">{assignedTeacher.name}</span>
+                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                  Official Roll Call Teacher
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-emerald-700 truncate">{assignedTeacher.email}</div>
+                            </div>
+                          ) : (
+                            <div className="p-2.5 bg-white/80 rounded-lg border border-dashed border-amber-300 text-xs text-amber-800 mb-3 italic">
+                              No roll call teacher selected for {clsName}. Select a staff member below.
+                            </div>
+                          )}
+
+                          {/* Teacher Selection Dropdown */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-mauve-800 uppercase tracking-wider block">
+                              Assign Roll Call Teacher:
+                            </label>
+                            <select
+                              value={assignedTeacher ? assignedTeacher.id : (assignedTeacherId || '')}
+                              disabled={isSaving}
+                              onChange={(e) => handleAssignClassTeacher(clsName, e.target.value)}
+                              className="w-full px-3 py-2 bg-white border-2 border-mauve-300 rounded-xl text-xs font-bold text-mauve-950 focus:ring-2 focus:ring-mauve-500 focus:outline-none cursor-pointer shadow-xs min-h-[38px] disabled:opacity-50"
+                            >
+                              <option value="">-- Unassigned (None) --</option>
+                              {teachers
+                                .filter(t => t.role === 'TEACHER')
+                                .map(t => {
+                                  const alreadyHasOtherClass = t.classes && t.classes.length > 0 && !t.classes.includes(clsName);
+                                  return (
+                                    <option key={t.id} value={t.id}>
+                                      {t.name} ({t.email}){alreadyHasOtherClass ? ` [In: ${t.classes?.join(', ')}]` : ''}
+                                    </option>
+                                  );
+                                })}
+                            </select>
+                          </div>
+
+                          {/* Real-time Status feedback */}
+                          {isSaving ? (
+                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-200">
+                              <RefreshCw className="w-3.5 h-3.5 text-indigo-600 animate-spin" />
+                              <span>Saving & syncing to Cloud...</span>
+                            </div>
+                          ) : assignedTeacher ? (
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50/80 px-2 py-0.5 rounded border border-emerald-200">
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              <span>Persisted in Cloud & Master Server</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                </div>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {div.classList.map(clsName => {
-                  const assignedTeacher = teachers.find(t => t.classes?.includes(clsName));
-                  const classPupils = students.filter(s => s.className === clsName || s.level === clsName);
-
-                  return (
-                    <div key={clsName} className={`p-4 rounded-xl border transition-all ${assignedTeacher ? 'bg-emerald-50/30 border-emerald-200/80' : 'bg-amber-50/30 border-amber-200/80'}`}>
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h5 className="font-bold text-mauve-900 text-sm">{clsName}</h5>
-                          <span className="text-[11px] text-mauve-800 font-bold">
-                            {classPupils.length} Enrolled Pupils
-                          </span>
-                        </div>
-                        {assignedTeacher ? (
-                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300/60 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 shrink-0">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Assigned
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300/60 rounded text-[10px] font-bold uppercase tracking-wider shrink-0">
-                            Unassigned
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Current Teacher Info */}
-                      {assignedTeacher ? (
-                        <div className="p-2.5 bg-white rounded-lg border border-emerald-200 text-xs mb-3 space-y-0.5 shadow-2xs">
-                          <div className="font-bold text-emerald-950">{assignedTeacher.name}</div>
-                          <div className="text-[10px] text-emerald-700 truncate">{assignedTeacher.email}</div>
-                        </div>
-                      ) : (
-                        <div className="p-2.5 bg-white/80 rounded-lg border border-dashed border-amber-300 text-xs text-amber-800 mb-3 italic">
-                          No roll call teacher selected for {clsName}. Select a staff member below.
-                        </div>
-                      )}
-
-                      {/* Teacher Selection Dropdown */}
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-mauve-800 uppercase tracking-wider block">
-                          Assign Roll Call Teacher:
-                        </label>
-                        <select
-                          value={assignedTeacher ? assignedTeacher.id : ''}
-                          onChange={(e) => {
-                            const newTeacherId = e.target.value;
-                            setTeachers(prev => prev.map(t => {
-                              if (newTeacherId && t.id === newTeacherId) {
-                                return { ...t, classes: [clsName] };
-                              } else if (t.classes?.includes(clsName)) {
-                                return { ...t, classes: (t.classes || []).filter(c => c !== clsName) };
-                              }
-                              return t;
-                            }));
-                          }}
-                          className="w-full px-3 py-2 bg-white border-2 border-mauve-300 rounded-xl text-xs font-bold text-mauve-950 focus:ring-2 focus:ring-mauve-500 focus:outline-none cursor-pointer shadow-xs min-h-[38px]"
-                        >
-                          <option value="">-- Unassigned (None) --</option>
-                          {teachers
-                            .filter(t => t.role === 'TEACHER')
-                            .map(t => {
-                              const alreadyHasOtherClass = t.classes && t.classes.length > 0 && !t.classes.includes(clsName);
-                              return (
-                                <option key={t.id} value={t.id}>
-                                  {t.name} ({t.email}){alreadyHasOtherClass ? ` [In: ${t.classes?.join(', ')}]` : ''}
-                                </option>
-                              );
-                            })}
-                        </select>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            );
+          });
+        })()}
+      </div>
+    )}
 
       {/* E. GENERAL REPORT CONFIGURATION VIEW */}
       {activeTab === 'config' && (

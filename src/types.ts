@@ -49,6 +49,7 @@ export interface User {
   profilePicture?: string;
   hometown?: string;
   ghanaCardNumber?: string;
+  updatedAt?: string;
 }
 
 export interface Student {
@@ -160,6 +161,7 @@ export interface ReportConfig {
   showAttendanceSection?: boolean;
   accentColor?: string;
   watermarkText?: string;
+  classTeacherAssignments?: Record<string, string>;
   updatedAt?: string;
 }
 
