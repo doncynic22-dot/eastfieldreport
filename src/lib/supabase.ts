@@ -1461,27 +1461,12 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       photoUrl: item.photo_url || '',
     }));
 
-    let cleanMapped = filterDeleted(mapped);
+    const cleanMapped = filterDeleted(mapped);
 
     if (typeof localStorage !== 'undefined') {
-      try {
-        const raw = localStorage.getItem('ea_students');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            const mappedIds = new Set(cleanMapped.map(s => s.id));
-            const unsynced = parsed.filter(s => s && s.id && !mappedIds.has(s.id) && !isStudentDeleted(s) && !isDemoStudent(s));
-            if (unsynced.length > 0) {
-              console.log(`[Supabase Fetch] Auto-reconciling ${unsynced.length} unsynced local pupil(s) into Supabase cloud table.`);
-              cleanMapped = [...cleanMapped, ...unsynced];
-              // Instantly push unsynced pupils up to Supabase to resolve divergence automatically
-              saveSupabaseStudents(cleanMapped).catch(err => {
-                console.warn('[Fetch Students] Auto-reconcile unsynced to Supabase warning:', err);
-              });
-            }
-          }
-        }
-      } catch (e) {}
+      // Supabase returned successfully, so replace rather than merge the
+      // browser cache. This prevents old, device-specific pupils from being
+      // reintroduced into the shared cloud roster.
       localStorage.removeItem('ea_students_cleared');
       localStorage.setItem('ea_students', JSON.stringify(cleanMapped));
       localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanMapped));
