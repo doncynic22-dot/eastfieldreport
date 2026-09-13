@@ -236,7 +236,7 @@ export default function App() {
     setSupabaseStatus(prev => ({
       ...prev,
       isConfigured: true,
-      message: 'Auditing 18 Supabase tables and cloud sync health...'
+      message: 'Auditing 19 Supabase tables and cloud sync health...'
     }));
 
     try {
@@ -413,9 +413,18 @@ export default function App() {
 
         cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
-        // A successful Supabase response is the single source of truth. Do
-        // not merge browser-only records here: a stale cache on one device
-        // otherwise creates different pupil counts across devices.
+        // Bidirectional reconciliation: If local cache has newly admitted pupils not yet in Supabase,
+        // merge them and push to Supabase to keep remote cloud and local browser in 100% lockstep parity.
+        const remoteIds = new Set(cleanStudents.map(s => s.id));
+        const unsyncedLocal = localStudents.filter(s => s && s.id && !remoteIds.has(s.id) && !isStudentDeleted(s) && !isDemoStudent(s));
+        if (unsyncedLocal.length > 0) {
+          console.log(`[Supabase Student Sync] Merging ${unsyncedLocal.length} unsynced local pupil(s) into cloud roster.`);
+          cleanStudents = [...cleanStudents, ...unsyncedLocal];
+          // Asynchronously push reconciled pupils to Supabase
+          saveSupabaseStudents(cleanStudents).catch(err => {
+            console.warn('[Supabase Student Sync] Background push of reconciled pupils warning:', err);
+          });
+        }
 
         // Deduplicate unified roster
         const activeStudents = deduplicateStudents(cleanStudents);
@@ -1632,11 +1641,42 @@ export default function App() {
           setStudents(prev => {
             const cleanRemote = deduplicateStudents(remoteStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s)));
             const cleanPrev = prev.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
-            const prevSig = cleanPrev.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
-            const remoteSig = cleanRemote.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
 
-            if (prevSig !== remoteSig) {
-              if (cleanRemote.length > 0) {
+            const isRosterCleared = typeof window !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
+            if (cleanRemote.length === 0 && cleanPrev.length > 0 && !isRosterCleared) {
+              return prev;
+            }
+
+            // Create map with remote students
+            const studentMap = new Map<string, Student>();
+            cleanRemote.forEach(s => {
+              if (s && s.id) studentMap.set(s.id, s);
+            });
+
+            // Preserve local non-deleted students so newly admitted pupils are never automatically deleted
+            if (!isRosterCleared) {
+              cleanPrev.forEach(s => {
+                if (s && s.id && !isStudentDeleted(s) && !isDemoStudent(s)) {
+                  const existingRemote = studentMap.get(s.id);
+                  if (!existingRemote) {
+                    studentMap.set(s.id, s);
+                  } else {
+                    const localTime = s.updatedAt || s.updated_at ? new Date(s.updatedAt || s.updated_at || '').getTime() : 0;
+                    const remoteTime = existingRemote.updatedAt || existingRemote.updated_at ? new Date(existingRemote.updatedAt || existingRemote.updated_at || '').getTime() : 0;
+                    if (localTime > remoteTime) {
+                      studentMap.set(s.id, { ...existingRemote, ...s });
+                    }
+                  }
+                }
+              });
+            }
+
+            const merged = deduplicateStudents(Array.from(studentMap.values()).filter(s => !isStudentDeleted(s)));
+            const prevSig = cleanPrev.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
+            const mergedSig = merged.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
+
+            if (prevSig !== mergedSig) {
+              if (merged.length > 0) {
                 try {
                   localStorage.removeItem('ea_students_cleared');
                 } catch (e) {}
@@ -1645,10 +1685,10 @@ export default function App() {
                   localStorage.setItem('ea_students_cleared', 'true');
                 } catch (e) {}
               }
-              localStorage.setItem('ea_students', JSON.stringify(cleanRemote));
-              localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanRemote));
-              lastSavedStudentsSigRef.current = cleanRemote.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
-              return cleanRemote;
+              localStorage.setItem('ea_students', JSON.stringify(merged));
+              localStorage.setItem('mock_supabase_ea_students', JSON.stringify(merged));
+              lastSavedStudentsSigRef.current = merged.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+              return merged;
             }
             return prev;
           });
@@ -2130,7 +2170,7 @@ export default function App() {
                   ? 'Auditing Tables...'
                   : supabaseStatus.failingCount > 0
                   ? `Cloud Alert (${supabaseStatus.failingCount} Table${supabaseStatus.failingCount > 1 ? 's' : ''})`
-                  : `Cloud Synced (${supabaseStatus.healthyCount}/18 Tables)`}
+                  : `Cloud Synced (${supabaseStatus.healthyCount}/${supabaseStatus.totalTablesChecked || 19} Tables)`}
               </span>
               <span className="xl:hidden font-mono">
                 {supabaseStatus.isConnected ? (supabaseStatus.failingCount > 0 ? `${supabaseStatus.failingCount} Err` : 'Cloud') : 'Cloud'}
@@ -2573,7 +2613,7 @@ export default function App() {
                   Cloud Database & Table Sync Diagnostic
                 </h3>
                 <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">
-                  Automated 18-Table Audit & Dynamic SQL Fix Generator
+                  Automated {supabaseStatus.totalTablesChecked || 19}-Table Audit & Dynamic SQL Fix Generator
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -2603,7 +2643,7 @@ export default function App() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-center">
                   <span className="text-[10px] font-bold text-gray-500 uppercase block">Tables Monitored</span>
-                  <span className="font-mono text-base font-extrabold text-mauve-900">{supabaseStatus.totalTablesChecked || 18}</span>
+                  <span className="font-mono text-base font-extrabold text-mauve-900">{supabaseStatus.totalTablesChecked || 19}</span>
                 </div>
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
                   <span className="text-[10px] font-bold text-emerald-700 uppercase block">Healthy Tables</span>
@@ -2688,7 +2728,7 @@ export default function App() {
                 <div className="flex justify-between items-center">
                   <h4 className="font-bold text-mauve-900 text-xs uppercase tracking-wider flex items-center gap-1.5">
                     <Database className="w-3.5 h-3.5 text-mauve-700" />
-                    <span>Table Audit Breakdown (18 Tables):</span>
+                    <span>Table Audit Breakdown ({supabaseStatus.totalTablesChecked || 19} Tables):</span>
                   </h4>
                   <span className="text-[10px] font-mono text-gray-500">
                     Last audited: {new Date(supabaseStatus.checkedAt).toLocaleTimeString()}

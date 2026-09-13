@@ -276,7 +276,23 @@ CREATE TABLE IF NOT EXISTS public.ea_jhs_mock_exams (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 17. Create Sync State Table
+-- 17. Create JHS Terminal Assessment History Table
+CREATE TABLE IF NOT EXISTS public.ea_jhs_terminal_assessments (
+  id VARCHAR PRIMARY KEY,
+  student_id VARCHAR NOT NULL,
+  student_name VARCHAR NOT NULL,
+  roll_number VARCHAR,
+  class_name VARCHAR DEFAULT 'JHS 1',
+  academic_year VARCHAR DEFAULT '2025/2026',
+  term VARCHAR DEFAULT 'Term 3',
+  scores JSONB DEFAULT '{}'::jsonb,
+  overall_average NUMERIC,
+  promotional_status VARCHAR DEFAULT 'PENDING',
+  teacher_remarks TEXT,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 18. Create Sync State Table
 CREATE TABLE IF NOT EXISTS public.ea_sync_state (
   key VARCHAR PRIMARY KEY,
   version BIGINT DEFAULT 1,
@@ -284,7 +300,7 @@ CREATE TABLE IF NOT EXISTS public.ea_sync_state (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 18. Create Notifications Table
+-- 19. Create Notifications Table
 CREATE TABLE IF NOT EXISTS public.ea_notifications (
   id VARCHAR PRIMARY KEY,
   title VARCHAR NOT NULL,
@@ -328,6 +344,7 @@ DECLARE
     'ea_book_sales',
     'ea_deleted_records',
     'ea_jhs_mock_exams',
+    'ea_jhs_terminal_assessments',
     'ea_sync_logs',
     'ea_sync_state',
     'ea_notifications'
@@ -368,6 +385,7 @@ ALTER TABLE public.ea_book_stock DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_book_sales DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_deleted_records DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_jhs_mock_exams DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ea_jhs_terminal_assessments DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_sync_logs DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_sync_state DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ea_notifications DISABLE ROW LEVEL SECURITY;
@@ -666,6 +684,23 @@ CREATE TABLE IF NOT EXISTS public.ea_jhs_mock_exams (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 ALTER TABLE public.ea_jhs_mock_exams DISABLE ROW LEVEL SECURITY;`,
+
+  ea_jhs_terminal_assessments: `-- 15. JHS Terminal Assessment History Table
+CREATE TABLE IF NOT EXISTS public.ea_jhs_terminal_assessments (
+  id VARCHAR PRIMARY KEY,
+  student_id VARCHAR NOT NULL,
+  student_name VARCHAR NOT NULL,
+  roll_number VARCHAR,
+  class_name VARCHAR DEFAULT 'JHS 1',
+  academic_year VARCHAR DEFAULT '2025/2026',
+  term VARCHAR DEFAULT 'Term 3',
+  scores JSONB DEFAULT '{}'::jsonb,
+  overall_average NUMERIC,
+  promotional_status VARCHAR DEFAULT 'PENDING',
+  teacher_remarks TEXT,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE public.ea_jhs_terminal_assessments DISABLE ROW LEVEL SECURITY;`,
 
   ea_deleted_records: `-- 15. Deleted Records / Tombstones Table
 CREATE TABLE IF NOT EXISTS public.ea_deleted_records (
