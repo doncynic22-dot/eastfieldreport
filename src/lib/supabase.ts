@@ -712,6 +712,7 @@ export const MONITORED_SUPABASE_TABLES: Array<{ name: string; displayName: strin
   { name: 'ea_book_stock', displayName: 'Book & Stationery Stock' },
   { name: 'ea_book_sales', displayName: 'Book Sales Transactions' },
   { name: 'ea_jhs_mock_exams', displayName: 'JHS 3 BECE Mock Exams' },
+  { name: 'ea_jhs_terminal_assessments', displayName: 'JHS Terminal Assessment History' },
   { name: 'ea_deleted_records', displayName: 'Audit Deletion Tombstones' },
   { name: 'ea_sync_logs', displayName: 'Sync Activity Logs' },
   { name: 'ea_sync_state', displayName: 'Realtime Sync State' },
@@ -1537,14 +1538,15 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
     window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'internal_save' } }));
   } catch (e) {}
 
-  // 3. Immediately dispatch to Server / CDN API with anti-cache synchronization
-  try {
-    await syncStudentAdditionToCDN(student);
-  } catch (e) {
+  // 3. Keep the auxiliary server/CDN cache in sync, but never make the
+  // Supabase write wait for it. A slow or unavailable app server previously
+  // made a new admission appear late in the ea_students table.
+  void syncStudentAdditionToCDN(student).catch((e) => {
     console.warn('syncStudentAdditionToCDN notice:', e);
-  }
+  });
 
-  // 4. Upsert to Supabase Cloud Database
+  // 4. Upsert to Supabase Cloud Database first; this is the authoritative
+  // persistence step for an admission.
   const client = getSupabaseClient();
   if (client) {
     try {
@@ -1590,14 +1592,14 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
         console.log(`[Supabase Student Admission] Successfully committed student ${student.name} (${student.rollNumber}) to Supabase ea_students table.`);
       }
 
-      // Log sync operation
+      // Log sync operation only after the database write has succeeded.
       try {
         await client.from('ea_sync_logs').insert([{
           id: `sync_adm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           action_type: 'ADMIT_STUDENT',
           description: `Pupil admitted / updated: ${student.name} (${student.rollNumber}) - ${student.className}`,
           performed_by: 'Admin',
-          status: 'SUCCESS',
+          status: error ? 'FAILED' : 'SUCCESS',
           details: { id: student.id, name: student.name, rollNumber: student.rollNumber, className: student.className, timestamp: new Date().toISOString() },
           timestamp: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -1613,13 +1615,13 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
       console.warn('saveSingleSupabaseStudent exception:', err);
       broadcastGlobalSync('ea_students', { action: 'UPSERT', student, id: student.id });
       broadcastSync('students', student, 'insert');
-      return true;
+      return false;
     }
   }
 
   broadcastGlobalSync('ea_students', { action: 'UPSERT', student, id: student.id });
   broadcastSync('students', student, 'insert');
-  return true;
+  return false;
 }
 
 export async function saveSupabaseStudents(students: Student[]): Promise<boolean> {
@@ -1700,24 +1702,26 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
     for (let i = 0; i < payloads.length; i += 100) {
       upsertChunks.push(payloads.slice(i, i + 100));
     }
-    await Promise.all(
+    const batchResults = await Promise.all(
       upsertChunks.map(async (chunk) => {
         let { error } = await safeUpsert('ea_students', chunk, client, 'id');
         if (error && (error.message?.includes('photo_url') || error.message?.includes('guardian_phone') || error.code === '42703')) {
           const legacyChunk = chunk.map(({ photo_url, guardian_phone, ...rest }) => rest);
-          await safeUpsert('ea_students', legacyChunk, client, 'id');
+          ({ error } = await safeUpsert('ea_students', legacyChunk, client, 'id'));
         }
+        return error;
       })
     );
     
     broadcastGlobalSync('ea_students', { action: 'UPSERT', count: validStudents.length });
     broadcastSync('students', validStudents, 'update');
 
-    return true;
+    return batchResults.every(error => !error);
   } catch (err: any) {
     broadcastGlobalSync('ea_students', { action: 'UPSERT', count: validStudents.length });
     broadcastSync('students', validStudents, 'update');
-    return true;
+    console.warn('saveSupabaseStudents exception:', err);
+    return false;
   }
 }
 
@@ -1979,7 +1983,7 @@ export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
   saveServerEntity('/teachers', teachers).catch(e => console.warn('[Server Sync Teachers Notice]', e));
 
   const client = getSupabaseClient();
-  if (!client) return true;
+  if (!client) return false;
   try {
     const payloads = teachers.map(t => ({
       id: t.id,
@@ -2109,7 +2113,8 @@ export async function saveSingleSupabaseTeacher(teacher: User): Promise<boolean>
     broadcastSync('teachers', teacher, 'insert');
     return !error;
   } catch (err) {
-    return true;
+    console.warn('saveSingleSupabaseTeacher exception:', err);
+    return false;
   }
 }
 
@@ -4293,6 +4298,105 @@ export async function saveSupabaseJHSMockExams(records: JHSMockExamRecord[]): Pr
   } catch (err: any) {
     console.warn('saveSupabaseJHSMockExams exception:', err);
     return true;
+  }
+}
+
+// 13. JHS TERMINAL ASSESSMENT HISTORY
+// This is deliberately separate from ea_grades: it preserves archived term
+// records, including teacher remarks and promotion status.
+interface JHSTerminalAssessmentRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  rollNumber?: string;
+  className?: string;
+  academicYear?: string;
+  term?: string;
+  scores?: Record<string, unknown>;
+  overallAverage?: number;
+  promotionalStatus?: string;
+  teacherRemarks?: string;
+  updatedAt?: string;
+}
+
+export async function fetchSupabaseJHSTerminalAssessments(): Promise<JHSTerminalAssessmentRecord[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client
+      .from('ea_jhs_terminal_assessments')
+      .select('*')
+      .order('updated_at', { ascending: false });
+    if (error) {
+      console.warn('Supabase fetch JHS terminal assessments error:', error);
+      return null;
+    }
+    return (data || []).map((item: any) => ({
+      id: item.id,
+      studentId: item.student_id,
+      studentName: item.student_name,
+      rollNumber: item.roll_number || '',
+      className: item.class_name || 'JHS 1',
+      academicYear: item.academic_year || '2025/2026',
+      term: item.term || 'Term 3',
+      scores: item.scores || {},
+      overallAverage: item.overall_average ?? undefined,
+      promotionalStatus: item.promotional_status || 'PENDING',
+      teacherRemarks: item.teacher_remarks || '',
+      updatedAt: item.updated_at
+    }));
+  } catch (err) {
+    console.warn('fetchSupabaseJHSTerminalAssessments exception:', err);
+    return null;
+  }
+}
+
+export async function saveSupabaseJHSTerminalAssessments(records: JHSTerminalAssessmentRecord[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const payloads = records.map((record) => ({
+      id: record.id,
+      student_id: record.studentId,
+      student_name: record.studentName,
+      roll_number: record.rollNumber || '',
+      class_name: record.className || 'JHS 1',
+      academic_year: record.academicYear || '2025/2026',
+      term: record.term || 'Term 3',
+      scores: record.scores || {},
+      overall_average: record.overallAverage ?? null,
+      promotional_status: record.promotionalStatus || 'PENDING',
+      teacher_remarks: record.teacherRemarks || '',
+      updated_at: record.updatedAt || new Date().toISOString()
+    }));
+    if (payloads.length === 0) return true;
+    const { error } = await safeUpsert('ea_jhs_terminal_assessments', payloads, client, 'id');
+    if (error) {
+      console.warn('Supabase save JHS terminal assessments error:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('saveSupabaseJHSTerminalAssessments exception:', err);
+    return false;
+  }
+}
+
+export async function deleteSupabaseJHSTerminalAssessment(id: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !id) return false;
+  try {
+    const { error } = await client.from('ea_jhs_terminal_assessments').delete().eq('id', id);
+    if (error) {
+      console.warn('Supabase delete JHS terminal assessment error:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('deleteSupabaseJHSTerminalAssessment exception:', err);
+    return false;
   }
 }
 

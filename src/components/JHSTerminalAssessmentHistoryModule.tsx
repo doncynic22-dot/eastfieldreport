@@ -1,5 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Student, Subject, Grade, ReportConfig } from '../types';
+import {
+  deleteSupabaseJHSTerminalAssessment,
+  fetchSupabaseJHSTerminalAssessments,
+  saveSupabaseJHSTerminalAssessments
+} from '../lib/supabase';
 import { 
   History, 
   Search, 
@@ -108,6 +113,7 @@ export default function JHSTerminalAssessmentHistoryModule({
 }: JHSTerminalAssessmentHistoryModuleProps) {
   // Stored Terminal History Records
   const [terminalRecords, setTerminalRecords] = useState<JHSTerminalRecord[]>(() => getStoredJHSTerminalRecords());
+  const [terminalHistoryHydrated, setTerminalHistoryHydrated] = useState(false);
   
   // Filters (Defaults to Term 3 & 2025/2026 Academic Year starting point as requested)
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>('2025/2026');
@@ -137,10 +143,34 @@ export default function JHSTerminalAssessmentHistoryModule({
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // Sync state to local storage when terminalRecords changes
+  // Load the archive from Supabase before allowing local changes to push. This
+  // prevents an empty browser cache from overwriting a saved history.
+  useEffect(() => {
+    let active = true;
+    const hydrateTerminalHistory = async () => {
+      const remote = await fetchSupabaseJHSTerminalAssessments();
+      if (!active) return;
+
+      if (remote) {
+        const merged = new Map<string, JHSTerminalRecord>();
+        getStoredJHSTerminalRecords().forEach((record) => merged.set(record.id, record));
+        remote.forEach((record) => merged.set(record.id, record as unknown as JHSTerminalRecord));
+        setTerminalRecords(Array.from(merged.values()));
+      }
+      setTerminalHistoryHydrated(true);
+    };
+    void hydrateTerminalHistory();
+    return () => { active = false; };
+  }, []);
+
+  // Store locally for offline use, then immediately mirror the archive in
+  // Supabase after the initial cloud read has completed.
   useEffect(() => {
     saveJHSTerminalRecords(terminalRecords);
-  }, [terminalRecords]);
+    if (terminalHistoryHydrated) {
+      void saveSupabaseJHSTerminalAssessments(terminalRecords);
+    }
+  }, [terminalRecords, terminalHistoryHydrated]);
 
   // Filter JHS Subjects
   const jhsSubjects = useMemo(() => {
@@ -305,7 +335,7 @@ export default function JHSTerminalAssessmentHistoryModule({
   };
 
   // Save terminal assessment entry
-  const handleSaveRecord = () => {
+  const handleSaveRecord = async () => {
     if (!formStudentId) {
       showToast('Please select a student.');
       return;
@@ -344,15 +374,25 @@ export default function JHSTerminalAssessmentHistoryModule({
       return [newRec, ...prev];
     });
 
+    const persisted = await saveSupabaseJHSTerminalAssessments([newRec]);
     setShowAddModal(false);
-    showToast(`Terminal Examination record saved for ${studentName}!`);
+    showToast(
+      persisted
+        ? `Terminal Examination record saved for ${studentName}!`
+        : `Record saved locally for ${studentName}. Supabase needs a retry.`
+    );
   };
 
   // Delete record
-  const handleDeleteRecord = (id: string, studentName: string) => {
+  const handleDeleteRecord = async (id: string, studentName: string) => {
     if (window.confirm(`Are you sure you want to remove the terminal history record for ${studentName}?`)) {
       setTerminalRecords((prev) => prev.filter((r) => r.id !== id));
-      showToast(`Record for ${studentName} removed from history archive.`);
+      const deleted = await deleteSupabaseJHSTerminalAssessment(id);
+      showToast(
+        deleted
+          ? `Record for ${studentName} removed from the history archive.`
+          : `Record removed locally. Supabase deletion needs a retry.`
+      );
     }
   };
 

@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS public.ea_book_stock CASCADE;
 DROP TABLE IF EXISTS public.ea_book_sales CASCADE;
 DROP TABLE IF EXISTS public.ea_deleted_records CASCADE;
 DROP TABLE IF EXISTS public.ea_jhs_mock_exams CASCADE;
+DROP TABLE IF EXISTS public.ea_jhs_terminal_assessments CASCADE;
 
 -- 2. CREATE FRESH TABLES
 
@@ -272,6 +273,22 @@ CREATE TABLE public.ea_jhs_mock_exams (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Table 16: JHS Terminal Assessment History Archive
+CREATE TABLE public.ea_jhs_terminal_assessments (
+  id VARCHAR PRIMARY KEY,
+  student_id VARCHAR NOT NULL,
+  student_name VARCHAR NOT NULL,
+  roll_number VARCHAR,
+  class_name VARCHAR DEFAULT 'JHS 1',
+  academic_year VARCHAR DEFAULT '2025/2026',
+  term VARCHAR DEFAULT 'Term 3',
+  scores JSONB DEFAULT '{}'::jsonb,
+  overall_average NUMERIC,
+  promotional_status VARCHAR DEFAULT 'PENDING',
+  teacher_remarks TEXT,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- 3. INSERT DEFAULT CONFIGURATION
 INSERT INTO public.ea_config (
   id, school_name, school_year, term, principal_name, school_logo_text,
@@ -290,7 +307,7 @@ DECLARE
     'ea_config', 'ea_students', 'ea_teachers', 'ea_grades', 'ea_attendance',
     'ea_bills', 'ea_fee_payments', 'ea_fee_structures', 'ea_daily_collections',
     'ea_sync_logs', 'ea_inventory', 'ea_book_stock', 'ea_book_sales',
-    'ea_deleted_records', 'ea_jhs_mock_exams'
+    'ea_deleted_records', 'ea_jhs_mock_exams', 'ea_jhs_terminal_assessments'
   ];
 BEGIN
   FOREACH t IN ARRAY tbls LOOP

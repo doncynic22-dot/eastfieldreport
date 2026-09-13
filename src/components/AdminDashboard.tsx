@@ -1382,18 +1382,17 @@ export default function AdminDashboard({
 
       const isEdit = !!editingStudent;
 
-      // 4. Await database write to Supabase
-      try {
-        await saveSingleSupabaseStudent(savedStudent);
-      } catch (dbErr: any) {
-        console.warn('Notice writing pupil to Supabase database:', dbErr);
-      }
+      // 4. Write this pupil directly to the authoritative table before
+      // confirming cloud persistence to the administrator.
+      const studentPersisted = await saveSingleSupabaseStudent(savedStudent);
 
       // 5. Trigger in-form 'Success' toast notification & green checkmark animation immediately after database write
       setStudentSuccessDetail(
-        isEdit
-          ? `Profile changes for "${savedStudent.name}" (${savedStudent.rollNumber}) saved to database.`
-          : `Pupil "${savedStudent.name}" (${savedStudent.rollNumber}) recorded in Supabase database.`
+        studentPersisted
+          ? (isEdit
+            ? `Profile changes for "${savedStudent.name}" (${savedStudent.rollNumber}) saved to database.`
+            : `Pupil "${savedStudent.name}" (${savedStudent.rollNumber}) recorded in Supabase database.`)
+          : `Pupil "${savedStudent.name}" was saved locally. The Supabase write failed and will need a retry.`
       );
       setStudentFormSuccess(true);
       setIsSubmittingStudent(false);
@@ -1691,6 +1690,11 @@ export default function AdminDashboard({
         saveServerEntity('/class-teacher-assignments', assignments).catch(() => {});
       } catch (e) {}
 
+      // Commit the individual staff record before closing the form. This used
+      // to run only in a background task, so newly added people could be
+      // missing from ea_teachers until a later full sync completed.
+      const teacherPersisted = await saveSingleSupabaseTeacher(savedTeacher);
+
       // Reset and INSTANTLY CLOSE the teacher modal
       setTeacherForm({
         name: '',
@@ -1710,13 +1714,16 @@ export default function AdminDashboard({
       setIsSubmittingTeacher(false);
       setTeacherError('');
 
-      setPromotionSuccessMsg(`Staff member "${savedTeacher.name}" saved! Synchronizing with database...`);
+      setPromotionSuccessMsg(
+        teacherPersisted
+          ? `Staff member "${savedTeacher.name}" saved in Supabase. Finalizing sync...`
+          : `Staff member "${savedTeacher.name}" saved locally. Supabase needs a retry.`
+      );
 
       // Asynchronously record single teacher in Supabase ea_teachers table and CDN
       (async () => {
         try {
-          await saveSingleSupabaseTeacher(savedTeacher);
-          await saveSupabaseTeachers(updatedTeachersList);
+          const rosterPersisted = await saveSupabaseTeachers(updatedTeachersList);
 
           // Push master sync to Server / CDN
           globalSyncEngine.pushMasterServerSync({
@@ -1727,7 +1734,11 @@ export default function AdminDashboard({
             await onPushToSupabase(undefined, undefined, updatedTeachersList).catch(() => {});
           }
 
-          setPromotionSuccessMsg(`Staff member "${savedTeacher.name}" saved, recorded in Supabase, and synced!`);
+          setPromotionSuccessMsg(
+            teacherPersisted && rosterPersisted
+              ? `Staff member "${savedTeacher.name}" saved, recorded in Supabase, and synced!`
+              : `Staff member "${savedTeacher.name}" saved locally. Cloud sync needs a retry.`
+          );
           setTimeout(() => setPromotionSuccessMsg(''), 6000);
         } catch (saveErr: any) {
           console.warn('Notice saving teacher to Supabase in background:', saveErr);
