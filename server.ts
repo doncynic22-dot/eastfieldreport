@@ -291,6 +291,12 @@ async function startServer() {
   // 0. CDN & Edge Proxy Anti-Caching Middleware for dynamic API routes
   // Guarantees that Google Cloud CDN, Cloudflare, proxies, and mobile browsers NEVER serve stale responses for dynamic state
   app.use("/api", (req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Pragma, Cache-Control");
+    if (req.method === "OPTIONS") {
+      return res.status(200).end();
+    }
     // Exclude static or proxy CDN endpoints from no-store headers if they explicitly opt into caching
     if (req.path === "/cdn/health" || req.path === "/cdn/status") {
       res.setHeader("Cache-Control", "public, max-age=60");

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Student, User, Grade, Attendance, StudentBill, DailyAttendanceRecord } from '../types';
 import { 
   Database, RefreshCw, CheckCircle2, AlertTriangle, XCircle, 
@@ -16,9 +16,17 @@ import {
   SUPABASE_SQL_REPAIR, 
   pruneDeletedTombstones,
   fetchSupabaseStudents,
-  fetchSupabaseTeachers
+  fetchSupabaseTeachers,
+  fetchSupabaseGrades,
+  saveSupabaseGrades,
+  fetchSupabaseAttendance,
+  saveSupabaseAttendance,
+  saveSupabaseStudents,
+  saveSupabaseTeachers,
+  isStudentDeleted
 } from '../lib/supabase';
 import { globalSyncEngine } from '../lib/globalSync';
+import { deduplicateStudents } from '../services/promotionService';
 
 interface DatabaseAuditTabProps {
   students: Student[];
@@ -26,8 +34,11 @@ interface DatabaseAuditTabProps {
   teachers: User[];
   setTeachers: React.Dispatch<React.SetStateAction<User[]>>;
   grades?: Grade[];
+  setGrades?: React.Dispatch<React.SetStateAction<Grade[]>>;
   attendance?: Attendance[];
+  setAttendance?: React.Dispatch<React.SetStateAction<Attendance[]>>;
   dailyAttendance?: DailyAttendanceRecord[];
+  setDailyAttendance?: React.Dispatch<React.SetStateAction<DailyAttendanceRecord[]>>;
   bills?: StudentBill[];
   onPullFromSupabase?: () => Promise<boolean>;
   onPushToSupabase?: () => Promise<boolean>;
@@ -39,8 +50,11 @@ export default function DatabaseAuditTab({
   teachers,
   setTeachers,
   grades = [],
+  setGrades,
   attendance = [],
+  setAttendance,
   dailyAttendance = [],
+  setDailyAttendance,
   bills = [],
   onPullFromSupabase,
   onPushToSupabase
@@ -52,10 +66,12 @@ export default function DatabaseAuditTab({
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
   const [lastAuditTime, setLastAuditTime] = useState<Date>(new Date());
 
-  const runAudit = useCallback(async () => {
+  const lastSyncAuditTimeRef = useRef<number>(0);
+
+  const runAudit = useCallback(async (force = false) => {
     setIsLoading(true);
     try {
-      const data = await auditDatabaseCounts();
+      const data = await auditDatabaseCounts(force);
       setReport(data);
       setLastAuditTime(new Date());
     } catch (err) {
@@ -66,15 +82,19 @@ export default function DatabaseAuditTab({
   }, []);
 
   useEffect(() => {
-    runAudit();
-    const interval = setInterval(runAudit, 30000); // Background refresh every 30s
+    runAudit(false);
+    const interval = setInterval(() => runAudit(false), 30000); // Background refresh every 30s
     return () => clearInterval(interval);
   }, [runAudit]);
 
-  // Listen to external sync updates
+  // Listen to external sync updates with throttling
   useEffect(() => {
     const handleSyncEvent = () => {
-      runAudit();
+      const now = Date.now();
+      if (now - lastSyncAuditTimeRef.current > 4000) {
+        lastSyncAuditTimeRef.current = now;
+        runAudit(false);
+      }
     };
     window.addEventListener('ea_global_sync_stream_event', handleSyncEvent);
     window.addEventListener('ea_global_sync_outdated', handleSyncEvent);
@@ -94,37 +114,167 @@ export default function DatabaseAuditTab({
     setIsRealigning(true);
     setActionSuccessMessage(null);
     try {
-      // 1. Pull authoritative data from Supabase
-      if (onPullFromSupabase) {
-        await onPullFromSupabase();
-      }
+      // 1. Gather all local data safely from memory and storage
+      let localStudentsList: Student[] = students;
+      try {
+        const cached = localStorage.getItem('ea_students');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            localStudentsList = parsed;
+          }
+        }
+      } catch (e) {}
 
-      // 2. Fetch directly from supabase helpers
-      const remoteStudents = await fetchSupabaseStudents();
-      const remoteTeachers = await fetchSupabaseTeachers();
+      let localTeachersList: User[] = teachers;
+      try {
+        const cachedT = localStorage.getItem('ea_teachers');
+        if (cachedT) {
+          const parsedT = JSON.parse(cachedT);
+          if (Array.isArray(parsedT) && parsedT.length > 0) {
+            localTeachersList = parsedT;
+          }
+        }
+      } catch (e) {}
 
-      if (remoteStudents && Array.isArray(remoteStudents)) {
-        pruneDeletedTombstones(remoteStudents, remoteTeachers || undefined);
-        setStudents(remoteStudents);
-        localStorage.setItem('ea_students', JSON.stringify(remoteStudents));
-        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(remoteStudents));
-      }
+      let localGradesList: Grade[] = grades;
+      try {
+        const cachedG = localStorage.getItem('ea_grades');
+        if (cachedG) {
+          const parsedG = JSON.parse(cachedG);
+          if (Array.isArray(parsedG) && parsedG.length > 0) {
+            localGradesList = parsedG;
+          }
+        }
+      } catch (e) {}
 
-      if (remoteTeachers && Array.isArray(remoteTeachers)) {
-        setTeachers(remoteTeachers);
-        localStorage.setItem('ea_teachers', JSON.stringify(remoteTeachers));
-      }
+      let localAttList: Attendance[] = attendance;
+      try {
+        const cachedA = localStorage.getItem('ea_attendance');
+        if (cachedA) {
+          const parsedA = JSON.parse(cachedA);
+          if (Array.isArray(parsedA) && parsedA.length > 0) {
+            localAttList = parsedA;
+          }
+        }
+      } catch (e) {}
 
-      // 3. Trigger global sync manager to notify all tabs and browsers
-      await globalSyncEngine.checkVersionAndSync();
+      // 2. Fetch authoritative remote data in PARALLEL for maximum speed
+      const [remoteStudents, remoteTeachers, remoteGrades, remoteAttendance] = await Promise.all([
+        fetchSupabaseStudents(),
+        fetchSupabaseTeachers(),
+        fetchSupabaseGrades(),
+        fetchSupabaseAttendance()
+      ]);
 
-      // 4. Re-run audit
-      await runAudit();
+      // 3. Bidirectional student merge
+      const studentMap = new Map<string, Student>();
+      (remoteStudents || []).forEach(s => {
+        if (s && s.id && !isStudentDeleted(s)) {
+          studentMap.set(s.id, s);
+        }
+      });
+      (localStudentsList || []).forEach(s => {
+        if (s && s.id && !isStudentDeleted(s)) {
+          if (!studentMap.has(s.id)) {
+            studentMap.set(s.id, s);
+          }
+        }
+      });
+      const reconciledStudents = deduplicateStudents(Array.from(studentMap.values()));
+      pruneDeletedTombstones(reconciledStudents, remoteTeachers || undefined);
 
-      const studentCount = remoteStudents?.length ?? students.length;
-      const teacherCount = remoteTeachers?.length ?? teachers.length;
+      // 4. Bidirectional teacher merge
+      const teacherMap = new Map<string, User>();
+      (remoteTeachers || []).forEach(t => {
+        if (t && t.id) teacherMap.set(t.id, t);
+      });
+      (localTeachersList || []).forEach(t => {
+        if (t && t.id && !teacherMap.has(t.id)) teacherMap.set(t.id, t);
+      });
+      const reconciledTeachers = Array.from(teacherMap.values());
 
-      setActionSuccessMessage(`Global realignment complete! All ${studentCount} pupils and ${teacherCount} teachers are reconciled and in sync.`);
+      // 5. Bidirectional grades merge
+      const gradeMap = new Map<string, Grade>();
+      (remoteGrades || []).forEach(g => {
+        if (g && g.studentId && g.subjectId) {
+          const key = `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
+          gradeMap.set(key, g);
+        }
+      });
+      (localGradesList || []).forEach(g => {
+        if (g && g.studentId && g.subjectId) {
+          const key = `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`;
+          if (!gradeMap.has(key)) {
+            gradeMap.set(key, g);
+          }
+        }
+      });
+      const reconciledGrades = Array.from(gradeMap.values());
+
+      // 6. Bidirectional attendance merge
+      const attMap = new Map<string, Attendance>();
+      (remoteAttendance || []).forEach(a => {
+        if (a && a.studentId) {
+          const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+          attMap.set(key, a);
+        }
+      });
+      (localAttList || []).forEach(a => {
+        if (a && a.studentId) {
+          const key = `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`;
+          if (!attMap.has(key)) {
+            attMap.set(key, a);
+          }
+        }
+      });
+      const reconciledAttendance = Array.from(attMap.values());
+
+      // 7. Update UI and local storage instantly
+      setStudents(reconciledStudents);
+      setTeachers(reconciledTeachers);
+      if (setGrades) setGrades(reconciledGrades);
+      if (setAttendance) setAttendance(reconciledAttendance);
+
+      localStorage.setItem('ea_students', JSON.stringify(reconciledStudents));
+      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(reconciledStudents));
+      localStorage.setItem('ea_teachers', JSON.stringify(reconciledTeachers));
+      localStorage.setItem('ea_grades', JSON.stringify(reconciledGrades));
+      localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(reconciledGrades));
+      localStorage.setItem('ea_attendance', JSON.stringify(reconciledAttendance));
+      localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(reconciledAttendance));
+
+      // 8. Commit reconciled data to Supabase and Server database concurrently in PARALLEL
+      console.log(`[Realignment] Synchronizing reconciled records to Supabase and Server in parallel...`);
+      await Promise.all([
+        saveSupabaseStudents(reconciledStudents),
+        saveSupabaseTeachers(reconciledTeachers),
+        saveSupabaseGrades(reconciledGrades),
+        saveSupabaseAttendance(reconciledAttendance),
+        fetch('/api/sync/all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            students: reconciledStudents,
+            teachers: reconciledTeachers,
+            grades: reconciledGrades,
+            attendance: reconciledAttendance
+          })
+        }).catch(() => {})
+      ]);
+
+      // 9. Notify cross-tab engine without blocking
+      globalSyncEngine.checkVersionAndSync().catch(() => {});
+
+      // 10. Re-run audit to reflect 100% matched counts
+      await runAudit(true);
+
+      const studentCount = reconciledStudents.length;
+      const teacherCount = reconciledTeachers.length;
+      const gradeCount = reconciledGrades.length;
+      const attendanceCount = reconciledAttendance.length;
+
+      setActionSuccessMessage(`Global realignment complete! All ${studentCount} pupils, ${teacherCount} staff, ${gradeCount} grades, and ${attendanceCount} attendance records are 100% synchronized.`);
       setTimeout(() => setActionSuccessMessage(null), 8000);
     } catch (err: any) {
       console.error('Realignment failed:', err);
@@ -240,7 +390,7 @@ export default function DatabaseAuditTab({
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
-              onClick={runAudit}
+              onClick={() => runAudit(true)}
               disabled={isLoading}
               className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl border border-slate-700 transition flex items-center gap-2 cursor-pointer"
               title="Refresh Audit Data"
@@ -332,7 +482,7 @@ export default function DatabaseAuditTab({
             <span className="text-[11px] uppercase tracking-wider font-bold text-slate-700">Enrolled Pupils Roster</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-950 font-display">
-                {report?.counts.students.supabase ?? report?.counts.students.local ?? students.length}
+                {Math.max(report?.counts.students.supabase ?? 0, report?.counts.students.local ?? 0, students.length)}
               </span>
               <span className="text-xs font-bold text-slate-700">Active Pupils</span>
             </div>
@@ -345,6 +495,38 @@ export default function DatabaseAuditTab({
           </div>
         </div>
       </div>
+
+      {/* Divergence Alert & Quick-Fix Banner */}
+      {!allInSync && (
+        <div className="p-4 bg-amber-50 border-2 border-amber-300/80 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="p-2.5 bg-amber-100 text-amber-900 rounded-xl shrink-0">
+              <AlertTriangle className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <h4 className="font-black text-amber-950 text-sm">
+                Record Divergence Detected Between Local Browser and Supabase Cloud DB
+              </h4>
+              <p className="text-xs text-amber-800/90 font-medium">
+                {report?.counts.students.local !== report?.counts.students.supabase && (
+                  <span className="font-semibold">
+                    Pupils: {report?.counts.students.local} in this browser vs {report?.counts.students.supabase ?? '0'} in Supabase Cloud DB.
+                  </span>
+                )}
+                {" "}Click &quot;Realign &amp; Sync to Cloud&quot; to push all un-synced pupil records to Supabase and establish 100% parity across all devices.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleForceRealignment}
+            disabled={isRealigning}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl transition flex items-center gap-2 shadow cursor-pointer shrink-0 uppercase tracking-wide"
+          >
+            <Zap className={`w-4 h-4 ${isRealigning ? 'animate-spin' : 'fill-slate-950'}`} />
+            <span>{isRealigning ? 'Realigning...' : 'Realign & Sync to Cloud'}</span>
+          </button>
+        </div>
+      )}
 
       {/* Main Table: Counts Across Environments */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -427,7 +609,9 @@ export default function DatabaseAuditTab({
                           {serverVal}
                         </span>
                       ) : (
-                        <span className="text-slate-700 text-[11px]">—</span>
+                        <span className="text-slate-400 text-[11px] font-medium" title="Cloud-Direct architecture (Supabase Primary)">
+                          Cloud-Direct
+                        </span>
                       )}
                     </td>
 

@@ -304,15 +304,30 @@ export default function App() {
       const cachedAttendanceStr = localStorage.getItem('ea_attendance');
       const localAttendance: Attendance[] = cachedAttendanceStr ? JSON.parse(cachedAttendanceStr) : [];
 
-      // 1. Fetch & Sync Config
-      let sConfig: ReportConfig | null = null;
-      let configFetchSuccess = false;
-      try {
-        sConfig = await fetchSupabaseConfig();
-        configFetchSuccess = true;
-      } catch (err: any) {
-        console.warn("Failed fetching config from Supabase. Falling back to local cache.", err);
-      }
+      // Fetch all remote entities in PARALLEL to minimize round-trip latency
+      const [
+        sConfigRes,
+        sTeachersRes,
+        sStudentsRes,
+        sGradesRes,
+        sAttendanceRes,
+        sDailyAttendanceRes,
+        sBillsRes,
+        sPaymentsRes
+      ] = await Promise.all([
+        fetchSupabaseConfig().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
+        fetchSupabaseTeachers().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
+        fetchSupabaseStudents().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
+        fetchSupabaseGrades().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
+        fetchSupabaseAttendance().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
+        fetchSupabaseDailyAttendance().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
+        fetchSupabaseBills().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
+        fetchSupabaseFeePayments().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err }))
+      ]);
+
+      // 1. Process & Sync Config
+      const sConfig = sConfigRes.data;
+      const configFetchSuccess = sConfigRes.success;
 
       if (configFetchSuccess) {
         if (sConfig) {
@@ -343,15 +358,9 @@ export default function App() {
         setConfig(localConfig);
       }
 
-      // 2. Fetch & Sync Teachers
-      let sTeachers: User[] | null = null;
-      let teachersFetchSuccess = false;
-      try {
-        sTeachers = await fetchSupabaseTeachers();
-        teachersFetchSuccess = true;
-      } catch (err: any) {
-        console.warn("Failed fetching teachers from Supabase. Falling back to local cache.", err);
-      }
+      // 2. Process & Sync Teachers
+      const sTeachers = sTeachersRes.data;
+      const teachersFetchSuccess = sTeachersRes.success;
 
       let activeTeachers = (localTeachers && localTeachers.length > 0) ? localTeachers : INITIAL_USERS;
       if (teachersFetchSuccess && sTeachers !== null) {
@@ -376,15 +385,9 @@ export default function App() {
         localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
       }
 
-      // 3. Fetch & Sync Students
-      let sStudents: Student[] | null = null;
-      let studentsFetchSuccess = false;
-      try {
-        sStudents = await fetchSupabaseStudents();
-        studentsFetchSuccess = true;
-      } catch (err: any) {
-        console.warn("Failed fetching students from Supabase. Falling back to local cache.", err);
-      }
+      // 3. Process & Sync Students
+      const sStudents = sStudentsRes.data;
+      const studentsFetchSuccess = sStudentsRes.success;
 
       // Filter out any teacher accounts that may have leaked into students
       const teacherEmails = new Set(activeTeachers.map(t => t.email.toLowerCase()));
@@ -410,7 +413,20 @@ export default function App() {
 
         cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
-        // Supabase is authoritative: do not resurrect deleted students from local cache
+        // Bidirectional reconciliation: If local cache has newly admitted pupils not yet in Supabase,
+        // merge them and push to Supabase to keep remote cloud and local browser in 100% lockstep parity.
+        const remoteIds = new Set(cleanStudents.map(s => s.id));
+        const unsyncedLocal = localStudents.filter(s => s && s.id && !remoteIds.has(s.id) && !isStudentDeleted(s) && !isDemoStudent(s));
+        if (unsyncedLocal.length > 0) {
+          console.log(`[Supabase Student Sync] Merging ${unsyncedLocal.length} unsynced local pupil(s) into cloud roster.`);
+          cleanStudents = [...cleanStudents, ...unsyncedLocal];
+          // Asynchronously push reconciled pupils to Supabase
+          saveSupabaseStudents(cleanStudents).catch(err => {
+            console.warn('[Supabase Student Sync] Background push of reconciled pupils warning:', err);
+          });
+        }
+
+        // Deduplicate unified roster
         const activeStudents = deduplicateStudents(cleanStudents);
 
         if (activeStudents.length > 0) {
@@ -444,15 +460,9 @@ export default function App() {
         localStorage.setItem('ea_has_initialized', 'true');
       }
 
-      // 4. Fetch & Sync Grades
-      let sGrades: Grade[] | null = null;
-      let gradesFetchSuccess = false;
-      try {
-        sGrades = await fetchSupabaseGrades();
-        gradesFetchSuccess = true;
-      } catch (err: any) {
-        console.warn("Failed fetching grades from Supabase. Falling back to local cache.", err);
-      }
+      // 4. Process & Sync Grades
+      const sGrades = sGradesRes.data;
+      const gradesFetchSuccess = sGradesRes.success;
 
       let activeGrades = localGrades;
       if (gradesFetchSuccess && sGrades !== null) {
@@ -493,15 +503,9 @@ export default function App() {
         setGrades(localGrades);
       }
 
-      // 5. Fetch & Sync Attendance
-      let sAttendance: Attendance[] | null = null;
-      let attendanceFetchSuccess = false;
-      try {
-        sAttendance = await fetchSupabaseAttendance();
-        attendanceFetchSuccess = true;
-      } catch (err: any) {
-        console.warn("Failed fetching attendance from Supabase. Falling back to local cache.", err);
-      }
+      // 5. Process & Sync Attendance
+      const sAttendance = sAttendanceRes.data;
+      const attendanceFetchSuccess = sAttendanceRes.success;
 
       let activeAttendance = localAttendance;
       if (attendanceFetchSuccess && sAttendance !== null) {
@@ -532,15 +536,9 @@ export default function App() {
         setAttendance(localAttendance);
       }
 
-      // 5b. Fetch & Sync Daily Attendance (Roll Call)
-      let sDailyAttendance: DailyAttendanceRecord[] | null = null;
-      let dailyAttendanceFetchSuccess = false;
-      try {
-        sDailyAttendance = await fetchSupabaseDailyAttendance();
-        dailyAttendanceFetchSuccess = true;
-      } catch (err: any) {
-        console.warn("Failed fetching daily attendance. Falling back to local cache.", err);
-      }
+      // 5b. Process & Sync Daily Attendance (Roll Call)
+      const sDailyAttendance = sDailyAttendanceRes.data;
+      const dailyAttendanceFetchSuccess = sDailyAttendanceRes.success;
 
       if (dailyAttendanceFetchSuccess && sDailyAttendance !== null) {
         const dailyMap = new Map<string, DailyAttendanceRecord>();
@@ -571,15 +569,9 @@ export default function App() {
         saveSupabaseDailyAttendance(activeDaily).catch(e => console.warn("Background sync daily attendance failed", e));
       }
 
-      // 6. Fetch & Sync Bills
-      let sBills: StudentBill[] | null = null;
-      let billsFetchSuccess = false;
-      try {
-        sBills = await fetchSupabaseBills();
-        billsFetchSuccess = true;
-      } catch (err: any) {
-        console.warn("Failed fetching bills from Supabase. Falling back to local cache.", err);
-      }
+      // 6. Process & Sync Bills
+      const sBills = sBillsRes.data;
+      const billsFetchSuccess = sBillsRes.success;
 
       const cachedBillsStr = localStorage.getItem('ea_bills');
       let localBills: StudentBill[] = [];
@@ -613,15 +605,11 @@ export default function App() {
       }
 
       // Sync Fee Payments
-      try {
-        const sPayments = await fetchSupabaseFeePayments();
-        if (sPayments && Array.isArray(sPayments)) {
-          localStorage.setItem('ea_fee_payments', JSON.stringify(sPayments));
-          localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(sPayments));
-          window.dispatchEvent(new Event('storage'));
-        }
-      } catch (err) {
-        console.warn('Failed fetching fee payments from Supabase', err);
+      const sPayments = sPaymentsRes.data;
+      if (sPayments && Array.isArray(sPayments)) {
+        localStorage.setItem('ea_fee_payments', JSON.stringify(sPayments));
+        localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(sPayments));
+        window.dispatchEvent(new Event('storage'));
       }
 
       setIsSupabaseSyncing(false);
@@ -688,13 +676,15 @@ export default function App() {
       })();
 
       console.log(`[Supabase Student Sync Diagnostic] Manual Push: Pushing ${targetStudents.length} students to Supabase (in-memory state: ${students.length})`);
-      const okConfig = await saveSupabaseConfig(targetConfig);
-      const okStudents = await saveSupabaseStudents(targetStudents);
-      const okTeachers = await saveSupabaseTeachers(targetTeachers);
-      const okGrades = await saveSupabaseGrades(targetGrades);
-      const okAttendance = await saveSupabaseAttendance(targetAttendance);
-      const okBills = await saveSupabaseBills(targetBills);
-      const okPayments = await saveSupabaseFeePayments(targetFeePayments);
+      const [okConfig, okStudents, okTeachers, okGrades, okAttendance, okBills, okPayments] = await Promise.all([
+        saveSupabaseConfig(targetConfig),
+        saveSupabaseStudents(targetStudents),
+        saveSupabaseTeachers(targetTeachers),
+        saveSupabaseGrades(targetGrades),
+        saveSupabaseAttendance(targetAttendance),
+        saveSupabaseBills(targetBills),
+        saveSupabaseFeePayments(targetFeePayments)
+      ]);
 
       // Instantly persist and broadcast master database state across all devices and browsers
       globalSyncEngine.pushMasterServerSync({

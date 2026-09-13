@@ -718,11 +718,37 @@ export const MONITORED_SUPABASE_TABLES: Array<{ name: string; displayName: strin
   { name: 'ea_notifications', displayName: 'Broadcast Notifications' }
 ];
 
+// High-performance helper to prevent network operations from hanging indefinitely
+export async function withTimeout<T>(promiseLike: PromiseLike<T> | Promise<T>, ms: number, fallback: T): Promise<T> {
+  const promise = Promise.resolve(promiseLike);
+  let timeoutId: any;
+  const timeoutPromise = new Promise<T>(resolve => {
+    timeoutId = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([
+    promise.then(res => {
+      clearTimeout(timeoutId);
+      return res;
+    }).catch(() => {
+      clearTimeout(timeoutId);
+      return fallback;
+    }),
+    timeoutPromise
+  ]);
+}
+
 export async function checkTableHealth(client: SupabaseClient, table: { name: string; displayName: string }): Promise<TableHealthStatus> {
   try {
-    const { error, count } = await client
+    const fetchPromise = client
       .from(table.name)
       .select('count', { count: 'exact', head: true });
+
+    const result = await withTimeout(Promise.resolve(fetchPromise), 2500, {
+      error: { message: 'Table audit timeout (2.5s)', code: 'TIMEOUT' },
+      count: null
+    } as any);
+
+    const { error, count } = result;
 
     if (!error) {
       return {
@@ -1445,7 +1471,12 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
             const mappedIds = new Set(cleanMapped.map(s => s.id));
             const unsynced = parsed.filter(s => s && s.id && !mappedIds.has(s.id) && !isStudentDeleted(s) && !isDemoStudent(s));
             if (unsynced.length > 0) {
+              console.log(`[Supabase Fetch] Auto-reconciling ${unsynced.length} unsynced local pupil(s) into Supabase cloud table.`);
               cleanMapped = [...cleanMapped, ...unsynced];
+              // Instantly push unsynced pupils up to Supabase to resolve divergence automatically
+              saveSupabaseStudents(cleanMapped).catch(err => {
+                console.warn('[Fetch Students] Auto-reconcile unsynced to Supabase warning:', err);
+              });
             }
           }
         }
@@ -1637,14 +1668,18 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
     // 1. Purge any deleted student IDs from Supabase to prevent stale records lingering
     const deletedIds = getDeletedStudentIds();
     if (deletedIds.length > 0) {
-      for (let i = 0; i < deletedIds.length; i += 50) {
-        const chunk = deletedIds.slice(i, i + 50);
-        try {
-          await client.from('ea_students').delete().in('id', chunk);
-          await client.from('ea_students').delete().in('roll_number', chunk);
-          await client.from('ea_students').delete().in('name', chunk);
-        } catch (e) {}
+      const deletePromises: Promise<any>[] = [];
+      for (let i = 0; i < deletedIds.length; i += 100) {
+        const chunk = deletedIds.slice(i, i + 100);
+        deletePromises.push(
+          Promise.all([
+            client.from('ea_students').delete().in('id', chunk),
+            client.from('ea_students').delete().in('roll_number', chunk),
+            client.from('ea_students').delete().in('name', chunk)
+          ]).catch(() => {})
+        );
       }
+      await Promise.all(deletePromises);
     }
 
     const payloads = validStudents.map(s => ({
@@ -1660,15 +1695,20 @@ export async function saveSupabaseStudents(students: Student[]): Promise<boolean
       updated_at: new Date().toISOString()
     }));
 
-    // Upsert in safe chunks of 40 with onConflict: 'id'
-    for (let i = 0; i < payloads.length; i += 40) {
-      const chunk = payloads.slice(i, i + 40);
-      let { error } = await safeUpsert('ea_students', chunk, client, 'id');
-      if (error && (error.message?.includes('photo_url') || error.message?.includes('guardian_phone') || error.code === '42703')) {
-        const legacyChunk = chunk.map(({ photo_url, guardian_phone, ...rest }) => rest);
-        await safeUpsert('ea_students', legacyChunk, client, 'id');
-      }
+    // Upsert in batches of 100 concurrently with onConflict: 'id' for maximum throughput
+    const upsertChunks: any[][] = [];
+    for (let i = 0; i < payloads.length; i += 100) {
+      upsertChunks.push(payloads.slice(i, i + 100));
     }
+    await Promise.all(
+      upsertChunks.map(async (chunk) => {
+        let { error } = await safeUpsert('ea_students', chunk, client, 'id');
+        if (error && (error.message?.includes('photo_url') || error.message?.includes('guardian_phone') || error.code === '42703')) {
+          const legacyChunk = chunk.map(({ photo_url, guardian_phone, ...rest }) => rest);
+          await safeUpsert('ea_students', legacyChunk, client, 'id');
+        }
+      })
+    );
     
     broadcastGlobalSync('ea_students', { action: 'UPSERT', count: validStudents.length });
     broadcastSync('students', validStudents, 'update');
@@ -2394,7 +2434,7 @@ export async function fetchSupabaseGrades(): Promise<Grade[] | null> {
       }
       return null;
     }
-    return data.map(item => {
+    const mapped = data.map(item => {
       const rawNurseryRem = (item.nursery_remark || item.nurseryRemark || '').toString().trim().toUpperCase();
       const remUpper = (item.remarks || '').toString().trim().toUpperCase();
       const totalScoreNum = item.total_score !== undefined && item.total_score !== null ? Number(item.total_score) : ((Number(item.class_score) || 0) + (Number(item.exam_score) || 0));
@@ -2426,6 +2466,28 @@ export async function fetchSupabaseGrades(): Promise<Grade[] | null> {
         updatedAt: item.updated_at,
       };
     });
+
+    let cleanMapped = mapped;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('ea_grades');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const mappedKeys = new Set(cleanMapped.map(g => `${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`));
+            const unsynced = parsed.filter(g => g && g.studentId && g.subjectId && !mappedKeys.has(`${g.studentId}_${g.subjectId}_${g.term || 'Term 1'}_${g.year || '2025/2026'}`));
+            if (unsynced.length > 0) {
+              cleanMapped = [...cleanMapped, ...unsynced];
+              saveSupabaseGrades(cleanMapped).catch(() => {});
+            }
+          }
+        }
+      } catch (e) {}
+      localStorage.setItem('ea_grades', JSON.stringify(cleanMapped));
+      localStorage.setItem('mock_supabase_ea_grades', JSON.stringify(cleanMapped));
+    }
+
+    return cleanMapped;
   } catch (err: any) {
     const serverGrades = await fetchServerEntity<Grade[]>('/grades');
     if (serverGrades && serverGrades.length > 0) {
@@ -2468,11 +2530,14 @@ export async function saveSupabaseGrades(grades: Grade[]): Promise<boolean> {
         updated_at: g.updatedAt || new Date().toISOString()
       };
     });
-    const { error } = await safeUpsert('ea_grades', payloads, client, 'student_id,subject_id,term,year');
-    if (error) {
-      console.warn('Supabase saveSupabaseGrades sync error, fallback to local storage preserved:', error);
-      return true;
+    // Upsert in concurrent batches of 120 for fast multi-record throughput
+    const gradeChunks: any[][] = [];
+    for (let i = 0; i < payloads.length; i += 120) {
+      gradeChunks.push(payloads.slice(i, i + 120));
     }
+    await Promise.all(
+      gradeChunks.map(chunk => safeUpsert('ea_grades', chunk, client, 'student_id,subject_id,term,year'))
+    );
     return true;
   } catch (err: any) {
     console.warn('Supabase saveSupabaseGrades exception, fallback to local storage preserved:', err);
@@ -2525,7 +2590,7 @@ export async function fetchSupabaseAttendance(): Promise<Attendance[] | null> {
       }
       return null;
     }
-    return data.map(item => ({
+    const mapped = data.map(item => ({
       studentId: item.student_id,
       term: item.term || 'Term 1',
       year: item.year || '2025/2026',
@@ -2535,6 +2600,28 @@ export async function fetchSupabaseAttendance(): Promise<Attendance[] | null> {
       teacherId: item.teacher_id || '',
       updatedAt: item.updated_at,
     }));
+
+    let cleanMapped = mapped;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('ea_attendance');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const mappedKeys = new Set(cleanMapped.map(a => `${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`));
+            const unsynced = parsed.filter(a => a && a.studentId && !mappedKeys.has(`${a.studentId}_${a.term || 'Term 1'}_${a.year || '2025/2026'}`));
+            if (unsynced.length > 0) {
+              cleanMapped = [...cleanMapped, ...unsynced];
+              saveSupabaseAttendance(cleanMapped).catch(() => {});
+            }
+          }
+        }
+      } catch (e) {}
+      localStorage.setItem('ea_attendance', JSON.stringify(cleanMapped));
+      localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(cleanMapped));
+    }
+
+    return cleanMapped;
   } catch (err: any) {
     const serverAttendance = await fetchServerEntity<Attendance[]>('/attendance');
     if (serverAttendance && serverAttendance.length > 0) {
@@ -2581,11 +2668,14 @@ export async function saveSupabaseAttendance(attendance: Attendance[]): Promise<
       teacher_id: a.teacherId,
       updated_at: a.updatedAt || new Date().toISOString()
     }));
-    const { error } = await safeUpsert('ea_attendance', payloads, client, 'student_id,term,year');
-    if (error) {
-      console.warn('Supabase saveSupabaseAttendance sync error, fallback to local storage preserved:', error);
-      return true;
+    // Upsert in concurrent batches of 120 for fast multi-record throughput
+    const attChunks: any[][] = [];
+    for (let i = 0; i < payloads.length; i += 120) {
+      attChunks.push(payloads.slice(i, i + 120));
     }
+    await Promise.all(
+      attChunks.map(chunk => safeUpsert('ea_attendance', chunk, client, 'student_id,term,year'))
+    );
     return true;
   } catch (err: any) {
     console.warn('Supabase saveSupabaseAttendance exception, fallback to local storage preserved:', err);
@@ -5190,7 +5280,15 @@ export interface DatabaseAuditReport {
   }>;
 }
 
-export async function auditDatabaseCounts(): Promise<DatabaseAuditReport> {
+let cachedAuditReport: { report: DatabaseAuditReport; timestamp: number } | null = null;
+const AUDIT_CACHE_TTL_MS = 6000;
+
+export async function auditDatabaseCounts(force = false): Promise<DatabaseAuditReport> {
+  // If a recent audit was performed within the cache TTL, return immediately without network overhead
+  if (!force && cachedAuditReport && (Date.now() - cachedAuditReport.timestamp < AUDIT_CACHE_TTL_MS)) {
+    return cachedAuditReport.report;
+  }
+
   const client = getSupabaseClient();
   const isConfigured = !!client;
   let isConnected = false;
@@ -5218,7 +5316,7 @@ export async function auditDatabaseCounts(): Promise<DatabaseAuditReport> {
     feePayments: getLocalCount('ea_fee_payments'),
   };
 
-  let serverCounts: Record<string, number | null> = {
+  const serverCounts: Record<string, number | null> = {
     students: null,
     teachers: null,
     grades: null,
@@ -5228,77 +5326,86 @@ export async function auditDatabaseCounts(): Promise<DatabaseAuditReport> {
     feePayments: null,
   };
 
-  try {
-    const res = await fetch(`/api/sync/version?_t=${Date.now()}`);
-    if (res.ok) {
-      const json = await res.json();
-      isServerConnected = true;
-      if (json.counts) {
-        serverCounts.students = json.counts.students ?? null;
-        serverCounts.teachers = json.counts.teachers ?? null;
-        serverCounts.grades = json.counts.grades ?? null;
-        serverCounts.attendance = json.counts.attendance ?? null;
-        serverCounts.dailyAttendance = json.counts.dailyAttendance ?? null;
-        serverCounts.bills = json.counts.bills ?? null;
-        serverCounts.feePayments = json.counts.feePayments ?? null;
+  const supabaseCounts: Record<string, number | null> = {
+    students: null,
+    teachers: null,
+    grades: null,
+    attendance: null,
+    dailyAttendance: null,
+    bills: null,
+    feePayments: null,
+  };
+
+  // Run Server version fetch, Supabase table health checks, and Supabase sync logs concurrently in parallel
+  const serverPromise = withTimeout(
+    fetch(`/api/sync/version?_t=${Date.now()}`, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
       }
+    }).then(async (res) => {
+      if (res.ok) {
+        const json = await res.json();
+        isServerConnected = true;
+        if (json.counts) {
+          serverCounts.students = json.counts.students ?? null;
+          serverCounts.teachers = json.counts.teachers ?? null;
+          serverCounts.grades = json.counts.grades ?? null;
+          serverCounts.attendance = json.counts.attendance ?? null;
+          serverCounts.dailyAttendance = json.counts.dailyAttendance ?? null;
+          serverCounts.bills = json.counts.bills ?? null;
+          serverCounts.feePayments = json.counts.feePayments ?? null;
+        }
+      }
+    }).catch(e => {
+      console.warn('[Audit] Server counts fetch warning:', e);
+    }),
+    2500,
+    null
+  );
+
+  const tablesPromise = client
+    ? Promise.all(MONITORED_SUPABASE_TABLES.map(tbl => checkTableHealth(client, tbl)))
+    : Promise.resolve([] as TableHealthStatus[]);
+
+  const syncLogsPromise = client
+    ? withTimeout(
+        Promise.resolve(
+          client
+            .from('ea_sync_logs')
+            .select('*')
+            .order('timestamp', { ascending: false })
+            .limit(20)
+        ).then(({ data }) => (data && Array.isArray(data) ? data : [])),
+        2500,
+        [] as any[]
+      )
+    : Promise.resolve([] as any[]);
+
+  const [, allTableHealthStatuses, fetchedSyncLogs] = await Promise.all([
+    serverPromise,
+    tablesPromise,
+    syncLogsPromise
+  ]);
+
+  allTableHealthStatuses.forEach(t => {
+    if (t.status !== 'healthy') {
+      missingTables.push(t.table);
+    } else {
+      isConnected = true;
     }
-  } catch (e) {}
+  });
 
-  let supabaseCounts: Record<string, number | null> = {
-    students: null,
-    teachers: null,
-    grades: null,
-    attendance: null,
-    dailyAttendance: null,
-    bills: null,
-    feePayments: null,
-  };
+  const statusMap = new Map(allTableHealthStatuses.map(s => [s.table, s.count]));
+  supabaseCounts.students = statusMap.get('ea_students') ?? null;
+  supabaseCounts.teachers = statusMap.get('ea_teachers') ?? null;
+  supabaseCounts.grades = statusMap.get('ea_grades') ?? null;
+  supabaseCounts.attendance = statusMap.get('ea_attendance') ?? null;
+  supabaseCounts.dailyAttendance = statusMap.get('ea_daily_attendance') ?? null;
+  supabaseCounts.bills = statusMap.get('ea_bills') ?? null;
+  supabaseCounts.feePayments = statusMap.get('ea_fee_payments') ?? null;
 
-  let allTableHealthStatuses: TableHealthStatus[] = [];
-
-  if (client) {
-    try {
-      const { error } = await client.from('ea_config').select('id', { count: 'exact', head: true });
-      if (!error) isConnected = true;
-    } catch (e) {}
-
-    // Audit all 18 tables in parallel
-    allTableHealthStatuses = await Promise.all(
-      MONITORED_SUPABASE_TABLES.map(tbl => checkTableHealth(client, tbl))
-    );
-
-    allTableHealthStatuses.forEach(t => {
-      if (t.status !== 'healthy') {
-        missingTables.push(t.table);
-      } else {
-        isConnected = true;
-      }
-    });
-
-    const statusMap = new Map(allTableHealthStatuses.map(s => [s.table, s.count]));
-    supabaseCounts.students = statusMap.get('ea_students') ?? null;
-    supabaseCounts.teachers = statusMap.get('ea_teachers') ?? null;
-    supabaseCounts.grades = statusMap.get('ea_grades') ?? null;
-    supabaseCounts.attendance = statusMap.get('ea_attendance') ?? null;
-    supabaseCounts.dailyAttendance = statusMap.get('ea_daily_attendance') ?? null;
-    supabaseCounts.bills = statusMap.get('ea_bills') ?? null;
-    supabaseCounts.feePayments = statusMap.get('ea_fee_payments') ?? null;
-  }
-
-  let recentSyncLogs: any[] = [];
-  if (client) {
-    try {
-      const { data } = await client
-        .from('ea_sync_logs')
-        .select('*')
-        .order('timestamp', { ascending: false })
-        .limit(20);
-      if (data && Array.isArray(data)) {
-        recentSyncLogs = data;
-      }
-    } catch (e) {}
-  }
+  let recentSyncLogs: any[] = fetchedSyncLogs || [];
   if (recentSyncLogs.length === 0) {
     try {
       const savedLogs = localStorage.getItem('ea_audit_sync_logs');
@@ -5317,7 +5424,7 @@ export async function auditDatabaseCounts(): Promise<DatabaseAuditReport> {
   const failingTables = allTableHealthStatuses.filter(t => t.status !== 'healthy');
   const suggestedSql = generateSuggestedSqlFix(failingTables.map(t => t.table));
 
-  return {
+  const resultReport: DatabaseAuditReport = {
     timestamp: new Date().toISOString(),
     supabaseConfigured: isConfigured,
     supabaseConnected: isConnected,
@@ -5372,4 +5479,7 @@ export async function auditDatabaseCounts(): Promise<DatabaseAuditReport> {
     failingTablesCount: failingTables.length,
     recentSyncLogs,
   };
+
+  cachedAuditReport = { report: resultReport, timestamp: Date.now() };
+  return resultReport;
 }
