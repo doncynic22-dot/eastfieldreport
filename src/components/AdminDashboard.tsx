@@ -17,7 +17,7 @@ import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
 import DatabaseAuditTab from './DatabaseAuditTab';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials, SupabaseDetailedStatusReport } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSingleSupabaseTeacher, seedStudentAssociatedRecords, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials, SupabaseDetailedStatusReport } from '../lib/supabase';
 import { globalSyncEngine, uploadAssetToCDN, saveServerEntity } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
@@ -465,6 +465,7 @@ export default function AdminDashboard({
   const [isClearingRoster, setIsClearingRoster] = useState(false);
   const [studentFormError, setStudentFormError] = useState('');
   const [isSubmittingStudent, setIsSubmittingStudent] = useState(false);
+  const [isSubmittingTeacher, setIsSubmittingTeacher] = useState(false);
 
   // Grade Data Recovery and Local Backup states
   const [backupRestoreMsg, setBackupRestoreMsg] = useState('');
@@ -1356,10 +1357,67 @@ export default function AdminDashboard({
       // Clear any tombstone records for this student ID, roll number, and name
       removeDeletedStudentId(savedStudent.id, savedStudent.rollNumber, savedStudent.name);
 
-      // 1. Immediately update in-memory state so the table updates right away
+      // 1. Instantly record in Supabase (ea_students and ea_student tables) and await completion
+      try {
+        await saveSingleSupabaseStudent(savedStudent);
+      } catch (err) {
+        console.warn('Supabase saveSingleSupabaseStudent notice in admission:', err);
+      }
+
+      // Auto-seed default bill and attendance records for the pupil into Supabase
+      try {
+        const seeded = await seedStudentAssociatedRecords(savedStudent, config);
+        if (seeded.bill && onUpdateBill) {
+          onUpdateBill(seeded.bill);
+        }
+        if (seeded.attendance && setAttendance && attendance) {
+          setAttendance(prev => [...(prev || []).filter(a => !(a.studentId === savedStudent.id && a.term === seeded.attendance!.term && a.year === seeded.attendance!.year)), seeded.attendance!]);
+        }
+      } catch (seedErr) {
+        console.warn('Notice seeding student associated records:', seedErr);
+      }
+
+      // 2. Update local storage synchronously and remove any cleared state
+      try {
+        localStorage.removeItem('ea_students_cleared');
+        localStorage.setItem('ea_students', JSON.stringify(updatedStudentsList));
+        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updatedStudentsList));
+        window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'admit_student', student: savedStudent } }));
+      } catch (e) {}
+
+      // 3. Immediately update in-memory state so the table updates right away
       setStudents(updatedStudentsList);
 
-      // 2. Immediately exit the modal and reset form
+      // 4. Global sync engine push for instantaneous cross-browser, cross-device, and CDN sync
+      globalSyncEngine.pushMasterServerSync({
+        students: updatedStudentsList
+      }).catch(() => {});
+
+      if (onPushToSupabase) {
+        await onPushToSupabase(updatedStudentsList, config).catch((e) => {
+          console.warn('onPushToSupabase notice in admission:', e);
+        });
+      }
+
+      // 5. Reset or adjust filters so the newly admitted student is immediately visible in the table
+      if (studentClassFilter !== 'ALL' && studentClassFilter !== finalClassName) {
+        setStudentClassFilter(finalClassName);
+      }
+      if (studentLevelFilter !== 'ALL' && studentLevelFilter !== finalLevel) {
+        setStudentLevelFilter(finalLevel);
+      }
+      setStudentSearch('');
+      setSelectedStudentId(savedStudent.id);
+
+      // 6. Provide clear visual confirmation banner
+      setPromotionSuccessMsg(
+        editingStudent
+          ? `Pupil "${savedStudent.name}" profile saved and recorded in Supabase.`
+          : `Pupil "${savedStudent.name}" (${savedStudent.rollNumber}) admitted, recorded in Supabase ea_students table, and synchronized!`
+      );
+      setTimeout(() => setPromotionSuccessMsg(''), 8000);
+
+      // 7. Exit the modal and reset form
       setShowStudentModal(false);
       setEditingStudent(null);
       setStudentForm({
@@ -1372,46 +1430,6 @@ export default function AdminDashboard({
         guardianPhone: '',
         photoUrl: ''
       });
-
-      // 3. Reset or adjust filters so the newly admitted student is immediately visible in the table
-      if (studentClassFilter !== 'ALL' && studentClassFilter !== finalClassName) {
-        setStudentClassFilter(finalClassName);
-      }
-      if (studentLevelFilter !== 'ALL' && studentLevelFilter !== finalLevel) {
-        setStudentLevelFilter(finalLevel);
-      }
-      setStudentSearch('');
-      setSelectedStudentId(savedStudent.id);
-
-      // 4. Update local storage synchronously and remove any cleared state
-      try {
-        localStorage.removeItem('ea_students_cleared');
-        localStorage.setItem('ea_students', JSON.stringify(updatedStudentsList));
-        localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updatedStudentsList));
-        window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'admit_student', student: savedStudent } }));
-      } catch (e) {}
-
-      // 5. Global sync engine push for instantaneous cross-browser, cross-device, and CDN sync
-      globalSyncEngine.pushMasterServerSync({
-        students: updatedStudentsList
-      }).catch(() => {});
-
-      // 6. Background sync with Supabase and CDN
-      saveSingleSupabaseStudent(savedStudent).catch(err => {
-        console.warn('Instant student admission sync notice:', err);
-      });
-
-      if (onPushToSupabase) {
-        onPushToSupabase(updatedStudentsList, config).catch(() => {});
-      }
-
-      // 7. Provide clear visual confirmation
-      setPromotionSuccessMsg(
-        editingStudent
-          ? `Pupil "${savedStudent.name}" updated and synchronized with CDN & Database.`
-          : `Pupil "${savedStudent.name}" (${savedStudent.rollNumber}) admitted to ${savedStudent.className}. Synchronized with CDN & Database.`
-      );
-      setTimeout(() => setPromotionSuccessMsg(''), 8000);
     } catch (err: any) {
       console.error('Error admitting/updating student:', err);
       setStudentFormError(err?.message || 'An unexpected error occurred while saving student.');
@@ -1520,7 +1538,7 @@ export default function AdminDashboard({
   };
 
   // 3. TEACHER DIRECTORY LOGIC
-  const handleRegisterTeacher = (e: React.FormEvent) => {
+  const handleRegisterTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     setTeacherError('');
 
@@ -1552,66 +1570,39 @@ export default function AdminDashboard({
     }
 
     const selectedClasses = teacherForm.classes || [];
+    setIsSubmittingTeacher(true);
 
-    if (editingTeacher) {
-      // Edit Teacher & clean up reassigned classes from other teachers
-      const emailToCheck = teacherForm.email.trim().toLowerCase();
-      if (teachers.some(t => t.id !== editingTeacher.id && t.email.trim().toLowerCase() === emailToCheck)) {
-        setTeacherError('A teacher with this email address is already registered.');
-        return;
-      }
-      setTeachers(prev => prev.map(t => {
-        if (t.id === editingTeacher.id) {
-          return {
-            ...t,
-            name: teacherForm.name.trim(),
-            email: teacherForm.email.trim(),
-            password: teacherForm.password ? teacherForm.password : (t.password || 'teacher123'),
-            level: teacherForm.level,
-            classes: selectedClasses,
-            subjects: finalSubjects,
-            dateOfBirth: teacherForm.dateOfBirth,
-            phoneNumber: teacherForm.phoneNumber,
-            qualification: teacherForm.qualification,
-            profilePicture: teacherForm.profilePicture,
-            hometown: teacherForm.hometown,
-            ghanaCardNumber: teacherForm.ghanaCardNumber
-          };
+    try {
+      let savedTeacher: User;
+      let updatedTeachersList: User[];
+
+      if (editingTeacher) {
+        // Edit Teacher & clean up reassigned classes from other teachers
+        const emailToCheck = teacherForm.email.trim().toLowerCase();
+        if (teachers.some(t => t.id !== editingTeacher.id && t.email.trim().toLowerCase() === emailToCheck)) {
+          setTeacherError('A teacher with this email address is already registered.');
+          setIsSubmittingTeacher(false);
+          return;
         }
-        if (selectedClasses.some(cls => t.classes?.includes(cls))) {
-          return {
-            ...t,
-            classes: (t.classes || []).filter(c => !selectedClasses.includes(c))
-          };
-        }
-        return t;
-      }));
-      setEditingTeacher(null);
-    } else {
-      // Add new Teacher & clean up reassigned classes from other teachers
-      const emailToCheck = teacherForm.email.trim().toLowerCase();
-      if (teachers.some(t => t.email.trim().toLowerCase() === emailToCheck)) {
-        setTeacherError('A teacher with this email address is already registered.');
-        return;
-      }
-      const newTeacher: User = {
-        id: `user-t-${Date.now()}`,
-        name: teacherForm.name.trim(),
-        email: teacherForm.email.trim(),
-        role: 'TEACHER',
-        level: teacherForm.level,
-        classes: selectedClasses,
-        subjects: finalSubjects,
-        password: teacherForm.password || 'teacher123',
-        dateOfBirth: teacherForm.dateOfBirth,
-        phoneNumber: teacherForm.phoneNumber,
-        qualification: teacherForm.qualification,
-        profilePicture: teacherForm.profilePicture,
-        hometown: teacherForm.hometown,
-        ghanaCardNumber: teacherForm.ghanaCardNumber
-      };
-      setTeachers(prev => {
-        const updated = prev.map(t => {
+        savedTeacher = {
+          ...editingTeacher,
+          name: teacherForm.name.trim(),
+          email: teacherForm.email.trim(),
+          password: teacherForm.password ? teacherForm.password : (editingTeacher.password || 'teacher123'),
+          level: teacherForm.level,
+          classes: selectedClasses,
+          subjects: finalSubjects,
+          dateOfBirth: teacherForm.dateOfBirth,
+          phoneNumber: teacherForm.phoneNumber,
+          qualification: teacherForm.qualification,
+          profilePicture: teacherForm.profilePicture,
+          hometown: teacherForm.hometown,
+          ghanaCardNumber: teacherForm.ghanaCardNumber
+        };
+        updatedTeachersList = teachers.map(t => {
+          if (t.id === editingTeacher.id) {
+            return savedTeacher;
+          }
           if (selectedClasses.some(cls => t.classes?.includes(cls))) {
             return {
               ...t,
@@ -1620,43 +1611,105 @@ export default function AdminDashboard({
           }
           return t;
         });
-        return [...updated, newTeacher];
-      });
-    }
-
-    // Synchronize class teacher assignments map for selectedClasses
-    try {
-      const currentTeacherId = editingTeacher ? editingTeacher.id : teacherForm.email.trim().toLowerCase();
-      const assignments = { ...getClassTeacherAssignments(teachers) };
-      Object.entries(assignments).forEach(([cls, tid]) => {
-        if (tid === currentTeacherId && !selectedClasses.includes(cls)) {
-          delete assignments[cls];
+      } else {
+        // Add new Teacher & clean up reassigned classes from other teachers
+        const emailToCheck = teacherForm.email.trim().toLowerCase();
+        if (teachers.some(t => t.email.trim().toLowerCase() === emailToCheck)) {
+          setTeacherError('A teacher with this email address is already registered.');
+          setIsSubmittingTeacher(false);
+          return;
         }
-      });
-      selectedClasses.forEach(cls => {
-        assignments[cls] = currentTeacherId;
-      });
-      saveClassTeacherAssignmentsLocally(assignments);
-      window.dispatchEvent(new CustomEvent('ea_class_assignments_updated', { detail: assignments }));
-      saveServerEntity('/class-teacher-assignments', assignments).catch(() => {});
-    } catch (e) {}
+        savedTeacher = {
+          id: `user-t-${Date.now()}`,
+          name: teacherForm.name.trim(),
+          email: teacherForm.email.trim(),
+          role: 'TEACHER',
+          level: teacherForm.level,
+          classes: selectedClasses,
+          subjects: finalSubjects,
+          password: teacherForm.password || 'teacher123',
+          dateOfBirth: teacherForm.dateOfBirth,
+          phoneNumber: teacherForm.phoneNumber,
+          qualification: teacherForm.qualification,
+          profilePicture: teacherForm.profilePicture,
+          hometown: teacherForm.hometown,
+          ghanaCardNumber: teacherForm.ghanaCardNumber
+        };
+        const updated = teachers.map(t => {
+          if (selectedClasses.some(cls => t.classes?.includes(cls))) {
+            return {
+              ...t,
+              classes: (t.classes || []).filter(c => !selectedClasses.includes(c))
+            };
+          }
+          return t;
+        });
+        updatedTeachersList = [...updated, savedTeacher];
+      }
 
-    // Reset
-    setTeacherForm({
-      name: '',
-      email: '',
-      password: '',
-      level: 'PRIMARY',
-      classes: [],
-      subjects: subjects.filter(s => s.level === 'PRIMARY').map(s => s.id),
-      dateOfBirth: '',
-      phoneNumber: '',
-      qualification: '',
-      profilePicture: '',
-      hometown: '',
-      ghanaCardNumber: ''
-    });
-    setShowTeacherModal(false);
+      // Update in-memory state
+      setTeachers(updatedTeachersList);
+      setEditingTeacher(null);
+
+      // Instantly record single teacher in Supabase ea_teachers table and await
+      try {
+        await saveSingleSupabaseTeacher(savedTeacher);
+        await saveSupabaseTeachers(updatedTeachersList);
+      } catch (saveErr) {
+        console.warn('Notice saving teacher to Supabase:', saveErr);
+      }
+
+      // Synchronize class teacher assignments map for selectedClasses
+      try {
+        const currentTeacherId = savedTeacher.id;
+        const assignments = { ...getClassTeacherAssignments(teachers) };
+        Object.entries(assignments).forEach(([cls, tid]) => {
+          if (tid === currentTeacherId && !selectedClasses.includes(cls)) {
+            delete assignments[cls];
+          }
+        });
+        selectedClasses.forEach(cls => {
+          assignments[cls] = currentTeacherId;
+        });
+        saveClassTeacherAssignmentsLocally(assignments);
+        window.dispatchEvent(new CustomEvent('ea_class_assignments_updated', { detail: assignments }));
+        saveServerEntity('/class-teacher-assignments', assignments).catch(() => {});
+      } catch (e) {}
+
+      // Push master sync to Server / CDN
+      globalSyncEngine.pushMasterServerSync({
+        teachers: updatedTeachersList
+      }).catch(() => {});
+
+      if (onPushToSupabase) {
+        await onPushToSupabase(undefined, undefined, updatedTeachersList).catch(() => {});
+      }
+
+      // Reset
+      setTeacherForm({
+        name: '',
+        email: '',
+        password: '',
+        level: 'PRIMARY',
+        classes: [],
+        subjects: subjects.filter(s => s.level === 'PRIMARY').map(s => s.id),
+        dateOfBirth: '',
+        phoneNumber: '',
+        qualification: '',
+        profilePicture: '',
+        hometown: '',
+        ghanaCardNumber: ''
+      });
+      setShowTeacherModal(false);
+
+      setPromotionSuccessMsg(`Staff member "${savedTeacher.name}" saved, recorded in Supabase, and synced!`);
+      setTimeout(() => setPromotionSuccessMsg(''), 6000);
+    } catch (err: any) {
+      console.error('Error registering teacher:', err);
+      setTeacherError(err?.message || 'Error recording teacher in Supabase.');
+    } finally {
+      setIsSubmittingTeacher(false);
+    }
   };
 
   const filteredTeacherProfiles = teachers.filter((t) => {
@@ -3469,7 +3522,7 @@ export default function AdminDashboard({
                       {isSubmittingStudent ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Saving...</span>
+                          <span>Recording in Supabase...</span>
                         </>
                       ) : (
                         <span>{editingStudent ? 'Save Profile' : 'Confirm Admission'}</span>
@@ -4262,9 +4315,17 @@ export default function AdminDashboard({
                     </button>
                     <button
                       type="submit"
-                      className="flex-1 py-2.5 bg-mauve-600 hover:bg-mauve-700 text-white rounded-xl transition cursor-pointer font-medium text-center shadow"
+                      disabled={isSubmittingTeacher}
+                      className="flex-1 py-2.5 bg-mauve-600 hover:bg-mauve-700 text-white rounded-xl transition cursor-pointer font-medium text-center shadow flex items-center justify-center gap-2 disabled:opacity-50"
                     >
-                      {editingTeacher ? 'Save Changes' : 'Add Registry Staff'}
+                      {isSubmittingTeacher ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Recording in Supabase...</span>
+                        </>
+                      ) : (
+                        editingTeacher ? 'Save Changes' : 'Add Registry Staff'
+                      )}
                     </button>
                   </div>
                 </form>

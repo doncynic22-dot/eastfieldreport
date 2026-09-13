@@ -14,9 +14,11 @@ import {
 import {
   fetchSupabaseBookStock,
   saveSupabaseBookStock,
+  saveSingleSupabaseBookStock,
   deleteSupabaseBookStockItem,
   fetchSupabaseBookSales,
   saveSupabaseBookSales,
+  saveSingleSupabaseBookSale,
   deleteSupabaseBookSale,
   FRESH_BOOK_STOCK_TABLE_SQL
 } from '../lib/supabase';
@@ -322,6 +324,9 @@ export default function BookInventoryModule({
         updated = [item, ...stockItems];
       }
       setStockItems(updated);
+      try {
+        await saveSingleSupabaseBookStock(item);
+      } catch (e) {}
       await saveSupabaseBookStock(updated);
       setShowStockModal(false);
       setEditingItem(null);
@@ -338,11 +343,12 @@ export default function BookInventoryModule({
   ) => {
     setIsSaving(true);
     try {
+      let restockedItem: BookStockItem | undefined;
       const updated = stockItems.map((b) => {
         if (b.id === itemId) {
           const newInStock = b.quantityInStock + addedQty;
           const newRemaining = Math.max(0, newInStock - b.quantitySold);
-          return {
+          restockedItem = {
             ...b,
             quantityInStock: newInStock,
             quantityRemaining: newRemaining,
@@ -350,11 +356,17 @@ export default function BookInventoryModule({
             notes: notes ? `${b.notes ? b.notes + ' | ' : ''}Restocked +${addedQty} (${notes})` : b.notes,
             updatedAt: new Date().toISOString()
           };
+          return restockedItem;
         }
         return b;
       });
 
       setStockItems(updated);
+      if (restockedItem) {
+        try {
+          await saveSingleSupabaseBookStock(restockedItem);
+        } catch (e) {}
+      }
       await saveSupabaseBookStock(updated);
       setShowRestockModal(false);
       setRestockItem(null);
@@ -369,6 +381,10 @@ export default function BookInventoryModule({
       const newSalesList = [newSale, ...salesRecords];
       setSalesRecords(newSalesList);
       setStockItems(updatedStock);
+
+      try {
+        await saveSingleSupabaseBookSale(newSale);
+      } catch (e) {}
 
       await Promise.all([
         saveSupabaseBookSales(newSalesList),

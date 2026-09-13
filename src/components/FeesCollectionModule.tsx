@@ -38,7 +38,7 @@ import {
   Check,
   Lock
 } from 'lucide-react';
-import { fetchSupabaseFeePayments, saveSupabaseFeePayments, deleteSupabaseFeePayment, deleteSupabaseFeePaymentsBatch, clearAllSupabaseFeePayments } from '../lib/supabase';
+import { fetchSupabaseFeePayments, saveSupabaseFeePayments, saveSingleSupabaseFeePayment, deleteSupabaseFeePayment, deleteSupabaseFeePaymentsBatch, clearAllSupabaseFeePayments } from '../lib/supabase';
 
 interface FeesCollectionModuleProps {
   students: Student[];
@@ -452,7 +452,7 @@ export default function FeesCollectionModule({
   };
 
   // Submit Fee Payment
-  const handleRecordPayment = (e: React.FormEvent) => {
+  const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentStudent) {
       alert('Please select a student to record fee payment.');
@@ -484,6 +484,20 @@ export default function FeesCollectionModule({
     };
 
     setFeePayments((prev) => [newPayment, ...prev]);
+
+    try {
+      const currentList = [newPayment, ...feePayments];
+      localStorage.setItem('ea_fee_payments', JSON.stringify(currentList));
+      localStorage.setItem('mock_supabase_ea_fee_payments', JSON.stringify(currentList));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+
+    // Instantly commit single fee payment to Supabase
+    try {
+      await saveSingleSupabaseFeePayment(newPayment);
+    } catch (err) {
+      console.warn('Notice saving single fee payment to Supabase:', err);
+    }
 
     // Show Toast
     setToastMessage({
@@ -683,18 +697,18 @@ export default function FeesCollectionModule({
         ? 'Partial'
         : 'Pending';
 
+    const updatedRecord: FeePayment = {
+      ...editingPayment,
+      totalFeeAmount: Number(editTotalFeeAmount),
+      amountPaid: Number(editAmountPaid),
+      paymentMethod: editPaymentMethod,
+      paymentDate: editPaymentDate,
+      status: updatedStatus,
+      remarks: editRemarks.trim(),
+    };
+
     const updatedList = feePayments.map((p) =>
-      p.id === editingPayment.id
-        ? {
-            ...p,
-            totalFeeAmount: Number(editTotalFeeAmount),
-            amountPaid: Number(editAmountPaid),
-            paymentMethod: editPaymentMethod,
-            paymentDate: editPaymentDate,
-            status: updatedStatus,
-            remarks: editRemarks.trim(),
-          }
-        : p
+      p.id === editingPayment.id ? updatedRecord : p
     );
 
     setFeePayments(updatedList);
@@ -705,6 +719,9 @@ export default function FeesCollectionModule({
     } catch (err) {
       console.error('Failed to update localStorage after editing payment', err);
     }
+    try {
+      await saveSingleSupabaseFeePayment(updatedRecord);
+    } catch (err) {}
     await saveSupabaseFeePayments(updatedList);
     setEditingPayment(null);
     setToastMessage({

@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { ClassroomInventoryRecord, CustomInventoryItem } from '../types';
-import { fetchSupabaseInventory, saveSupabaseInventory, deleteSupabaseInventoryRecord, getDeletedInventoryIds } from '../lib/supabase';
+import { fetchSupabaseInventory, saveSupabaseInventory, saveSingleSupabaseInventory, deleteSupabaseInventoryRecord, getDeletedInventoryIds } from '../lib/supabase';
 import {
   Boxes,
   Plus,
@@ -530,6 +530,7 @@ export default function SchoolInventoryModule({
 
     setIsSyncing(true);
     try {
+      await saveSingleSupabaseInventory(payload);
       await saveSupabaseInventory(updatedList);
     } catch (err) {
       console.warn('Error saving inventory form:', err);

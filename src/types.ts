@@ -121,6 +121,7 @@ export interface StudentBill {
   utility: string;
   stationery: string;
   pta: string;
+  totalPayable?: string;
   reopeningDate?: string;
   contactNumber?: string;
   term?: string;
