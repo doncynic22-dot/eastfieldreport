@@ -439,10 +439,23 @@ export default function App() {
         // Bidirectional reconciliation: If local cache has newly admitted pupils not yet in Supabase,
         // merge them and push to Supabase to keep remote cloud and local browser in 100% lockstep parity.
         const remoteIds = new Set(cleanStudents.map(s => s.id));
-        const unsyncedLocal = localStudents.filter(s => s && s.id && !remoteIds.has(s.id) && !isStudentDeleted(s) && !isDemoStudent(s));
+        const remoteNames = new Set(cleanStudents.map(s => (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ')));
+        const remoteRolls = new Set(cleanStudents.map(s => (s.rollNumber || '').trim().toLowerCase()));
+
+        const unsyncedLocal = localStudents.filter(s => {
+          if (!s || !s.id) return false;
+          if (isStudentDeleted(s) || isDemoStudent(s)) return false;
+          if (remoteIds.has(s.id)) return false;
+          const nName = (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          if (nName && remoteNames.has(nName)) return false;
+          const nRoll = (s.rollNumber || '').trim().toLowerCase();
+          if (nRoll && remoteRolls.has(nRoll)) return false;
+          return true;
+        });
+
         if (unsyncedLocal.length > 0) {
           console.log(`[Supabase Student Sync] Merging ${unsyncedLocal.length} unsynced local pupil(s) into cloud roster.`);
-          cleanStudents = [...cleanStudents, ...unsyncedLocal];
+          cleanStudents = deduplicateStudents([...cleanStudents, ...unsyncedLocal]);
           // Asynchronously push reconciled pupils to Supabase
           saveSupabaseStudents(cleanStudents).catch(err => {
             console.warn('[Supabase Student Sync] Background push of reconciled pupils warning:', err);

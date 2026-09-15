@@ -310,6 +310,7 @@ export default function FeesCollectionModule({
 
   // EDIT PAYMENT MODAL STATE
   const [editingPayment, setEditingPayment] = useState<FeePayment | null>(null);
+  const [editFeeType, setEditFeeType] = useState<FeeTypeCategory>('School Fees');
   const [editTotalFeeAmount, setEditTotalFeeAmount] = useState<number>(0);
   const [editAmountPaid, setEditAmountPaid] = useState<number>(0);
   const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('Cash');
@@ -675,6 +676,7 @@ export default function FeesCollectionModule({
 
   const handleOpenEditPayment = (p: FeePayment) => {
     setEditingPayment(p);
+    setEditFeeType(p.feeType);
     setEditTotalFeeAmount(p.totalFeeAmount);
     setEditAmountPaid(p.amountPaid);
     setEditPaymentMethod(p.paymentMethod);
@@ -699,6 +701,7 @@ export default function FeesCollectionModule({
 
     const updatedRecord: FeePayment = {
       ...editingPayment,
+      feeType: editingPayment.feeType === 'School Fees' ? 'School Fees' : editFeeType,
       totalFeeAmount: Number(editTotalFeeAmount),
       amountPaid: Number(editAmountPaid),
       paymentMethod: editPaymentMethod,
@@ -1210,24 +1213,51 @@ export default function FeesCollectionModule({
                   <label className="text-xs font-black uppercase tracking-wider text-white block truncate">
                     Amount Payable / Due (GH₵) *
                   </label>
-                  <span className="text-[10px] font-extrabold text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded border border-purple-400/30 shrink-0 flex items-center gap-1">
-                    <Lock className="w-3 h-3" />
-                    <span>Uneditable</span>
-                  </span>
+                  {feeTypeOption === 'School Fees' ? (
+                    <span className="text-[10px] font-extrabold text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded border border-purple-400/30 shrink-0 flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      <span>Uneditable (School Fees)</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-extrabold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-400/30 shrink-0 flex items-center gap-1">
+                      <Edit2 className="w-3 h-3" />
+                      <span>Editable by Admin</span>
+                    </span>
+                  )}
                 </div>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={totalFeeAmount}
-                  readOnly
-                  disabled
-                  className="w-full p-3 rounded-xl border border-purple-400/40 bg-white/5 text-purple-200 font-extrabold text-sm outline-none cursor-not-allowed font-mono shadow-inner"
-                  required
-                />
-                <span className="text-[10px] text-purple-300 font-medium block mt-1">
-                  Locked: Exactly matches the student's assessed Amount Due.
-                </span>
+                {feeTypeOption === 'School Fees' ? (
+                  <>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={totalFeeAmount}
+                      readOnly
+                      disabled
+                      className="w-full p-3 rounded-xl border border-purple-400/40 bg-white/5 text-purple-200 font-extrabold text-sm outline-none cursor-not-allowed font-mono shadow-inner"
+                      required
+                    />
+                    <span className="text-[10px] text-purple-300 font-medium block mt-1">
+                      Locked: Matches the student's assessed School Fees bill.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={totalFeeAmount === 0 ? '' : totalFeeAmount}
+                      onChange={(e) => setTotalFeeAmount(e.target.value === '' ? 0 : Math.max(0, parseFloat(e.target.value) || 0))}
+                      placeholder="0.00"
+                      className="w-full p-3 rounded-xl border-2 border-emerald-400/60 bg-[#1A0438] text-white font-mono font-extrabold text-sm focus:ring-2 focus:ring-emerald-400 outline-none shadow-sm"
+                      required
+                    />
+                    <span className="text-[10px] text-emerald-300 font-medium block mt-1">
+                      Admin Editable: Enter or customize total fee payable for this {feeTypeOption}.
+                    </span>
+                  </>
+                )}
               </div>
 
               <div>
@@ -2055,41 +2085,88 @@ export default function FeesCollectionModule({
             {/* MODAL BODY */}
             <form onSubmit={handleSaveEditPayment} className="p-5 space-y-4">
               {/* STUDENT INFO BADGE */}
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs">
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex flex-wrap items-center justify-between gap-2 text-xs">
                 <div>
                   <span className="text-purple-200 block text-[11px] font-medium">Student</span>
                   <span className="font-extrabold text-white text-sm">{editingPayment.studentName}</span>
                 </div>
                 <div className="text-right">
                   <span className="text-purple-200 block text-[11px] font-medium">Class / Fee Type</span>
-                  <span className="font-bold text-purple-100">{editingPayment.className} • {editingPayment.feeType}</span>
+                  {editingPayment.feeType === 'School Fees' ? (
+                    <span className="font-bold text-purple-100 flex items-center justify-end gap-1">
+                      <Lock className="w-3 h-3 text-purple-300" />
+                      <span>{editingPayment.className} • School Fees</span>
+                    </span>
+                  ) : (
+                    <div className="flex items-center gap-1.5 mt-0.5 justify-end">
+                      <span className="font-bold text-purple-200">{editingPayment.className} •</span>
+                      <select
+                        value={editFeeType}
+                        onChange={(e) => setEditFeeType(e.target.value as FeeTypeCategory)}
+                        className="py-1 px-2 rounded-lg border border-purple-300 bg-white text-mauve-950 font-bold text-xs outline-none cursor-pointer"
+                      >
+                        {availableFeeTypes.map((ft) => (
+                          <option key={ft} value={ft}>
+                            {ft}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* INPUT: AMOUNT PAYABLE / DUE (UNEDITABLE) */}
+              {/* INPUT: AMOUNT PAYABLE / DUE */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-black uppercase tracking-wider text-white">
                     Amount Payable / Due (GH₵) *
                   </label>
-                  <span className="text-[10px] font-bold text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded border border-purple-400/30 flex items-center gap-1">
-                    <Lock className="w-3 h-3" />
-                    <span>Uneditable</span>
-                  </span>
+                  {editingPayment.feeType === 'School Fees' ? (
+                    <span className="text-[10px] font-bold text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded border border-purple-400/30 flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      <span>Uneditable (School Fees)</span>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-400/30 flex items-center gap-1">
+                      <Edit2 className="w-3 h-3" />
+                      <span>Editable by Admin</span>
+                    </span>
+                  )}
                 </div>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={editTotalFeeAmount}
-                  readOnly
-                  disabled
-                  className="w-full p-3 rounded-xl border border-white/20 bg-white/5 text-purple-200 font-extrabold text-sm outline-none cursor-not-allowed font-mono shadow-inner"
-                  required
-                />
-                <span className="text-[10px] text-purple-300 font-medium block mt-1">
-                  Fixed bill amount recorded at time of transaction.
-                </span>
+                {editingPayment.feeType === 'School Fees' ? (
+                  <>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={editTotalFeeAmount}
+                      readOnly
+                      disabled
+                      className="w-full p-3 rounded-xl border border-white/20 bg-white/5 text-purple-200 font-extrabold text-sm outline-none cursor-not-allowed font-mono shadow-inner"
+                      required
+                    />
+                    <span className="text-[10px] text-purple-300 font-medium block mt-1">
+                      Fixed bill amount locked to assessed School Fees bill.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={editTotalFeeAmount === 0 ? '' : editTotalFeeAmount}
+                      onChange={(e) => setEditTotalFeeAmount(e.target.value === '' ? 0 : Math.max(0, parseFloat(e.target.value) || 0))}
+                      placeholder="0.00"
+                      className="w-full p-3 rounded-xl border-2 border-emerald-400/60 bg-[#120228] text-white font-extrabold text-sm font-mono focus:ring-2 focus:ring-emerald-400 outline-none shadow-sm"
+                      required
+                    />
+                    <span className="text-[10px] text-emerald-300 font-medium block mt-1">
+                      Admin Editable: Adjust the total fee payable for this receipt.
+                    </span>
+                  </>
+                )}
               </div>
 
               {/* INPUT: AMOUNT PAID */}

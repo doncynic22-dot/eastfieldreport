@@ -3626,14 +3626,9 @@ export default function AdminDashboard({
                     </button>
                     <button
                       id="confirm-student-admission-btn"
-                      type="submit"
+                      type="button"
                       disabled={isSubmittingStudent}
-                      onClick={(e) => {
-                        if (!studentForm.name || !studentForm.name.trim()) {
-                          setStudentFormError("Please fill out the pupil's full name.");
-                          e.preventDefault();
-                        }
-                      }}
+                      onClick={() => handleAddOrEditStudent()}
                       className="flex-1 py-2.5 font-extrabold rounded-xl transition cursor-pointer text-center shadow-md flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20 disabled:opacity-50"
                     >
                       {isSubmittingStudent ? (

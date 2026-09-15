@@ -315,7 +315,11 @@ CREATE TABLE IF NOT EXISTS public.ea_notifications (
 -- ==============================================================================
 -- Ensure Compatibility Views for legacy or unqualified table queries
 -- ==============================================================================
+CREATE OR REPLACE VIEW public.ea_student AS SELECT * FROM public.ea_students;
+CREATE OR REPLACE VIEW public.student AS SELECT * FROM public.ea_students;
 CREATE OR REPLACE VIEW public.students AS SELECT * FROM public.ea_students;
+CREATE OR REPLACE VIEW public.ea_teacher AS SELECT * FROM public.ea_teachers;
+CREATE OR REPLACE VIEW public.teacher AS SELECT * FROM public.ea_teachers;
 CREATE OR REPLACE VIEW public.teachers AS SELECT * FROM public.ea_teachers;
 CREATE OR REPLACE VIEW public.attendance AS SELECT * FROM public.ea_attendance;
 CREATE OR REPLACE VIEW public.daily_attendance AS SELECT * FROM public.ea_daily_attendance;

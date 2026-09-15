@@ -48,49 +48,8 @@ export function getClassCode(className: string, level?: AcademicLevel): string {
   return 'P1';
 }
 
-/**
- * Deduplicates an array of students to guarantee 100% unique IDs while preserving every pupil.
- * If two students with different IDs share a roll number, disambiguates the roll number rather than deleting the pupil.
- */
-export function deduplicateStudents(students: Student[]): Student[] {
-  if (!Array.isArray(students)) return [];
-  const seenIds = new Set<string>();
-  const seenRolls = new Map<string, Student>();
-  const clean: Student[] = [];
-
-  for (const s of students) {
-    if (!s) continue;
-    const rawId = (s.id || '').trim();
-    if (!rawId) continue;
-
-    // Skip if this exact ID has already been included
-    if (seenIds.has(rawId)) continue;
-    seenIds.add(rawId);
-
-    const normRoll = (s.rollNumber || '').trim().toLowerCase();
-    if (normRoll && seenRolls.has(normRoll)) {
-      const existing = seenRolls.get(normRoll)!;
-      const normName1 = (existing.name || '').trim().toLowerCase();
-      const normName2 = (s.name || '').trim().toLowerCase();
-      // Only skip if exact same person name and class (true duplicate clone)
-      if (normName1 && normName1 === normName2 && existing.className === s.className) {
-        continue;
-      }
-      // Different pupils: preserve both, assign unique suffix to roll number so neither pupil is dropped
-      const suffix = s.id.slice(-4);
-      const disambiguatedRoll = `${s.rollNumber || 'EA/REG'}-${suffix}`;
-      clean.push({
-        ...s,
-        rollNumber: disambiguatedRoll
-      });
-    } else {
-      if (normRoll) seenRolls.set(normRoll, s);
-      clean.push(s);
-    }
-  }
-
-  return clean;
-}
+import { deduplicateStudents, getStudentClassRank } from '../utils/studentDeduplication';
+export { deduplicateStudents, getStudentClassRank };
 
 /**
  * Derives the updated Roll Number reflecting the newly promoted class.
@@ -385,7 +344,8 @@ export function promoteStudents(students: Student[], schoolYear: string): Promot
     const newRollNumber = getUpdatedRollNumber(student.rollNumber, nextClass, nextLevel, schoolYear, usedRolls);
     usedRolls.add(newRollNumber.toUpperCase());
 
-    const newId = getUpdatedStudentId(student.id, nextClass, nextLevel, newRollNumber, usedIds);
+    // Keep the student's primary database ID immutable to prevent creating duplicate ghost rows in Supabase
+    const newId = student.id;
     usedIds.add(newId);
 
     promotedCount++;

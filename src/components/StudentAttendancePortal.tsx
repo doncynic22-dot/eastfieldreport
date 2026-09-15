@@ -740,7 +740,7 @@ export default function StudentAttendancePortal({
       const updatedAttendance = [...attendance];
       const affectedTermAttendance: Attendance[] = [];
 
-      students.forEach(student => {
+      targetStudents.forEach(student => {
         const calc = calculateStudentTermAttendance(
           student,
           currentTerm,
@@ -778,9 +778,7 @@ export default function StudentAttendancePortal({
           updatedAttendance.push(attRecord);
         }
 
-        if (targetStudents.some(ts => ts.id === student.id)) {
-          affectedTermAttendance.push(attRecord);
-        }
+        affectedTermAttendance.push(attRecord);
       });
 
       // 3. Immediately commit to React state and localStorage (zero UI blocking)
