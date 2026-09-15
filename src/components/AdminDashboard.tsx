@@ -17,7 +17,7 @@ import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
 import DatabaseAuditTab from './DatabaseAuditTab';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSingleSupabaseTeacher, seedStudentAssociatedRecords, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials, SupabaseDetailedStatusReport } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSingleSupabaseTeacher, seedStudentAssociatedRecords, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials, SupabaseDetailedStatusReport, isTeacherDeleted } from '../lib/supabase';
 import { globalSyncEngine, uploadAssetToCDN, saveServerEntity } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
@@ -296,10 +296,11 @@ export default function AdminDashboard({
     setIsSyncingStaff(true);
     setStaffSyncMsg('');
     try {
-      const listToSave = teachers && teachers.length > 0 ? teachers : INITIAL_USERS;
+      const activeDefaults = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
+      const listToSave = teachers && teachers.length > 0 ? teachers.filter(t => !isTeacherDeleted(t)) : activeDefaults;
       if (!teachers || teachers.length === 0) {
-        setTeachers(INITIAL_USERS);
-        localStorage.setItem('ea_teachers', JSON.stringify(INITIAL_USERS));
+        setTeachers(activeDefaults);
+        localStorage.setItem('ea_teachers', JSON.stringify(activeDefaults));
       }
       const success = await saveSupabaseTeachers(listToSave);
       if (success) {
@@ -319,12 +320,13 @@ export default function AdminDashboard({
     setIsSyncingStaff(true);
     setStaffSyncMsg('');
     try {
-      setTeachers(INITIAL_USERS);
-      localStorage.setItem('ea_teachers', JSON.stringify(INITIAL_USERS));
-      await saveSupabaseTeachers(INITIAL_USERS);
-      setStaffSyncMsg('Populated all 13 standard Academy teachers (Nursery, KG, Primary, JHS) and synced to database!');
+      const activeDefaults = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
+      setTeachers(activeDefaults);
+      localStorage.setItem('ea_teachers', JSON.stringify(activeDefaults));
+      await saveSupabaseTeachers(activeDefaults);
+      setStaffSyncMsg(`Populated ${activeDefaults.length} standard Academy teachers and synced to database!`);
     } catch (err) {
-      setStaffSyncMsg('Populated all 13 teachers locally and in server cache!');
+      setStaffSyncMsg('Populated staff locally and in server cache!');
     } finally {
       setIsSyncingStaff(false);
       setTimeout(() => setStaffSyncMsg(''), 8000);
@@ -345,7 +347,12 @@ export default function AdminDashboard({
       if (result.success) {
         setTeachers(result.updatedTeachers);
         if (onPushToSupabase) {
-          onPushToSupabase(undefined, undefined, result.updatedTeachers).catch(() => {});
+          const updatedConfig: ReportConfig = {
+            ...config,
+            classTeacherAssignments: result.updatedAssignments,
+            updatedAt: new Date().toISOString()
+          };
+          onPushToSupabase(undefined, updatedConfig, result.updatedTeachers).catch(() => {});
         }
         const assignedT = result.updatedTeachers.find(t => t.id === newTeacherId);
         setAssignmentSuccessToast(
@@ -373,7 +380,12 @@ export default function AdminDashboard({
       if (res.success) {
         setTeachers(res.updatedTeachers);
         if (onPushToSupabase) {
-          await onPushToSupabase(undefined, undefined, res.updatedTeachers);
+          const updatedConfig: ReportConfig = {
+            ...config,
+            classTeacherAssignments: currentMap,
+            updatedAt: new Date().toISOString()
+          };
+          await onPushToSupabase(undefined, updatedConfig, res.updatedTeachers);
         }
         setAssignmentSuccessToast('All classroom assignments verified and permanently synced to Cloud & Database!');
         setTimeout(() => setAssignmentSuccessToast(null), 4500);
@@ -1382,56 +1394,13 @@ export default function AdminDashboard({
 
       const isEdit = !!editingStudent;
 
-      // 4. Write this pupil directly to the authoritative table before
-      // confirming cloud persistence to the administrator.
-      const studentPersisted = await saveSingleSupabaseStudent(savedStudent);
-
-      // 5. Trigger in-form 'Success' toast notification & green checkmark animation immediately after database write
-      setStudentSuccessDetail(
-        studentPersisted
-          ? (isEdit
-            ? `Profile changes for "${savedStudent.name}" (${savedStudent.rollNumber}) saved to database.`
-            : `Pupil "${savedStudent.name}" (${savedStudent.rollNumber}) recorded in Supabase database.`)
-          : `Pupil "${savedStudent.name}" was saved locally. The Supabase write failed and will need a retry.`
-      );
-      setStudentFormSuccess(true);
-      setIsSubmittingStudent(false);
-
-      // 6. Asynchronously handle associated records seeding and master server sync in background
-      (async () => {
-        try {
-          const seeded = await seedStudentAssociatedRecords(savedStudent, config);
-          if (seeded.bill && onUpdateBill) {
-            onUpdateBill(seeded.bill);
-          }
-          if (seeded.attendance && setAttendance && attendance) {
-            setAttendance(prev => [...(prev || []).filter(a => !(a.studentId === savedStudent.id && a.term === seeded.attendance!.term && a.year === seeded.attendance!.year)), seeded.attendance!]);
-          }
-        } catch (seedErr) {
-          console.warn('Notice seeding student associated records:', seedErr);
-        }
-
-        // Global sync engine push for instantaneous cross-browser, cross-device, and CDN sync
-        globalSyncEngine.pushMasterServerSync({
-          students: updatedStudentsList
-        }).catch(() => {});
-
-        if (onPushToSupabase) {
-          await onPushToSupabase(updatedStudentsList, config).catch((e) => {
-            console.warn('onPushToSupabase notice in admission:', e);
-          });
-        }
-      })();
-
-      // 7. Briefly display the success checkmark animation inside the form before closing the modal
-      await new Promise(resolve => setTimeout(resolve, 950));
-
-      // 8. Close the modal window and reset form state
+      // 4. Immediately close and exit the modal form and reset input states
       setShowStudentModal(false);
+      setEditingStudent(null);
       setStudentFormSuccess(false);
       setStudentSuccessDetail('');
-      setEditingStudent(null);
       setStudentFormError('');
+      setIsSubmittingStudent(false);
       setStudentForm({
         name: '',
         rollNumber: '',
@@ -1443,13 +1412,53 @@ export default function AdminDashboard({
         photoUrl: ''
       });
 
-      // 9. Provide persistent dashboard confirmation banner
+      // 5. Provide instant dashboard confirmation banner above the table
       setPromotionSuccessMsg(
         isEdit
-          ? `Pupil "${savedStudent.name}" profile saved and recorded in Supabase.`
-          : `Pupil "${savedStudent.name}" (${savedStudent.rollNumber}) admitted, recorded in Supabase ea_students table, and synchronized!`
+          ? `Pupil "${savedStudent.name}" profile saved and updated in roster.`
+          : `Pupil "${savedStudent.name}" (${savedStudent.rollNumber}) admitted and saved to roster!`
       );
       setTimeout(() => setPromotionSuccessMsg(''), 8000);
+
+      // 6. Asynchronously persist to Supabase, master server, and seed associated records in the background
+      (async () => {
+        try {
+          const studentPersisted = await saveSingleSupabaseStudent(savedStudent);
+
+          const seeded = await seedStudentAssociatedRecords(savedStudent, config);
+          if (seeded.bill && onUpdateBill) {
+            onUpdateBill(seeded.bill);
+          }
+          if (seeded.attendance && setAttendance && attendance) {
+            setAttendance(prev => [
+              ...(prev || []).filter(a => !(a.studentId === savedStudent.id && a.term === seeded.attendance!.term && a.year === seeded.attendance!.year)),
+              seeded.attendance!
+            ]);
+          }
+
+          // Global sync engine push for instantaneous cross-browser, cross-device, and CDN sync
+          globalSyncEngine.pushMasterServerSync({
+            students: updatedStudentsList
+          }).catch(() => {});
+
+          if (onPushToSupabase) {
+            await onPushToSupabase(updatedStudentsList, config).catch((e) => {
+              console.warn('onPushToSupabase notice in admission:', e);
+            });
+          }
+
+          if (studentPersisted) {
+            setPromotionSuccessMsg(
+              isEdit
+                ? `Pupil "${savedStudent.name}" profile saved and synchronized with database.`
+                : `Pupil "${savedStudent.name}" (${savedStudent.rollNumber}) admitted, recorded in Supabase, and synchronized!`
+            );
+            setTimeout(() => setPromotionSuccessMsg(''), 8000);
+          }
+        } catch (bgErr) {
+          console.warn('Background persistence notice for student admission:', bgErr);
+        }
+      })();
     } catch (err: any) {
       console.error('Error admitting/updating student:', err);
       setStudentFormError(err?.message || 'An unexpected error occurred while saving student.');
@@ -1534,11 +1543,45 @@ export default function AdminDashboard({
     const email = teacherToDelete?.email;
     const name = teacherToDelete?.name;
 
-    const remainingTeachers = teachers.filter(t => t.id !== id);
+    const remainingTeachers = teachers.filter(t => t.id !== id && !isTeacherDeleted(t));
     setTeachers(remainingTeachers);
 
-    // Call deleteSupabaseTeacher unconditionally
+    // If teacher was assigned as class teacher, unassign and update config
+    let updatedConfig = config;
+    if (config?.classTeacherAssignments) {
+      const assignments = { ...config.classTeacherAssignments };
+      let changed = false;
+      Object.entries(assignments).forEach(([cls, tId]) => {
+        if (tId === id || (email && String(tId).toLowerCase() === email.toLowerCase())) {
+          delete assignments[cls];
+          changed = true;
+        }
+      });
+      if (changed) {
+        updatedConfig = {
+          ...config,
+          classTeacherAssignments: assignments,
+          updatedAt: new Date().toISOString()
+        };
+        setConfig(updatedConfig);
+        saveClassTeacherAssignmentsLocally(assignments);
+      }
+    }
+
+    // Call deleteSupabaseTeacher unconditionally (records tombstones, updates local caches, pushes to server & Supabase)
     await deleteSupabaseTeacher(id, email, name);
+
+    // Sync remaining teachers immediately to database
+    if (onPushToSupabase) {
+      onPushToSupabase(undefined, updatedConfig, remainingTeachers);
+    }
+
+    setPromotionSuccessMsg(
+      name
+        ? `Staff member "${name}" permanently deleted and removed from database.`
+        : 'Staff profile permanently deleted from database.'
+    );
+    setTimeout(() => setPromotionSuccessMsg(''), 6000);
   };
 
   // Adjust class list in form dynamically based on chosen level
@@ -3572,41 +3615,31 @@ export default function AdminDashboard({
                   <div className="flex gap-2.5 pt-3 border-t border-mauve-100">
                     <button
                       type="button"
-                      disabled={studentFormSuccess}
                       onClick={() => {
                         setStudentFormError('');
                         setStudentFormSuccess(false);
                         setShowStudentModal(false);
                       }}
-                      className="flex-1 py-2.5 border border-mauve-200 hover:bg-mauve-50 text-mauve-600 rounded-xl transition cursor-pointer font-medium text-center disabled:opacity-40"
+                      className="flex-1 py-2.5 border border-mauve-200 hover:bg-mauve-50 text-mauve-600 rounded-xl transition cursor-pointer font-medium text-center"
                     >
                       Cancel
                     </button>
                     <button
                       id="confirm-student-admission-btn"
                       type="submit"
-                      disabled={isSubmittingStudent || studentFormSuccess}
+                      disabled={isSubmittingStudent}
                       onClick={(e) => {
                         if (!studentForm.name || !studentForm.name.trim()) {
                           setStudentFormError("Please fill out the pupil's full name.");
                           e.preventDefault();
                         }
                       }}
-                      className={`flex-1 py-2.5 font-extrabold rounded-xl transition cursor-pointer text-center shadow-md flex items-center justify-center gap-2 ${
-                        studentFormSuccess
-                          ? 'bg-emerald-600 text-white shadow-emerald-600/30 ring-2 ring-emerald-400'
-                          : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20 disabled:opacity-50'
-                      }`}
+                      className="flex-1 py-2.5 font-extrabold rounded-xl transition cursor-pointer text-center shadow-md flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20 disabled:opacity-50"
                     >
-                      {studentFormSuccess ? (
-                        <>
-                          <Check className="w-5 h-5 stroke-[3] text-white animate-bounce" />
-                          <span>Saved to Database!</span>
-                        </>
-                      ) : isSubmittingStudent ? (
+                      {isSubmittingStudent ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Recording in Supabase...</span>
+                          <span>Saving...</span>
                         </>
                       ) : (
                         <span>{editingStudent ? 'Save Profile' : 'Confirm Admission'}</span>

@@ -50,13 +50,15 @@ import {
   recordDeletedBookStockId,
   subscribeToGlobalRealtime,
   broadcastSync,
-  pruneDeletedTombstones
+  pruneDeletedTombstones,
+  isTeacherDeleted,
+  recordDeletedTeacherId
 } from './lib/supabase';
 import { isAutoPromotionDue, promoteStudents, restoreAllStudentsToAdmittedLevels, deduplicateStudents, restoreStudentsFromTerminalReport } from './services/promotionService';
 import { getCanonicalSubjectId } from './utils/subjectUtils';
 import { isDemoStudent } from './data/demoPupils';
 import { globalSyncEngine, GlobalDatabaseState, pushMasterServerSync, syncTeachersToCDN, syncAttendanceToCDN } from './lib/globalSync';
-import { reconcileTeachersWithClassAssignments, getClassTeacherAssignments, saveClassTeacherAssignmentsLocally } from './services/classTeacherService';
+import { reconcileTeachersWithClassAssignments, getClassTeacherAssignments, saveClassTeacherAssignmentsLocally, fetchAuthoritativeClassAssignments } from './services/classTeacherService';
 
 
 export default function App() {
@@ -69,12 +71,14 @@ export default function App() {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return reconcileTeachersWithClassAssignments(parsed);
+          const clean = parsed.filter(t => !isTeacherDeleted(t));
+          return reconcileTeachersWithClassAssignments(clean);
         }
       }
-      return reconcileTeachersWithClassAssignments(INITIAL_USERS);
+      const initialClean = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
+      return reconcileTeachersWithClassAssignments(initialClean);
     } catch {
-      return INITIAL_USERS;
+      return INITIAL_USERS.filter(t => !isTeacherDeleted(t));
     }
   });
   const [grades, setGrades] = useState<Grade[]>([]);
@@ -294,9 +298,9 @@ export default function App() {
       try {
         if (cachedTeachersStr) parsedTeachers = JSON.parse(cachedTeachersStr);
       } catch (e) {}
-      const localTeachers: User[] = (Array.isArray(parsedTeachers) && parsedTeachers.length > 0)
-        ? parsedTeachers
-        : INITIAL_USERS;
+      const cleanParsed = (Array.isArray(parsedTeachers) ? parsedTeachers : []).filter(t => !isTeacherDeleted(t));
+      const cleanInitial = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
+      const localTeachers: User[] = cleanParsed.length > 0 ? cleanParsed : cleanInitial;
 
       const cachedGradesStr = localStorage.getItem('ea_grades');
       const localGrades: Grade[] = cachedGradesStr ? JSON.parse(cachedGradesStr) : [];
@@ -313,7 +317,8 @@ export default function App() {
         sAttendanceRes,
         sDailyAttendanceRes,
         sBillsRes,
-        sPaymentsRes
+        sPaymentsRes,
+        sAssignmentsRes
       ] = await Promise.all([
         fetchSupabaseConfig().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
         fetchSupabaseTeachers().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
@@ -322,19 +327,28 @@ export default function App() {
         fetchSupabaseAttendance().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
         fetchSupabaseDailyAttendance().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
         fetchSupabaseBills().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
-        fetchSupabaseFeePayments().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err }))
+        fetchSupabaseFeePayments().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err })),
+        fetchAuthoritativeClassAssignments().then(data => ({ data, success: true })).catch(err => ({ data: null, success: false, err }))
       ]);
 
-      // 1. Process & Sync Config
+      // 1. Process & Sync Config & Class Teacher Assignments
       const sConfig = sConfigRes.data;
       const configFetchSuccess = sConfigRes.success;
+      const authoritativeAssignments = (sAssignmentsRes?.data && Object.keys(sAssignmentsRes.data).length > 0)
+        ? sAssignmentsRes.data
+        : (sConfig?.classTeacherAssignments && Object.keys(sConfig.classTeacherAssignments).length > 0)
+          ? sConfig.classTeacherAssignments
+          : getClassTeacherAssignments(localTeachers);
+
+      saveClassTeacherAssignmentsLocally(authoritativeAssignments);
 
       if (configFetchSuccess) {
         if (sConfig) {
           const mergedConfig: ReportConfig = {
             ...DEFAULT_REPORT_CONFIG,
             ...localConfig,
-            ...sConfig
+            ...sConfig,
+            classTeacherAssignments: authoritativeAssignments
           };
           if (sConfig.reopeningDate) {
             mergedConfig.reopeningDate = sConfig.reopeningDate;
@@ -344,43 +358,52 @@ export default function App() {
         } else if (cachedConfigStr) {
           // Only seed if this client device has user-edited local cache
           try {
-            await saveSupabaseConfig(localConfig);
-            setConfig(localConfig);
+            const configWithAssignments = { ...localConfig, classTeacherAssignments: authoritativeAssignments };
+            await saveSupabaseConfig(configWithAssignments);
+            setConfig(configWithAssignments);
           } catch (seedErr) {
             console.error("Failed seeding config to Supabase:", seedErr);
-            setConfig(localConfig);
+            setConfig({ ...localConfig, classTeacherAssignments: authoritativeAssignments });
           }
         } else {
-          setConfig(DEFAULT_REPORT_CONFIG);
+          setConfig({ ...DEFAULT_REPORT_CONFIG, classTeacherAssignments: authoritativeAssignments });
         }
       } else {
         // Query failed (e.g. missing column) -> use local cache, don't write to DB
-        setConfig(localConfig);
+        setConfig({ ...localConfig, classTeacherAssignments: authoritativeAssignments });
       }
 
       // 2. Process & Sync Teachers
       const sTeachers = sTeachersRes.data;
       const teachersFetchSuccess = sTeachersRes.success;
 
-      let activeTeachers = (localTeachers && localTeachers.length > 0) ? localTeachers : INITIAL_USERS;
+      const cleanDefaults = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
+      const cleanLocalTeachers = (localTeachers || []).filter(t => !isTeacherDeleted(t));
+      let activeTeachers = cleanLocalTeachers.length > 0 ? cleanLocalTeachers : cleanDefaults;
+
       if (teachersFetchSuccess && sTeachers !== null) {
         if (sTeachers.length === 0) {
-          // Empty table in Supabase -> seed with full staff roster
-          const teachersToSeed = activeTeachers.length > 0 ? activeTeachers : INITIAL_USERS;
-          activeTeachers = teachersToSeed;
-          setTeachers(teachersToSeed);
-          localStorage.setItem('ea_teachers', JSON.stringify(teachersToSeed));
-          saveSupabaseTeachers(teachersToSeed).catch(seedErr => {
-            console.error("Failed seeding teachers to Supabase:", seedErr);
-          });
+          // Table in Supabase is empty: only seed active defaults if they haven't been deleted
+          if (activeTeachers.length > 0) {
+            activeTeachers = reconcileTeachersWithClassAssignments(activeTeachers, authoritativeAssignments);
+            setTeachers(activeTeachers);
+            localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
+            saveSupabaseTeachers(activeTeachers).catch(seedErr => {
+              console.error("Failed seeding teachers to Supabase:", seedErr);
+            });
+          } else {
+            setTeachers([]);
+            localStorage.setItem('ea_teachers', JSON.stringify([]));
+          }
         } else {
-          activeTeachers = reconcileTeachersWithClassAssignments(sTeachers);
+          const cleanRemote = sTeachers.filter(t => !isTeacherDeleted(t));
+          activeTeachers = reconcileTeachersWithClassAssignments(cleanRemote, authoritativeAssignments);
           setTeachers(activeTeachers);
           localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
         }
       } else {
-        // Query failed or fallback -> populate local teachers or defaults
-        activeTeachers = reconcileTeachersWithClassAssignments((localTeachers && localTeachers.length > 0) ? localTeachers : INITIAL_USERS);
+        // Query failed or fallback -> populate clean local teachers or defaults
+        activeTeachers = reconcileTeachersWithClassAssignments(activeTeachers, authoritativeAssignments);
         setTeachers(activeTeachers);
         localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
       }
@@ -651,7 +674,11 @@ export default function App() {
         ? false
         : (typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true');
 
-      const targetConfig = customConfig || config;
+      const targetAssignments = customConfig?.classTeacherAssignments || config.classTeacherAssignments || getClassTeacherAssignments(customTeachers || teachers);
+      const targetConfig: ReportConfig = {
+        ...(customConfig || config),
+        classTeacherAssignments: targetAssignments
+      };
       const targetStudents = (customStudents !== undefined)
         ? customStudents
         : (isRosterCleared ? [] : students);
@@ -720,14 +747,15 @@ export default function App() {
       try {
         finalTeachers = JSON.parse(cachedTeachers) as User[];
       } catch (e) {
-        finalTeachers = INITIAL_USERS;
+        finalTeachers = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
       }
     } else {
-      finalTeachers = INITIAL_USERS;
+      finalTeachers = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
     }
-    if (!Array.isArray(finalTeachers) || finalTeachers.length === 0) {
-      finalTeachers = INITIAL_USERS;
+    if (!Array.isArray(finalTeachers)) {
+      finalTeachers = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
     }
+    finalTeachers = finalTeachers.filter(t => !isTeacherDeleted(t));
     finalTeachers = reconcileTeachersWithClassAssignments(finalTeachers);
     setTeachers(finalTeachers);
     localStorage.setItem('ea_teachers', JSON.stringify(finalTeachers));
@@ -879,11 +907,17 @@ export default function App() {
             setConfig(prev => ({ ...prev, ...master.config }));
             localStorage.setItem('ea_config', JSON.stringify(master.config));
           }
-          if (Array.isArray(master.teachers) && master.teachers.length > 0) {
+          if (Array.isArray((master as any).deletedTeacherIds)) {
+            (master as any).deletedTeacherIds.forEach((id: string) => {
+              if (id) recordDeletedTeacherId(id);
+            });
+          }
+          if (Array.isArray(master.teachers)) {
+            const cleanTeachers = master.teachers.filter(t => !isTeacherDeleted(t));
             if (master.classTeacherAssignments && typeof master.classTeacherAssignments === 'object') {
               saveClassTeacherAssignmentsLocally(master.classTeacherAssignments);
             }
-            const reconciledTeachers = reconcileTeachersWithClassAssignments(master.teachers, master.classTeacherAssignments);
+            const reconciledTeachers = reconcileTeachersWithClassAssignments(cleanTeachers, master.classTeacherAssignments);
             setTeachers(reconciledTeachers);
             localStorage.setItem('ea_teachers', JSON.stringify(reconciledTeachers));
           }
@@ -1011,11 +1045,17 @@ export default function App() {
           setConfig(prev => ({ ...prev, ...p.config }));
           localStorage.setItem('ea_config', JSON.stringify(p.config));
         }
+        if (Array.isArray((p as any).deletedTeacherIds)) {
+          (p as any).deletedTeacherIds.forEach((id: string) => {
+            if (id) recordDeletedTeacherId(id);
+          });
+        }
         if (Array.isArray(p.teachers)) {
+          const cleanTeachers = p.teachers.filter(t => !isTeacherDeleted(t));
           if (p.classTeacherAssignments && typeof p.classTeacherAssignments === 'object') {
             saveClassTeacherAssignmentsLocally(p.classTeacherAssignments);
           }
-          const reconciled = reconcileTeachersWithClassAssignments(p.teachers, p.classTeacherAssignments);
+          const reconciled = reconcileTeachersWithClassAssignments(cleanTeachers, p.classTeacherAssignments);
           setTeachers(reconciled);
           localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
           lastSavedTeachersSigRef.current = reconciled.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
@@ -1126,13 +1166,53 @@ export default function App() {
             }
           }
         }
-      } else if (entity === 'teachers' && Array.isArray(payload)) {
-        setTeachers(payload);
-        localStorage.setItem('ea_teachers', JSON.stringify(payload));
-        lastSavedTeachersSigRef.current = payload.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
-        window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: payload }));
+      } else if (entity === 'teachers') {
+        if (type === 'DELETE' && payload) {
+          const delId = (payload as any).id;
+          const delEmail = (payload as any).email;
+          const delName = (payload as any).name;
+          recordDeletedTeacherId(delId, delEmail, delName);
+          setTeachers(prev => {
+            const updated = prev.filter(t => !isTeacherDeleted(t));
+            localStorage.setItem('ea_teachers', JSON.stringify(updated));
+            return updated;
+          });
+        } else if (Array.isArray(payload)) {
+          const cleanTeachers = payload.filter(t => !isTeacherDeleted(t));
+          const assignments = getClassTeacherAssignments(cleanTeachers);
+          const reconciled = reconcileTeachersWithClassAssignments(cleanTeachers, assignments);
+          setTeachers(reconciled);
+          localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+          lastSavedTeachersSigRef.current = reconciled.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
+          window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: reconciled }));
+        }
+      } else if (entity === 'classTeacherAssignments' && payload && typeof payload === 'object') {
+        saveClassTeacherAssignmentsLocally(payload);
+        setConfig(prev => ({
+          ...prev,
+          classTeacherAssignments: payload,
+          updatedAt: new Date().toISOString()
+        }));
+        setTeachers(prev => {
+          const reconciled = reconcileTeachersWithClassAssignments(prev, payload);
+          localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+          lastSavedTeachersSigRef.current = reconciled.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
+          window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: reconciled }));
+          return reconciled;
+        });
+        window.dispatchEvent(new CustomEvent('ea_class_assignments_updated', { detail: payload }));
       } else if (entity === 'config' && payload) {
         setConfig(prev => ({ ...prev, ...payload }));
+        if (payload.classTeacherAssignments && typeof payload.classTeacherAssignments === 'object') {
+          saveClassTeacherAssignmentsLocally(payload.classTeacherAssignments);
+          setTeachers(prev => {
+            const reconciled = reconcileTeachersWithClassAssignments(prev, payload.classTeacherAssignments);
+            localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+            lastSavedTeachersSigRef.current = reconciled.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
+            window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: reconciled }));
+            return reconciled;
+          });
+        }
         localStorage.setItem('ea_config', JSON.stringify(payload));
       } else if (entity === 'grades' && Array.isArray(payload)) {
         setGrades(payload);
@@ -1694,9 +1774,10 @@ export default function App() {
           });
         }
 
-        if (remoteTeachers && Array.isArray(remoteTeachers) && remoteTeachers.length > 0) {
-          const assignments = getClassTeacherAssignments(remoteTeachers);
-          const reconciled = reconcileTeachersWithClassAssignments(remoteTeachers, assignments);
+        if (remoteTeachers && Array.isArray(remoteTeachers)) {
+          const cleanRemote = remoteTeachers.filter(t => !isTeacherDeleted(t));
+          const assignments = getClassTeacherAssignments(cleanRemote);
+          const reconciled = reconcileTeachersWithClassAssignments(cleanRemote, assignments);
           setTeachers(prev => {
             const prevSig = prev.map(t => `${t.id}:${(t.classes || []).join(',')}`).join('|');
             const remoteSig = reconciled.map(t => `${t.id}:${(t.classes || []).join(',')}`).join('|');
@@ -1714,10 +1795,9 @@ export default function App() {
             const localTime = prev.updatedAt ? new Date(prev.updatedAt).getTime() : 0;
             const remoteTime = remoteConfig.updatedAt ? new Date(remoteConfig.updatedAt).getTime() : 0;
 
-            const effectiveAssignments = {
-              ...(prev.classTeacherAssignments || {}),
-              ...(remoteConfig.classTeacherAssignments || {})
-            };
+            const effectiveAssignments = (remoteConfig.classTeacherAssignments && typeof remoteConfig.classTeacherAssignments === 'object' && Object.keys(remoteConfig.classTeacherAssignments).length > 0)
+              ? remoteConfig.classTeacherAssignments
+              : (prev.classTeacherAssignments || {});
 
             // If local config has a newer timestamp than remote, retain local
             if (remoteTime && localTime && remoteTime < localTime) {
@@ -1741,6 +1821,11 @@ export default function App() {
               localStorage.setItem('ea_config', JSON.stringify(updated));
               if (assignmentsChanged) {
                 localStorage.setItem('ea_class_teacher_assignments', JSON.stringify(effectiveAssignments));
+                setTeachers(currentTeachers => {
+                  const reconciled = reconcileTeachersWithClassAssignments(currentTeachers, effectiveAssignments);
+                  localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+                  return reconciled;
+                });
               }
               return updated;
             }
@@ -2014,7 +2099,8 @@ export default function App() {
         localStorage.setItem('mock_supabase_ea_students', JSON.stringify(clean));
       }
       if (remoteTeachers && Array.isArray(remoteTeachers)) {
-        const reconciled = reconcileTeachersWithClassAssignments(remoteTeachers);
+        const cleanRemote = remoteTeachers.filter(t => !isTeacherDeleted(t));
+        const reconciled = reconcileTeachersWithClassAssignments(cleanRemote);
         setTeachers(reconciled);
         localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
       }

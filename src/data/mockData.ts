@@ -84,27 +84,163 @@ export const DEFAULT_REPORT_CONFIG: ReportConfig = {
   showConductColumn: true,
   showAttendanceSection: true,
   accentColor: '#1e1b4b',
-  watermarkText: 'EASTFIELD ACADEMY'
+  watermarkText: 'EASTFIELD ACADEMY',
+  classTeacherAssignments: {
+    "Nursery 1": "944bccd2-17cc-4dba-8791-2f1c0e0cd63f",
+    "Nursery 2": "dadbd6cb-a4da-4c1a-9cc9-52bf05fd4c61",
+    "Kindergarten 1": "user-t-reg-1784883215842",
+    "Kindergarten 2": "ba136f83-7beb-4d64-b0d6-08e1455157ec",
+    "Primary 1": "user-t-reg-1784883616230",
+    "Primary 2": "26c36a9d-3782-418e-9757-838efe98b037",
+    "Primary 3": "2065ab34-a039-4b14-89a0-a60eaa7e9e99",
+    "Primary 5": "user-t-reg-1784882532978",
+    "JHS 1": "user-t-reg-1784637715235",
+    "JHS 2": "user-t-reg-1789104201932",
+    "JHS 3": "user-t-reg-1784706570519"
+  }
 };
 
 export const INITIAL_USERS: User[] = [
-  // Nursery
-  { id: "tch-01", name: "Kojo Mensah (Nursery 1)", email: "nursery@eastfield.com", role: "TEACHER", password: "password123", level: "NURSERY", classes: ["Nursery 1"], subjects: ["sub-n-lit", "sub-n-num"] },
-  { id: "tch-n2", name: "Esi Agyeman (Nursery 2)", email: "nursery2@eastfield.com", role: "TEACHER", password: "password123", level: "NURSERY", classes: ["Nursery 2"], subjects: ["sub-n-cr", "sub-n-pho"] },
-  // Kindergarten
-  { id: "tch-k1", name: "Akosua Boakye (KG 1)", email: "kg1@eastfield.com", role: "TEACHER", password: "password123", level: "KINDERGARTEN", classes: ["Kindergarten 1"], subjects: ["sub-k-lit", "sub-k-num"] },
-  { id: "tch-k2", name: "Kofi Osei (KG 2)", email: "kg2@eastfield.com", role: "TEACHER", password: "password123", level: "KINDERGARTEN", classes: ["Kindergarten 2"], subjects: ["sub-k-owop", "sub-k-ca"] },
-  // Primary
-  { id: "tch-02", name: "Ama Serwaa (Primary 1)", email: "primary@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 1"], subjects: ["sub-p-math", "sub-p-eng"] },
-  { id: "tch-p2", name: "Kwame Nkrumah (Primary 2)", email: "primary2@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 2"], subjects: ["sub-p-math", "sub-p-eng"] },
-  { id: "tch-p3", name: "Abena Darko (Primary 3)", email: "primary3@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 3"], subjects: ["sub-p-math", "sub-p-sci"] },
-  { id: "tch-p4", name: "Yaa Asantewaa (Primary 4)", email: "primary4@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 4"], subjects: ["sub-p-eng", "sub-p-soc"] },
-  { id: "tch-p5", name: "Kofi Addo (Primary 5)", email: "primary5@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 5"], subjects: ["sub-p-math", "sub-p-rme"] },
-  { id: "tch-p6", name: "Adwoa Mansa (Primary 6)", email: "primary6@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 6"], subjects: ["sub-p-eng", "sub-p-ict"] },
-  // JHS (Unassigned initially so Admin can assign each class teacher)
-  { id: "tch-03", name: "Kwesi Appiah", email: "jhs@eastfield.com", role: "TEACHER", password: "password123", level: "JHS", classes: [], subjects: ["sub-j-math", "sub-j-ca"] },
-  { id: "tch-04", name: "Abena Gyamfi", email: "jhs2@eastfield.com", role: "TEACHER", password: "password123", level: "JHS", classes: [], subjects: ["sub-j-eng", "sub-j-sci"] },
-  { id: "tch-05", name: "Yaw Asamoah", email: "jhs3@eastfield.com", role: "TEACHER", password: "password123", level: "JHS", classes: [], subjects: ["sub-j-soc", "sub-j-rme"] }
+  {
+    id: "944bccd2-17cc-4dba-8791-2f1c0e0cd63f",
+    name: "Osafo Stephen",
+    email: "jhaycyclone@gmail.com",
+    role: "TEACHER",
+    password: "@Tr_0201036057",
+    level: "NURSERY",
+    classes: ["Nursery 1"],
+    subjects: ["sub-n-cr", "sub-n-lit", "sub-n-num", "sub-n-pho", "sub-n-psy"]
+  },
+  {
+    id: "dadbd6cb-a4da-4c1a-9cc9-52bf05fd4c61",
+    name: "Stephen Osafo ",
+    email: "dailyfacts5567@gmail.com",
+    role: "TEACHER",
+    password: "@Tr_0201036057",
+    level: "NURSERY",
+    classes: ["Nursery 2"],
+    subjects: ["sub-n-cr", "sub-n-lit", "sub-n-num", "sub-n-pho", "sub-n-psy"]
+  },
+  {
+    id: "user-t-reg-1784883215842",
+    name: "Mabel Mawusi",
+    email: "mawusimabel96@gmail.com",
+    role: "TEACHER",
+    password: "ken2",
+    level: "KINDERGARTEN",
+    classes: ["Kindergarten 1"],
+    subjects: ["sub-k-lit", "sub-k-num", "sub-k-owop", "sub-k-ca", "sub-k-wrt"]
+  },
+  {
+    id: "ba136f83-7beb-4d64-b0d6-08e1455157ec",
+    name: "AMADAH PERFECT",
+    email: "amadahperfect@gmail.com",
+    role: "TEACHER",
+    password: "we123456",
+    level: "KINDERGARTEN",
+    classes: ["Kindergarten 2"],
+    subjects: ["sub-k-lit", "sub-k-num", "sub-k-owop", "sub-k-ca", "sub-k-wrt"]
+  },
+  {
+    id: "user-t-reg-1784883616230",
+    name: "Grace Darkoa",
+    email: "adhepagracie@gmail.com",
+    role: "TEACHER",
+    password: "3011",
+    level: "PRIMARY",
+    classes: ["Primary 1"],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "26c36a9d-3782-418e-9757-838efe98b037",
+    name: "OBUO ABIGAIL",
+    email: "OBUOABIGAIL35@GMAIL.COM",
+    role: "TEACHER",
+    password: "we123456",
+    level: "PRIMARY",
+    classes: ["Primary 2"],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "2065ab34-a039-4b14-89a0-a60eaa7e9e99",
+    name: "AKPENE BRIKU JENNIFER",
+    email: "akpenebrikujennifer@gmail.com",
+    role: "TEACHER",
+    password: "jenny@5858",
+    level: "PRIMARY",
+    classes: ["Primary 3"],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "user-t-reg-1784882532978",
+    name: "Emmanuel Baah Boateng ",
+    email: "baahboateng674@gmail.com",
+    role: "TEACHER",
+    password: "2030",
+    level: "PRIMARY",
+    classes: ["Primary 5"],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "d71154f7-79fc-478e-890f-bfab8336fda8",
+    name: "MOSES NARTEH",
+    email: "MOSESNARTEH72@gmail.com",
+    role: "TEACHER",
+    password: "moses123",
+    level: "PRIMARY",
+    classes: [],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "user-t-reg-1784637715235",
+    name: "DESMOND   AMEYAW",
+    email: "NANAZOE4@GMAIL.COM",
+    role: "TEACHER",
+    password: "we123456",
+    level: "JHS",
+    classes: ["JHS 1"],
+    subjects: ["sub-j-ict"]
+  },
+  {
+    id: "user-t-reg-1789104201932",
+    name: "Odurol emuel appiah",
+    email: "odurolemuelappiah@gmail.com",
+    role: "TEACHER",
+    password: "@Tr_0201036057",
+    level: "JHS",
+    classes: ["JHS 2"],
+    subjects: ["sub-j-sci"]
+  },
+  {
+    id: "user-t-reg-1784706570519",
+    name: "OBED DANSO",
+    email: "OBEDDANSO2013@GMAIL.COM",
+    role: "TEACHER",
+    password: "Portia@13",
+    level: "JHS",
+    classes: ["JHS 3"],
+    subjects: ["sub-j-eng"]
+  },
+  {
+    id: "c2bc65b4-811b-4f3e-bf45-b2bb83c4a9ef",
+    name: "GIDEON BAIDEN",
+    email: "gbnbbaiden@gmail.com",
+    role: "TEACHER",
+    password: "creativearts",
+    level: "JHS",
+    classes: [],
+    subjects: ["sub-j-ca"]
+  },
+  {
+    id: "user-t-reg-1789103869441",
+    name: "Asiam Ohene Joseph",
+    email: "asiamohenejoseph@gmail.com",
+    role: "TEACHER",
+    password: "0413",
+    level: "JHS",
+    classes: [],
+    subjects: ["sub-j-gh", "sub-j-rme"]
+  }
 ];
 
 function getInitialGradeData(): Grade[] {

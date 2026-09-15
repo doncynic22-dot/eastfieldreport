@@ -154,20 +154,162 @@ function broadcastSse(type: string, entity: string, payload?: any) {
 }
 
 const DEFAULT_SERVER_TEACHERS = [
-  { id: "tch-01", name: "Kojo Mensah (Nursery 1)", email: "nursery@eastfield.com", role: "TEACHER", password: "password123", level: "NURSERY", classes: ["Nursery 1"], subjects: ["sub-n-lit", "sub-n-num"] },
-  { id: "tch-n2", name: "Esi Agyeman (Nursery 2)", email: "nursery2@eastfield.com", role: "TEACHER", password: "password123", level: "NURSERY", classes: ["Nursery 2"], subjects: ["sub-n-cr", "sub-n-pho"] },
-  { id: "tch-k1", name: "Akosua Boakye (KG 1)", email: "kg1@eastfield.com", role: "TEACHER", password: "password123", level: "KINDERGARTEN", classes: ["Kindergarten 1"], subjects: ["sub-k-lit", "sub-k-num"] },
-  { id: "tch-k2", name: "Kofi Osei (KG 2)", email: "kg2@eastfield.com", role: "TEACHER", password: "password123", level: "KINDERGARTEN", classes: ["Kindergarten 2"], subjects: ["sub-k-owop", "sub-k-ca"] },
-  { id: "tch-02", name: "Ama Serwaa (Primary 1)", email: "primary@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 1"], subjects: ["sub-p-math", "sub-p-eng"] },
-  { id: "tch-p2", name: "Kwame Nkrumah (Primary 2)", email: "primary2@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 2"], subjects: ["sub-p-math", "sub-p-eng"] },
-  { id: "tch-p3", name: "Abena Darko (Primary 3)", email: "primary3@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 3"], subjects: ["sub-p-math", "sub-p-sci"] },
-  { id: "tch-p4", name: "Yaa Asantewaa (Primary 4)", email: "primary4@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 4"], subjects: ["sub-p-eng", "sub-p-soc"] },
-  { id: "tch-p5", name: "Kofi Addo (Primary 5)", email: "primary5@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 5"], subjects: ["sub-p-math", "sub-p-rme"] },
-  { id: "tch-p6", name: "Adwoa Mansa (Primary 6)", email: "primary6@eastfield.com", role: "TEACHER", password: "password123", level: "PRIMARY", classes: ["Primary 6"], subjects: ["sub-p-eng", "sub-p-ict"] },
-  { id: "tch-03", name: "Kwesi Appiah", email: "jhs@eastfield.com", role: "TEACHER", password: "password123", level: "JHS", classes: [], subjects: ["sub-j-math", "sub-j-ca"] },
-  { id: "tch-04", name: "Abena Gyamfi", email: "jhs2@eastfield.com", role: "TEACHER", password: "password123", level: "JHS", classes: [], subjects: ["sub-j-eng", "sub-j-sci"] },
-  { id: "tch-05", name: "Yaw Asamoah", email: "jhs3@eastfield.com", role: "TEACHER", password: "password123", level: "JHS", classes: [], subjects: ["sub-j-soc", "sub-j-rme"] }
+  {
+    id: "944bccd2-17cc-4dba-8791-2f1c0e0cd63f",
+    name: "Osafo Stephen",
+    email: "jhaycyclone@gmail.com",
+    role: "TEACHER",
+    password: "@Tr_0201036057",
+    level: "NURSERY",
+    classes: ["Nursery 1"],
+    subjects: ["sub-n-cr", "sub-n-lit", "sub-n-num", "sub-n-pho", "sub-n-psy"]
+  },
+  {
+    id: "dadbd6cb-a4da-4c1a-9cc9-52bf05fd4c61",
+    name: "Stephen Osafo ",
+    email: "dailyfacts5567@gmail.com",
+    role: "TEACHER",
+    password: "@Tr_0201036057",
+    level: "NURSERY",
+    classes: ["Nursery 2"],
+    subjects: ["sub-n-cr", "sub-n-lit", "sub-n-num", "sub-n-pho", "sub-n-psy"]
+  },
+  {
+    id: "user-t-reg-1784883215842",
+    name: "Mabel Mawusi",
+    email: "mawusimabel96@gmail.com",
+    role: "TEACHER",
+    password: "ken2",
+    level: "KINDERGARTEN",
+    classes: ["Kindergarten 1"],
+    subjects: ["sub-k-lit", "sub-k-num", "sub-k-owop", "sub-k-ca", "sub-k-wrt"]
+  },
+  {
+    id: "ba136f83-7beb-4d64-b0d6-08e1455157ec",
+    name: "AMADAH PERFECT",
+    email: "amadahperfect@gmail.com",
+    role: "TEACHER",
+    password: "we123456",
+    level: "KINDERGARTEN",
+    classes: ["Kindergarten 2"],
+    subjects: ["sub-k-lit", "sub-k-num", "sub-k-owop", "sub-k-ca", "sub-k-wrt"]
+  },
+  {
+    id: "user-t-reg-1784883616230",
+    name: "Grace Darkoa",
+    email: "adhepagracie@gmail.com",
+    role: "TEACHER",
+    password: "3011",
+    level: "PRIMARY",
+    classes: ["Primary 1"],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "26c36a9d-3782-418e-9757-838efe98b037",
+    name: "OBUO ABIGAIL",
+    email: "OBUOABIGAIL35@GMAIL.COM",
+    role: "TEACHER",
+    password: "we123456",
+    level: "PRIMARY",
+    classes: ["Primary 2"],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "2065ab34-a039-4b14-89a0-a60eaa7e9e99",
+    name: "AKPENE BRIKU JENNIFER",
+    email: "akpenebrikujennifer@gmail.com",
+    role: "TEACHER",
+    password: "jenny@5858",
+    level: "PRIMARY",
+    classes: ["Primary 3"],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "user-t-reg-1784882532978",
+    name: "Emmanuel Baah Boateng ",
+    email: "baahboateng674@gmail.com",
+    role: "TEACHER",
+    password: "2030",
+    level: "PRIMARY",
+    classes: ["Primary 5"],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "d71154f7-79fc-478e-890f-bfab8336fda8",
+    name: "MOSES NARTEH",
+    email: "MOSESNARTEH72@gmail.com",
+    role: "TEACHER",
+    password: "moses123",
+    level: "PRIMARY",
+    classes: [],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "user-t-reg-1784637715235",
+    name: "DESMOND   AMEYAW",
+    email: "NANAZOE4@GMAIL.COM",
+    role: "TEACHER",
+    password: "we123456",
+    level: "JHS",
+    classes: ["JHS 1"],
+    subjects: ["sub-j-ict"]
+  },
+  {
+    id: "user-t-reg-1789104201932",
+    name: "Odurol emuel appiah",
+    email: "odurolemuelappiah@gmail.com",
+    role: "TEACHER",
+    password: "@Tr_0201036057",
+    level: "JHS",
+    classes: ["JHS 2"],
+    subjects: ["sub-j-sci"]
+  },
+  {
+    id: "user-t-reg-1784706570519",
+    name: "OBED DANSO",
+    email: "OBEDDANSO2013@GMAIL.COM",
+    role: "TEACHER",
+    password: "Portia@13",
+    level: "JHS",
+    classes: ["JHS 3"],
+    subjects: ["sub-j-eng"]
+  },
+  {
+    id: "c2bc65b4-811b-4f3e-bf45-b2bb83c4a9ef",
+    name: "GIDEON BAIDEN",
+    email: "gbnbbaiden@gmail.com",
+    role: "TEACHER",
+    password: "creativearts",
+    level: "JHS",
+    classes: [],
+    subjects: ["sub-j-ca"]
+  },
+  {
+    id: "user-t-reg-1789103869441",
+    name: "Asiam Ohene Joseph",
+    email: "asiamohenejoseph@gmail.com",
+    role: "TEACHER",
+    password: "0413",
+    level: "JHS",
+    classes: [],
+    subjects: ["sub-j-gh", "sub-j-rme"]
+  }
 ];
+
+function buildAssignmentsFromTeachers(teachers: any[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  if (!Array.isArray(teachers)) return map;
+  teachers.forEach((t: any) => {
+    if (t && t.role === "TEACHER" && Array.isArray(t.classes) && t.id) {
+      t.classes.forEach((c: any) => {
+        if (c && typeof c === "string") {
+          map[c] = String(t.id);
+        }
+      });
+    }
+  });
+  return map;
+}
 
 function getDefaultDatabase(): ServerDatabase {
   const existingStudents = loadServerStudents();
@@ -209,12 +351,18 @@ function loadServerDatabase(): ServerDatabase {
             parsed.students = fallbackStudents;
           }
         }
-        dbCache = {
+        const loadedDb: ServerDatabase = {
           ...getDefaultDatabase(),
           ...parsed,
           deletedStudentIds: sanitizeDeletedStudentIds(parsed.deletedStudentIds || []),
           students: parsed.rosterCleared ? [] : (parsed.students || []).filter((s: any) => !isDemoStudent(s))
         };
+        const derived = buildAssignmentsFromTeachers(loadedDb.teachers || []);
+        loadedDb.classTeacherAssignments = { ...(loadedDb.classTeacherAssignments || {}), ...derived };
+        if (loadedDb.config) {
+          loadedDb.config.classTeacherAssignments = loadedDb.classTeacherAssignments;
+        }
+        dbCache = loadedDb;
         return dbCache!;
       }
     }
@@ -1020,7 +1168,16 @@ async function startServer() {
 
   // GET /api/sync/all: Retrieve complete school database state
   app.get("/api/sync/all", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
     const db = loadServerDatabase();
+    const derived = buildAssignmentsFromTeachers(db.teachers || []);
+    db.classTeacherAssignments = { ...(db.classTeacherAssignments || {}), ...derived };
+    if (db.config) {
+      db.config.classTeacherAssignments = db.classTeacherAssignments;
+    }
     return res.status(200).json({
       status: "success",
       version: db.version,
@@ -1031,6 +1188,10 @@ async function startServer() {
 
   // POST /api/sync/all: Bulk or partial update to master database
   app.post("/api/sync/all", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
     const incoming = req.body;
     if (!incoming || typeof incoming !== "object") {
       return res.status(400).json({ status: "error", message: "Invalid payload" });
@@ -1039,10 +1200,7 @@ async function startServer() {
     const db = loadServerDatabase();
 
     if (incoming.classTeacherAssignments && typeof incoming.classTeacherAssignments === "object") {
-      db.classTeacherAssignments = {
-        ...(db.classTeacherAssignments || {}),
-        ...incoming.classTeacherAssignments
-      };
+      db.classTeacherAssignments = incoming.classTeacherAssignments;
     }
     if (incoming.config) {
       db.config = {
@@ -1062,10 +1220,6 @@ async function startServer() {
       });
     }
     if (Array.isArray(incoming.teachers)) {
-      if (incoming.teachers.length > 0 && Array.isArray(db.deletedTeacherIds) && db.deletedTeacherIds.length > 0) {
-        const incomingTeacherIds = new Set(incoming.teachers.map((t: any) => String(t.id || t.email || '').toLowerCase().trim()).filter(Boolean));
-        db.deletedTeacherIds = db.deletedTeacherIds.filter(id => !incomingTeacherIds.has(id));
-      }
       const deletedTeacherSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
       db.teachers = incoming.teachers.filter((t: any) => {
         if (t.id && deletedTeacherSet.has(String(t.id).toLowerCase().trim())) return false;
@@ -1073,6 +1227,13 @@ async function startServer() {
         if (t.name && deletedTeacherSet.has(String(t.name).toLowerCase().trim())) return false;
         return true;
       });
+
+      // Synchronize class teacher assignments with incoming teachers
+      const derivedFromIncoming = buildAssignmentsFromTeachers(db.teachers);
+      db.classTeacherAssignments = { ...(db.classTeacherAssignments || {}), ...derivedFromIncoming };
+      if (db.config) {
+        db.config.classTeacherAssignments = db.classTeacherAssignments;
+      }
     }
     if (Array.isArray(incoming.deletedStudentIds)) {
       const sanitizedIncoming = sanitizeDeletedStudentIds(incoming.deletedStudentIds);
@@ -1220,18 +1381,25 @@ async function startServer() {
   // Teachers: GET, POST & DELETE
   app.get("/api/teachers", (req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
     const db = loadServerDatabase();
     const deletedSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
-    if (!Array.isArray(db.teachers) || db.teachers.length === 0) {
+    if (!Array.isArray(db.teachers)) {
       db.teachers = DEFAULT_SERVER_TEACHERS.filter(t => !deletedSet.has(String(t.id).toLowerCase().trim()) && !deletedSet.has(String(t.email).toLowerCase().trim()));
       saveServerDatabase(db, "teachers", db.teachers);
     } else {
       db.teachers = db.teachers.filter(t => !deletedSet.has(String(t.id).toLowerCase().trim()) && !deletedSet.has(String(t.email).toLowerCase().trim()));
     }
-    return res.status(200).json({ status: "success", data: db.teachers, count: db.teachers.length, version: db.version });
+    return res.status(200).json({ status: "success", data: db.teachers, count: db.teachers.length, deletedTeacherIds: db.deletedTeacherIds || [], version: db.version });
   });
 
   app.post("/api/teachers", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
     const teachers = req.body?.teachers || req.body;
     if (!Array.isArray(teachers)) return res.status(400).json({ status: "error", message: "Expected teachers array" });
     const db = loadServerDatabase();
@@ -1242,14 +1410,38 @@ async function startServer() {
       if (t.name && deletedSet.has(String(t.name).toLowerCase().trim())) return false;
       return true;
     });
-    db.teachers = cleanTeachers;
-    saveServerDatabase(db, "teachers", cleanTeachers);
-    console.log(`[Global Teacher Sync] Updated staff registry: ${cleanTeachers.length} staff members.`);
-    return res.status(200).json({ status: "success", count: cleanTeachers.length, version: db.version });
+
+    if (cleanTeachers.length === 1 && Array.isArray(db.teachers) && db.teachers.length > 1) {
+      // Single teacher update / upsert - do not wipe out other teachers!
+      const single = cleanTeachers[0];
+      const idx = db.teachers.findIndex((t: any) => t.id === single.id || (single.email && t.email && t.email.toLowerCase() === single.email.toLowerCase()));
+      if (idx >= 0) {
+        db.teachers[idx] = { ...db.teachers[idx], ...single };
+      } else {
+        db.teachers.push(single);
+      }
+    } else {
+      db.teachers = cleanTeachers;
+    }
+
+    // Auto-update classTeacherAssignments
+    const derived = buildAssignmentsFromTeachers(db.teachers);
+    db.classTeacherAssignments = { ...(db.classTeacherAssignments || {}), ...derived };
+    if (db.config) {
+      db.config.classTeacherAssignments = db.classTeacherAssignments;
+    }
+
+    saveServerDatabase(db, "teachers", db.teachers);
+    broadcastSse("UPDATE", "classTeacherAssignments", db.classTeacherAssignments);
+    console.log(`[Global Teacher Sync] Updated staff registry: ${db.teachers.length} staff members.`);
+    return res.status(200).json({ status: "success", count: db.teachers.length, assignments: db.classTeacherAssignments, version: db.version });
   });
 
   app.delete("/api/teachers/:id", (req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
     const targetId = decodeURIComponent(req.params.id);
     const { email, name } = req.body || {};
     const db = loadServerDatabase();
@@ -1271,23 +1463,42 @@ async function startServer() {
     });
 
     db.teachers = remaining;
+    db.classTeacherAssignments = buildAssignmentsFromTeachers(remaining);
+    if (db.config) {
+      db.config.classTeacherAssignments = db.classTeacherAssignments;
+    }
     saveServerDatabase(db, "teachers", remaining);
+    broadcastSse("DELETE", "teachers", { id: targetId, email, name, remaining, deletedTeacherIds: db.deletedTeacherIds });
+    broadcastSse("UPDATE", "teachers", remaining);
+    broadcastSse("UPDATE", "classTeacherAssignments", db.classTeacherAssignments);
     console.log(`[Global Teacher Sync] Teacher '${targetId}' deleted. Remaining active staff: ${remaining.length}`);
-    return res.status(200).json({ status: "success", count: remaining.length, version: db.version });
+    return res.status(200).json({ status: "success", count: remaining.length, deletedTeacherIds: db.deletedTeacherIds, version: db.version });
   });
 
   // Class Teacher Assignments: GET & POST
   app.get("/api/class-teacher-assignments", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
     const db = loadServerDatabase();
-    const assignments = db.classTeacherAssignments || db.config?.classTeacherAssignments || {};
+    const derived = buildAssignmentsFromTeachers(db.teachers || []);
+    const stored = db.classTeacherAssignments || db.config?.classTeacherAssignments || {};
+    const assignments = { ...stored, ...derived };
+    db.classTeacherAssignments = assignments;
     return res.status(200).json({
       status: "success",
       data: assignments,
+      teachers: db.teachers,
       version: db.version
     });
   });
 
   app.post("/api/class-teacher-assignments", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
     const assignments = req.body?.assignments || req.body;
     if (!assignments || typeof assignments !== "object") {
       return res.status(400).json({ status: "error", message: "Expected assignments object" });
@@ -1318,6 +1529,7 @@ async function startServer() {
     }
 
     saveServerDatabase(db, "classTeacherAssignments", db.classTeacherAssignments);
+    broadcastSse("UPDATE", "teachers", db.teachers);
     console.log("[Class Teacher Sync] Saved assignments on server.");
     return res.status(200).json({
       status: "success",

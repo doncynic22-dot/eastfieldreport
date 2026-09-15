@@ -265,6 +265,28 @@ class GlobalSyncManager {
               } catch (e) {}
             }
 
+            // Merge any deleted teacher IDs from server payload into localStorage
+            const serverDeletedTeacherIds = fresh.deletedTeacherIds || (fresh.data && fresh.data.deletedTeacherIds);
+            if (Array.isArray(serverDeletedTeacherIds) && serverDeletedTeacherIds.length > 0) {
+              try {
+                const savedDel = localStorage.getItem('ea_deleted_teacher_ids');
+                const delArr: string[] = savedDel ? JSON.parse(savedDel) : [];
+                const currentSet = new Set(delArr.map(x => String(x).toLowerCase().trim()));
+                let updated = false;
+                serverDeletedTeacherIds.forEach((id: string) => {
+                  const clean = String(id).toLowerCase().trim();
+                  if (clean && !currentSet.has(clean)) {
+                    delArr.push(clean);
+                    currentSet.add(clean);
+                    updated = true;
+                  }
+                });
+                if (updated) {
+                  localStorage.setItem('ea_deleted_teacher_ids', JSON.stringify(delArr));
+                }
+              } catch (e) {}
+            }
+
             // CRITICAL: NEVER prune student deletion tombstones! Student deletions are permanent.
             // Filter incoming students payload against deleted student tombstones so deleted students are never resurrected
             if (Array.isArray(fullPayload.students)) {
@@ -281,6 +303,28 @@ class GlobalSyncManager {
                     if (roll && (delSet.has(roll) || delSet.has(roll.replace(/[^a-z0-9]/g, '')))) return false;
                     const name = s.name ? String(s.name).toLowerCase().trim() : '';
                     if (name && (delSet.has(name) || delSet.has(name.replace(/[^a-z0-9]/g, '')))) return false;
+                    return true;
+                  });
+                }
+              } catch (e) {}
+            }
+
+            // CRITICAL: NEVER prune teacher deletion tombstones! Teacher deletions are permanent.
+            // Filter incoming teachers payload against deleted teacher tombstones so deleted teachers are never resurrected
+            if (Array.isArray(fullPayload.teachers)) {
+              try {
+                const savedDel = localStorage.getItem('ea_deleted_teacher_ids');
+                const delArr: string[] = savedDel ? JSON.parse(savedDel) : [];
+                if (delArr.length > 0) {
+                  const delSet = new Set(delArr.map(x => String(x).toLowerCase().trim()));
+                  fullPayload.teachers = fullPayload.teachers.filter((t: any) => {
+                    if (!t) return false;
+                    const id = t.id ? String(t.id).toLowerCase().trim() : '';
+                    if (id && (delSet.has(id) || delSet.has(id.replace(/[^a-z0-9]/g, '')))) return false;
+                    const email = t.email ? String(t.email).toLowerCase().trim() : '';
+                    if (email && delSet.has(email)) return false;
+                    const name = t.name ? String(t.name).toLowerCase().trim() : '';
+                    if (name && delSet.has(name)) return false;
                     return true;
                   });
                 }
@@ -400,6 +444,41 @@ export async function syncStudentDeletionToCDN(
 }
 
 /**
+ * Explicit CDN & Server Synchronization when a teacher/staff member is deleted
+ */
+export async function syncTeacherDeletionToCDN(
+  id: string,
+  email?: string,
+  name?: string
+): Promise<boolean> {
+  if (!id && !email && !name) return true;
+  try {
+    const targetIdentifier = encodeURIComponent(id || email || 'unknown');
+    const url = `/api/teachers/${targetIdentifier}?_t=${Date.now()}`;
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: getAntiCacheHeaders(),
+      body: JSON.stringify({ email, name })
+    });
+    if (res.ok) {
+      const json = await res.json().catch(() => ({}));
+      if (json.version) {
+        globalSyncEngine.setVersion(json.version);
+      }
+      console.log(`[CDN Sync Engine] Teacher deletion synchronized with CDN & Server. Target: ${id || email}`);
+      window.dispatchEvent(new CustomEvent('ea_cdn_sync_complete', {
+        detail: { action: 'DELETE_TEACHER', id, email, name, timestamp: new Date().toISOString() }
+      }));
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('[CDN Sync Engine] syncTeacherDeletionToCDN notice:', err);
+    return false;
+  }
+}
+
+/**
  * Explicit CDN & Server Synchronization for attendance
  */
 export async function syncAttendanceToCDN(
@@ -437,22 +516,6 @@ export async function syncTeachersToCDN(teachers: User[]): Promise<boolean> {
   }
 }
 
-/**
- * Explicit CDN & Server Synchronization when a Teacher / Staff is deleted
- */
-export async function syncTeacherDeletionToCDN(id: string, email?: string, name?: string): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/teachers/${encodeURIComponent(id)}?_t=${Date.now()}`, {
-      method: 'DELETE',
-      headers: getAntiCacheHeaders(),
-      body: JSON.stringify({ email, name })
-    });
-    return res.ok;
-  } catch (err) {
-    console.warn('[CDN Sync Engine] syncTeacherDeletionToCDN notice:', err);
-    return false;
-  }
-}
 
 /**
  * Upload any binary file, blob, or base64 data to persistent CDN storage

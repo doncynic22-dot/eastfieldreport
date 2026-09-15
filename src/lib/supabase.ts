@@ -2,7 +2,7 @@ import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabas
 import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord, BookStockItem, BookSaleRecord, DailyAttendanceRecord, DailyAttendanceStatus } from '../types';
 import { DEFAULT_INVENTORY_DATA, DEFAULT_BOOK_STOCK_ITEMS, DEFAULT_BOOK_SALES } from '../data/mockData';
 import { isDemoStudent } from '../data/demoPupils';
-import { fetchServerEntity, saveServerEntity, globalSyncEngine, getAntiCacheHeaders, syncStudentAdditionToCDN, syncStudentDeletionToCDN, uploadAssetToCDN } from './globalSync';
+import { fetchServerEntity, saveServerEntity, pushMasterServerSync, globalSyncEngine, getAntiCacheHeaders, syncStudentAdditionToCDN, syncStudentDeletionToCDN, syncTeacherDeletionToCDN, uploadAssetToCDN } from './globalSync';
 
 // Helper to retrieve credentials from env or localStorage
 export function getSupabaseCredentials() {
@@ -1359,19 +1359,33 @@ export function removeDeletedTeacherId(id: string): void {
   } catch (e) {}
 }
 
-// Global helper to automatically prune deleted tombstones for any records that exist actively
-// NOTE: Student deletion tombstones are PERMANENT and must never be pruned. Only active staff credentials can be reconciled.
-export function pruneDeletedTombstones(_activeStudents: Student[], activeTeachers?: User[]): void {
-  try {
-    if (Array.isArray(activeTeachers) && activeTeachers.length > 0) {
-      const activeTIds = new Set(activeTeachers.map(t => String(t.id).toLowerCase().trim()));
-      const currentT = getDeletedTeacherIds();
-      const prunedT = currentT.filter(id => !activeTIds.has(String(id).toLowerCase().trim()));
-      if (prunedT.length !== currentT.length) {
-        localStorage.setItem('ea_deleted_teacher_ids', JSON.stringify(prunedT));
-      }
-    }
-  } catch (e) {}
+export function isTeacherDeleted(teacher?: { id?: string; email?: string; name?: string } | null): boolean {
+  if (!teacher) return false;
+  const deleted = getDeletedTeacherIds();
+  if (deleted.length === 0) return false;
+  const deletedSet = new Set(deleted.map(x => String(x).toLowerCase().trim()));
+
+  if (teacher.id) {
+    const cleanId = String(teacher.id).toLowerCase().trim();
+    if (deletedSet.has(cleanId)) return true;
+    const alphaId = cleanId.replace(/[^a-z0-9]/g, '');
+    if (alphaId && deletedSet.has(alphaId)) return true;
+  }
+  if (teacher.email) {
+    const cleanEmail = String(teacher.email).toLowerCase().trim();
+    if (deletedSet.has(cleanEmail)) return true;
+  }
+  if (teacher.name) {
+    const cleanName = String(teacher.name).toLowerCase().trim();
+    if (deletedSet.has(cleanName)) return true;
+  }
+  return false;
+}
+
+// Global helper to automatically prune deleted tombstones
+// NOTE: Both pupil and staff deletion tombstones are PERMANENT and must never be pruned automatically.
+export function pruneDeletedTombstones(_activeStudents: Student[], _activeTeachers?: User[]): void {
+  // Retain permanent tombstones. Deletions are authoritative and must never be undone by stale reads.
 }
 
 // 2. SYNC STUDENTS
@@ -1908,18 +1922,36 @@ export async function clearAllSupabaseStudents(): Promise<boolean> {
 
 // 3. SYNC TEACHERS / USERS
 export async function fetchSupabaseTeachers(): Promise<User[] | null> {
-  const deletedTeacherIds = new Set(getDeletedTeacherIds());
+  const client = getSupabaseClient();
+
+  // 1. Sync remote tombstones from ea_deleted_records for teachers
+  if (client) {
+    try {
+      const { data: delRecords } = await client
+        .from('ea_deleted_records')
+        .select('*')
+        .eq('record_type', 'TEACHER')
+        .order('deleted_at', { ascending: false })
+        .limit(200);
+      if (delRecords && Array.isArray(delRecords)) {
+        delRecords.forEach((row: any) => {
+          const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
+          recordDeletedTeacherId(row.record_id || details.id, details.email, row.name || details.name);
+        });
+      }
+    } catch (delErr) {}
+  }
+
   const filterDeleted = (list: User[]) => {
-    if (deletedTeacherIds.size === 0) return list;
-    return list.filter(t => !deletedTeacherIds.has(t.id));
+    return list.filter(t => !isTeacherDeleted(t));
   };
 
-  const client = getSupabaseClient();
   if (!client) {
     const serverTeachers = await fetchServerEntity<User[]>('/teachers');
     if (serverTeachers && serverTeachers.length > 0) {
-      localStorage.setItem('ea_teachers', JSON.stringify(serverTeachers));
-      return filterDeleted(serverTeachers);
+      const clean = filterDeleted(serverTeachers);
+      localStorage.setItem('ea_teachers', JSON.stringify(clean));
+      return clean;
     }
     const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
     if (cached) {
@@ -1935,8 +1967,9 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
     if (error) {
       const serverTeachers = await fetchServerEntity<User[]>('/teachers');
       if (serverTeachers && serverTeachers.length > 0) {
-        localStorage.setItem('ea_teachers', JSON.stringify(serverTeachers));
-        return filterDeleted(serverTeachers);
+        const clean = filterDeleted(serverTeachers);
+        localStorage.setItem('ea_teachers', JSON.stringify(clean));
+        return clean;
       }
       if (isMissingTableOrConnectionError(error)) {
         const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
@@ -1953,8 +1986,9 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
     if (!data || data.length === 0) {
       const serverTeachers = await fetchServerEntity<User[]>('/teachers');
       if (serverTeachers && serverTeachers.length > 0) {
-        localStorage.setItem('ea_teachers', JSON.stringify(serverTeachers));
-        return filterDeleted(serverTeachers);
+        const clean = filterDeleted(serverTeachers);
+        localStorage.setItem('ea_teachers', JSON.stringify(clean));
+        return clean;
       }
       return null;
     }
@@ -1975,14 +2009,14 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
       ghanaCardNumber: item.ghana_card_number || item.ghanaCardNumber || undefined,
     }));
 
-    // Remote database is authoritative for teachers
-    const activeTeacherIds = new Set(mapped.map(t => String(t.id).toLowerCase().trim()));
-    const curDelT = getDeletedTeacherIds();
-    const prunedT = curDelT.filter(id => !activeTeacherIds.has(String(id).toLowerCase().trim()));
-    if (prunedT.length !== curDelT.length) {
-      try {
-        localStorage.setItem('ea_deleted_teacher_ids', JSON.stringify(prunedT));
-      } catch (e) {}
+    // If remote database still has records that are deleted tombstones, purge them from remote
+    const deletedInMapped = mapped.filter(t => isTeacherDeleted(t));
+    if (deletedInMapped.length > 0) {
+      const delIds = deletedInMapped.map(t => t.id).filter(Boolean);
+      if (delIds.length > 0) {
+        client.from('ea_teachers').delete().in('id', delIds).then(() => {}, () => {});
+        try { client.from('ea_teacher').delete().in('id', delIds).then(() => {}, () => {}); } catch (e) {}
+      }
     }
 
     const cleanTeachers = filterDeleted(mapped);
@@ -1994,8 +2028,9 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
   } catch (err: any) {
     const serverTeachers = await fetchServerEntity<User[]>('/teachers');
     if (serverTeachers && serverTeachers.length > 0) {
-      localStorage.setItem('ea_teachers', JSON.stringify(serverTeachers));
-      return filterDeleted(serverTeachers);
+      const clean = filterDeleted(serverTeachers);
+      localStorage.setItem('ea_teachers', JSON.stringify(clean));
+      return clean;
     }
     if (isMissingTableOrConnectionError(err)) {
       const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
@@ -2011,17 +2046,19 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
 }
 
 export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
-  // Always persist to local cache immediately to guarantee offline/local persistence
-  localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(teachers));
-  localStorage.setItem('ea_teachers', JSON.stringify(teachers));
+  const cleanTeachers = teachers.filter(t => !isTeacherDeleted(t));
+
+  // Always persist clean teachers to local cache immediately
+  localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(cleanTeachers));
+  localStorage.setItem('ea_teachers', JSON.stringify(cleanTeachers));
 
   // Persist to central server database and broadcast to other devices
-  saveServerEntity('/teachers', teachers).catch(e => console.warn('[Server Sync Teachers Notice]', e));
+  saveServerEntity('/teachers', cleanTeachers).catch(e => console.warn('[Server Sync Teachers Notice]', e));
 
   const client = getSupabaseClient();
   if (!client) return true;
   try {
-    const payloads = teachers.map(t => ({
+    const payloads = cleanTeachers.map(t => ({
       id: t.id,
       name: t.name,
       email: t.email,
@@ -2048,18 +2085,25 @@ export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
 
     // Prune deleted teachers safely
     try {
-      if (teachers.length === 0) {
+      const deletedIds = getDeletedTeacherIds();
+      if (deletedIds.length > 0) {
+        await client.from('ea_teachers').delete().in('id', deletedIds);
+        try { await client.from('ea_teacher').delete().in('id', deletedIds); } catch (e) {}
+      }
+
+      if (cleanTeachers.length === 0) {
         await client.from('ea_teachers').delete().not('id', 'is', null);
       } else {
         const { data: existingRows } = await client.from('ea_teachers').select('id');
         if (existingRows && existingRows.length > 0) {
-          const activeIds = new Set(teachers.map(t => String(t.id)));
+          const activeIds = new Set(cleanTeachers.map(t => String(t.id)));
           const toDeleteIds = existingRows
             .filter(row => !activeIds.has(String(row.id)))
             .map(row => row.id)
             .filter(Boolean);
           if (toDeleteIds.length > 0) {
             await client.from('ea_teachers').delete().in('id', toDeleteIds);
+            try { await client.from('ea_teacher').delete().in('id', toDeleteIds); } catch (e) {}
           }
         }
       }
@@ -2130,6 +2174,12 @@ export async function saveSingleSupabaseTeacher(teacher: User): Promise<boolean>
     const { error } = await safeUpsert('ea_teachers', [payload], client, 'id');
     try {
       await client.from('ea_teacher').upsert([payload], { onConflict: 'id' });
+    } catch (e) {}
+
+    // Unblock from tombstones if explicitly registered anew
+    removeDeletedTeacherId(teacher.id);
+    try {
+      await client.from('ea_deleted_records').delete().eq('record_type', 'TEACHER').eq('record_id', teacher.id);
     } catch (e) {}
 
     try {
@@ -2382,30 +2432,82 @@ export async function deleteSupabaseStudent(id: string, rollNumber?: string, stu
 }
 
 export async function deleteSupabaseTeacher(id: string, email?: string, name?: string): Promise<boolean> {
-  if (!id && !email) return true;
+  if (!id && !email && !name) return true;
   recordDeletedTeacherId(id, email, name);
 
+  let updatedTeachers: User[] = [];
   try {
     const cached = localStorage.getItem('mock_supabase_ea_teachers') || localStorage.getItem('ea_teachers');
     if (cached) {
       const teachers = JSON.parse(cached) as User[];
-      const updated = teachers.filter(t => {
-        if (t.id === id) return false;
-        if (email && t.email.toLowerCase() === email.toLowerCase()) return false;
-        return true;
-      });
-      localStorage.setItem('ea_teachers', JSON.stringify(updated));
-      localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(updated));
+      updatedTeachers = teachers.filter(t => !isTeacherDeleted(t));
+      localStorage.setItem('ea_teachers', JSON.stringify(updatedTeachers));
+      localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(updatedTeachers));
     }
+
+    // Clean up class teacher assignments if assigned
+    const rawConfig = localStorage.getItem('ea_config');
+    if (rawConfig) {
+      const cfg = JSON.parse(rawConfig);
+      if (cfg && cfg.classTeacherAssignments) {
+        let changed = false;
+        for (const [cls, tId] of Object.entries(cfg.classTeacherAssignments)) {
+          if (tId === id || (email && String(tId).toLowerCase() === email.toLowerCase())) {
+            delete cfg.classTeacherAssignments[cls];
+            changed = true;
+          }
+        }
+        if (changed) {
+          localStorage.setItem('ea_config', JSON.stringify(cfg));
+          try {
+            localStorage.setItem('ea_class_teacher_assignments', JSON.stringify(cfg.classTeacherAssignments));
+          } catch (e) {}
+        }
+      }
+    }
+
     window.dispatchEvent(new Event('storage'));
     window.dispatchEvent(new Event('ea_teachers_updated'));
+    window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: updatedTeachers }));
   } catch (e) {}
 
+  // 1. Immediately synchronize deletion with server API & CDN
+  syncTeacherDeletionToCDN(id, email, name).catch(e => console.warn('[CDN syncTeacherDeletionToCDN]', e));
+
+  // 2. Broadcast across local tabs & devices
+  broadcastGlobalSync('ea_teachers', { id, email, name, action: 'DELETE' });
+  broadcastSync('teachers', { id, email, name }, 'delete');
+
+  // 3. Immediately push deletion to master server sync
+  globalSyncEngine.pushMasterServerSync({
+    deletedTeacherIds: getDeletedTeacherIds(),
+    teachers: updatedTeachers
+  }).catch(() => {});
+
+  // 4. Delete directly from Supabase tables and write audit log
   const client = getSupabaseClient();
   if (client) {
     try {
-      if (id) await client.from('ea_teachers').delete().eq('id', id);
-      if (email) await client.from('ea_teachers').delete().ilike('email', email);
+      if (id) {
+        await client.from('ea_teachers').delete().eq('id', id);
+        try { await client.from('ea_teacher').delete().eq('id', id); } catch (e) {}
+      }
+      if (email) {
+        await client.from('ea_teachers').delete().ilike('email', email.trim());
+        try { await client.from('ea_teacher').delete().ilike('email', email.trim()); } catch (e) {}
+      }
+
+      // Record in ea_deleted_records for other devices to discover on poll/sync
+      try {
+        await client.from('ea_deleted_records').upsert([{
+          id: `del_tch_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          record_type: 'TEACHER',
+          record_id: id || email || '',
+          name: name || email || id || null,
+          details: { id, email, name, timestamp: new Date().toISOString() },
+          deleted_at: new Date().toISOString()
+        }]);
+      } catch (delErr) {}
 
       try {
         await client.from('ea_sync_logs').insert([{
@@ -2874,7 +2976,7 @@ export async function saveSupabaseDailyAttendance(records: DailyAttendanceRecord
   if (!client) return true;
   try {
     const payloads = records.map(r => ({
-      id: r.id || `att-${r.studentId}-${r.date}-${Date.now()}`,
+      id: r.id || `att-${r.studentId}-${r.date}`,
       student_id: r.studentId,
       date: r.date,
       status: r.status,
@@ -2883,14 +2985,121 @@ export async function saveSupabaseDailyAttendance(records: DailyAttendanceRecord
       teacher_id: r.teacherId || 'admin',
       updated_at: r.updatedAt || new Date().toISOString()
     }));
-    const { error } = await safeUpsert('ea_daily_attendance', payloads, client, 'id');
-    if (error) {
-      console.warn('Supabase saveSupabaseDailyAttendance notice:', error);
-      return true;
+    
+    // Chunk in parallel batches of 100 for fast multi-record throughput
+    const chunks: any[][] = [];
+    for (let i = 0; i < payloads.length; i += 100) {
+      chunks.push(payloads.slice(i, i + 100));
     }
+    await Promise.all(
+      chunks.map(chunk => safeUpsert('ea_daily_attendance', chunk, client, 'id'))
+    );
     return true;
   } catch (err) {
     console.warn('Supabase saveSupabaseDailyAttendance exception:', err);
+    return true;
+  }
+}
+
+/**
+ * Ultra-fast prioritized synchronization for Attendance Register submissions.
+ * Directly upserts today's modified daily records and affected term attendance to Supabase
+ * in parallel, with zero blocking overhead and immediate local responsiveness.
+ */
+export async function fastSyncAttendanceRegister(
+  changedDailyRecords: DailyAttendanceRecord[],
+  affectedTermAttendance: Attendance[],
+  allDailyRecords?: DailyAttendanceRecord[],
+  allTermAttendance?: Attendance[]
+): Promise<boolean> {
+  // Always persist local cache first to guarantee zero data loss
+  try {
+    if (allDailyRecords) {
+      localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(allDailyRecords));
+      localStorage.setItem('ea_daily_attendance', JSON.stringify(allDailyRecords));
+      broadcastSync('daily_attendance', allDailyRecords, 'update');
+      window.dispatchEvent(new CustomEvent('ea_daily_attendance_updated', { detail: allDailyRecords }));
+    }
+    if (allTermAttendance) {
+      localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(allTermAttendance));
+      localStorage.setItem('ea_attendance', JSON.stringify(allTermAttendance));
+      broadcastSync('attendance', allTermAttendance, 'update');
+      window.dispatchEvent(new CustomEvent('ea_attendance_updated', { detail: allTermAttendance }));
+    }
+  } catch (e) {}
+
+  // Server entities & master sync in background
+  if (allDailyRecords) {
+    saveServerEntity('/daily-attendance', allDailyRecords).catch(() => {});
+  } else if (changedDailyRecords.length > 0) {
+    saveServerEntity('/daily-attendance', changedDailyRecords).catch(() => {});
+  }
+
+  if (allTermAttendance) {
+    saveServerEntity('/attendance', allTermAttendance).catch(() => {});
+  } else if (affectedTermAttendance.length > 0) {
+    saveServerEntity('/attendance', affectedTermAttendance).catch(() => {});
+  }
+
+  if (allDailyRecords && allTermAttendance) {
+    pushMasterServerSync({ attendance: allTermAttendance, dailyAttendance: allDailyRecords }).catch(() => {});
+  }
+
+  const client = getSupabaseClient();
+  if (!client) return true;
+
+  try {
+    const fastPromises: Promise<any>[] = [];
+
+    // 1. Direct high-speed upsert of today's changed daily records to Supabase
+    if (changedDailyRecords.length > 0) {
+      const dailyPayloads = changedDailyRecords.map(r => ({
+        id: r.id || `att-${r.studentId}-${r.date}`,
+        student_id: r.studentId,
+        date: r.date,
+        status: r.status,
+        term: r.term || 'Term 1',
+        year: r.year || '2026/2027',
+        teacher_id: r.teacherId || 'admin',
+        updated_at: r.updatedAt || new Date().toISOString()
+      }));
+      // Upsert directly in parallel chunks
+      for (let i = 0; i < dailyPayloads.length; i += 100) {
+        fastPromises.push(safeUpsert('ea_daily_attendance', dailyPayloads.slice(i, i + 100), client, 'id'));
+      }
+    }
+
+    // 2. Direct high-speed upsert of affected students' term attendance
+    if (affectedTermAttendance.length > 0) {
+      const termPayloads = affectedTermAttendance.map(a => ({
+        student_id: a.studentId,
+        term: a.term || 'Term 1',
+        year: a.year || '2026/2027',
+        total_days: a.totalDays,
+        days_present: a.daysPresent,
+        remarks: a.remarks,
+        teacher_id: a.teacherId,
+        updated_at: a.updatedAt || new Date().toISOString()
+      }));
+      for (let i = 0; i < termPayloads.length; i += 120) {
+        fastPromises.push(safeUpsert('ea_attendance', termPayloads.slice(i, i + 120), client, 'student_id,term,year'));
+      }
+    }
+
+    // Await the targeted high-priority records first (completes in ~100-200ms)
+    await Promise.all(fastPromises);
+
+    // 3. In background, ensure full arrays are synced if provided
+    if (allDailyRecords && allDailyRecords.length > changedDailyRecords.length) {
+      saveSupabaseDailyAttendance(allDailyRecords).catch(() => {});
+    }
+    if (allTermAttendance && allTermAttendance.length > affectedTermAttendance.length) {
+      saveSupabaseAttendance(allTermAttendance).catch(() => {});
+    }
+
+    return true;
+  } catch (err) {
+    console.warn('[fastSyncAttendanceRegister] Exception:', err);
     return true;
   }
 }
@@ -5318,6 +5527,9 @@ export function subscribeToGlobalRealtime(callbacks: RealtimeSyncCallbacks = {})
             const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
             if (row.record_type === 'STUDENT') {
               recordDeletedStudentId(row.record_id || details.id, row.roll_number || details.rollNumber, row.name || details.studentName);
+            } else if (row.record_type === 'TEACHER') {
+              recordDeletedTeacherId(row.record_id || details.id, details.email, row.name || details.name);
+              window.dispatchEvent(new Event('ea_teachers_updated'));
             } else if (row.record_type === 'BOOK_STOCK' || row.record_type === 'TEXTBOOK') {
               recordDeletedBookStockId(row.record_id || details.id);
               window.dispatchEvent(new Event('ea_book_stock_updated'));
@@ -5329,10 +5541,21 @@ export function subscribeToGlobalRealtime(callbacks: RealtimeSyncCallbacks = {})
             if (row.action_type === 'DELETE_STUDENT') {
               const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
               recordDeletedStudentId(details.id || details.studentId, details.rollNumber, details.studentName || details.name);
+            } else if (row.action_type === 'DELETE_TEACHER') {
+              const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
+              recordDeletedTeacherId(details.id || details.teacherId || row.record_id, details.email, details.name);
+              window.dispatchEvent(new Event('ea_teachers_updated'));
             } else if (row.action_type === 'DELETE_BOOK_STOCK') {
               const details = typeof row.details === 'string' ? JSON.parse(row.details) : (row.details || {});
               recordDeletedBookStockId(details.id || row.record_id);
               window.dispatchEvent(new Event('ea_book_stock_updated'));
+            }
+          }
+
+          if (table === 'ea_teachers' && (payload.eventType === 'DELETE' || payload.event === 'DELETE')) {
+            if (payload.old) {
+              recordDeletedTeacherId(payload.old.id, payload.old.email, payload.old.name);
+              window.dispatchEvent(new Event('ea_teachers_updated'));
             }
           }
 

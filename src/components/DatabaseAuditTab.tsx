@@ -23,7 +23,8 @@ import {
   saveSupabaseAttendance,
   saveSupabaseStudents,
   saveSupabaseTeachers,
-  isStudentDeleted
+  isStudentDeleted,
+  isTeacherDeleted
 } from '../lib/supabase';
 import { globalSyncEngine } from '../lib/globalSync';
 import { deduplicateStudents } from '../services/promotionService';
@@ -187,10 +188,10 @@ export default function DatabaseAuditTab({
       // 4. Bidirectional teacher merge
       const teacherMap = new Map<string, User>();
       (remoteTeachers || []).forEach(t => {
-        if (t && t.id) teacherMap.set(t.id, t);
+        if (t && t.id && !isTeacherDeleted(t)) teacherMap.set(t.id, t);
       });
       (localTeachersList || []).forEach(t => {
-        if (t && t.id && !teacherMap.has(t.id)) teacherMap.set(t.id, t);
+        if (t && t.id && !isTeacherDeleted(t) && !teacherMap.has(t.id)) teacherMap.set(t.id, t);
       });
       const reconciledTeachers = Array.from(teacherMap.values());
 

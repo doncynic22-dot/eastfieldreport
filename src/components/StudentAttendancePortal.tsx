@@ -45,7 +45,7 @@ import {
   X
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import { saveSupabaseAttendance, saveSupabaseDailyAttendance, fetchSupabaseAttendance, fetchSupabaseDailyAttendance } from '../lib/supabase';
+import { saveSupabaseAttendance, saveSupabaseDailyAttendance, fastSyncAttendanceRegister, fetchSupabaseAttendance, fetchSupabaseDailyAttendance } from '../lib/supabase';
 import { calculateStudentTermAttendance } from '../utils/attendanceUtils';
 import { pushMasterServerSync, syncAttendanceToCDN } from '../lib/globalSync';
 
@@ -468,6 +468,7 @@ export default function StudentAttendancePortal({
       updatedDaily = [...baseDaily];
       updatedDaily[existingIdx] = {
         ...updatedDaily[existingIdx],
+        id: updatedDaily[existingIdx].id || `att-${sid}-${selectedDate}`,
         status,
         term: currentTerm,
         year: currentYear,
@@ -476,7 +477,7 @@ export default function StudentAttendancePortal({
       };
     } else {
       const newRecord: DailyAttendanceRecord = {
-        id: `att-${sid}-${selectedDate}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        id: `att-${sid}-${selectedDate}`,
         studentId: sid,
         date: selectedDate,
         status,
@@ -580,7 +581,7 @@ export default function StudentAttendancePortal({
       r => !(filteredStudents.some(s => s.id === r.studentId || s.rollNumber === r.studentId) && r.date === selectedDate)
     );
     const newRecords = filteredStudents.map(student => ({
-      id: `att-${student.id}-${selectedDate}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: `att-${student.id}-${selectedDate}`,
       studentId: student.id,
       date: selectedDate,
       status,
@@ -694,45 +695,50 @@ export default function StudentAttendancePortal({
     setSaveSuccessMessage('');
 
     try {
-      const currentYear = config.schoolYear;
-      const currentTerm = config.term;
+      const currentYear = config.schoolYear || '2026/2027';
+      const currentTerm = config.term || 'Term 1';
 
       // 1. Ensure all viewed students on the selectedDate have an explicit daily record
       const updatedDailyAttendance = [...dailyAttendance];
+      const newlySubmittedDailyRecords: DailyAttendanceRecord[] = [];
+
       targetStudents.forEach(student => {
-        const existingIdx = updatedDailyAttendance.findIndex(
-          r => r.studentId === student.id && r.date === selectedDate
-        );
+        const cleanSid = (student.id || '').trim().toLowerCase();
+        const cleanRoll = (student.rollNumber || '').trim().toLowerCase();
+        const existingIdx = updatedDailyAttendance.findIndex(r => {
+          if ((r.date || '').trim() !== selectedDate) return false;
+          const rSid = (r.studentId || '').trim().toLowerCase();
+          return rSid === cleanSid || (cleanRoll && rSid === cleanRoll);
+        });
+
         const currentStatus = getStudentStatusForDate(student.id);
+        const recordId = (existingIdx >= 0 && updatedDailyAttendance[existingIdx].id)
+          ? updatedDailyAttendance[existingIdx].id
+          : `att-${student.id}-${selectedDate}`;
+
+        const dailyRecord: DailyAttendanceRecord = {
+          id: recordId,
+          studentId: student.id,
+          date: selectedDate,
+          status: currentStatus,
+          term: currentTerm,
+          year: currentYear,
+          teacherId: currentUser?.id || 'admin',
+          updatedAt: new Date().toISOString()
+        };
 
         if (existingIdx >= 0) {
-          updatedDailyAttendance[existingIdx] = {
-            ...updatedDailyAttendance[existingIdx],
-            status: currentStatus,
-            term: currentTerm,
-            year: currentYear,
-            teacherId: currentUser?.id || 'admin',
-            updatedAt: new Date().toISOString()
-          };
+          updatedDailyAttendance[existingIdx] = dailyRecord;
         } else {
-          updatedDailyAttendance.push({
-            id: `att-${student.id}-${selectedDate}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            studentId: student.id,
-            date: selectedDate,
-            status: currentStatus,
-            term: currentTerm,
-            year: currentYear,
-            teacherId: currentUser?.id || 'admin',
-            updatedAt: new Date().toISOString()
-          });
+          updatedDailyAttendance.push(dailyRecord);
         }
+        newlySubmittedDailyRecords.push(dailyRecord);
       });
-
-      setDailyAttendance(updatedDailyAttendance);
 
       // 2. Calculate each student's term attendance:
       // Strictly count days marked PRESENT against total days attendance was marked for the term
       const updatedAttendance = [...attendance];
+      const affectedTermAttendance: Attendance[] = [];
 
       students.forEach(student => {
         const calc = calculateStudentTermAttendance(
@@ -744,8 +750,15 @@ export default function StudentAttendancePortal({
           students
         );
 
+        const cleanSid = (student.id || '').trim().toLowerCase();
+        const cleanRoll = (student.rollNumber || '').trim().toLowerCase();
         const attIdx = updatedAttendance.findIndex(
-          a => a.studentId === student.id && (!a.term || a.term === currentTerm) && (!a.year || a.year === currentYear)
+          a => {
+            const aSid = (a.studentId || '').trim().toLowerCase();
+            return (aSid === cleanSid || (cleanRoll && aSid === cleanRoll)) &&
+              (!a.term || a.term.toLowerCase() === currentTerm.toLowerCase()) &&
+              (!a.year || a.year === currentYear);
+          }
         );
 
         const attRecord: Attendance = {
@@ -764,31 +777,49 @@ export default function StudentAttendancePortal({
         } else if (calc.totalDays > 0) {
           updatedAttendance.push(attRecord);
         }
+
+        if (targetStudents.some(ts => ts.id === student.id)) {
+          affectedTermAttendance.push(attRecord);
+        }
       });
 
+      // 3. Immediately commit to React state and localStorage (zero UI blocking)
+      setDailyAttendance(updatedDailyAttendance);
       setAttendance(updatedAttendance);
 
-      // Save locally to multiple fallback keys for zero data loss
       try {
         localStorage.setItem('ea_daily_attendance', JSON.stringify(updatedDailyAttendance));
+        localStorage.setItem('mock_supabase_ea_daily_attendance', JSON.stringify(updatedDailyAttendance));
         localStorage.setItem('ea_attendance', JSON.stringify(updatedAttendance));
         localStorage.setItem('mock_supabase_ea_attendance', JSON.stringify(updatedAttendance));
       } catch (e) {
         console.warn('Local storage write warning', e);
       }
 
-      // Save to Cloud Supabase & broadcast master server sync
-      await Promise.allSettled([
-        saveSupabaseAttendance(updatedAttendance),
-        saveSupabaseDailyAttendance(updatedDailyAttendance),
-        pushMasterServerSync({ attendance: updatedAttendance, dailyAttendance: updatedDailyAttendance })
-      ]);
+      // Dispatch instant custom events so summary bars and report cards update in 0ms
+      window.dispatchEvent(new CustomEvent('ea_daily_attendance_updated', { detail: updatedDailyAttendance }));
+      window.dispatchEvent(new CustomEvent('ea_attendance_updated', { detail: updatedAttendance }));
 
       const classLabel = selectedClass === 'ALL' ? 'All Academy Classes' : selectedClass;
       setSaveSuccessMessage(
         `Attendance Register for ${classLabel} (${selectedDate}) has been successfully submitted and saved! Terminal report cards have been updated.`
       );
       setSubmittedSuccessfully(true);
+      setIsSubmittingRegister(false);
+
+      // 4. Ultra-fast prioritized synchronization directly with Supabase Cloud
+      fastSyncAttendanceRegister(
+        newlySubmittedDailyRecords,
+        affectedTermAttendance,
+        updatedDailyAttendance,
+        updatedAttendance
+      ).then(() => {
+        setSaveSuccessMessage(
+          `Attendance Register for ${classLabel} (${selectedDate}) successfully submitted, recorded in Supabase, and synced!`
+        );
+      }).catch(syncErr => {
+        console.warn('[Attendance Portal] Supabase fast sync warning:', syncErr);
+      });
 
       setTimeout(() => {
         setSubmittedSuccessfully(false);
@@ -801,12 +832,11 @@ export default function StudentAttendancePortal({
       console.error('Error submitting attendance register:', error);
       setSaveSuccessMessage('Attendance register saved locally. Changes will sync to cloud when connected.');
       setSubmittedSuccessfully(true);
+      setIsSubmittingRegister(false);
       setTimeout(() => {
         setSubmittedSuccessfully(false);
         setSaveSuccessMessage('');
       }, 5000);
-    } finally {
-      setIsSubmittingRegister(false);
     }
   };
 

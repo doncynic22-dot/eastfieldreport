@@ -8,7 +8,7 @@
  */
 
 import { User, ReportConfig } from '../types';
-import { saveSupabaseTeachers, saveSupabaseConfig, broadcastSync, broadcastGlobalSync } from '../lib/supabase';
+import { saveSupabaseTeachers, saveSupabaseConfig, broadcastSync, broadcastGlobalSync, isTeacherDeleted, getDeletedTeacherIds } from '../lib/supabase';
 import { saveServerEntity, fetchServerEntity, pushMasterServerSync } from '../lib/globalSync';
 
 export const CLASS_TEACHER_ASSIGNMENTS_KEY = 'ea_class_teacher_assignments';
@@ -63,8 +63,9 @@ export function getClassTeacherAssignments(fallbackTeachers?: User[]): Record<st
   // Fallback 2: reconstruct from active teachers list if provided
   const reconstructed: Record<string, string> = {};
   if (Array.isArray(fallbackTeachers) && fallbackTeachers.length > 0) {
+    const cleanTeachers = fallbackTeachers.filter(tch => !isTeacherDeleted(tch));
     ALL_STANDARD_CLASSROOMS.forEach(cls => {
-      const t = fallbackTeachers.find(tch => tch.role === 'TEACHER' && tch.classes?.includes(cls));
+      const t = cleanTeachers.find(tch => tch.role === 'TEACHER' && tch.classes?.includes(cls));
       if (t && t.id) {
         reconstructed[cls] = t.id;
       }
@@ -108,27 +109,41 @@ export function saveClassTeacherAssignmentsLocally(map: Record<string, string>):
 /**
  * Reconcile a list of teachers with the authoritative assignments map.
  * Guarantees that:
- * 1. For each assigned class, the selected teacher has that class in their `classes` array.
- * 2. No other teacher has that class in their `classes` array.
- * 3. Unassigned classes are cleared from all teachers.
+ * 1. Deleted teachers are filtered out immediately and permanently.
+ * 2. For each assigned class, the selected teacher has that class in their `classes` array.
+ * 3. No other teacher has that class in their `classes` array.
+ * 4. Unassigned classes are cleared from all teachers.
  */
 export function reconcileTeachersWithClassAssignments(
   teachers: User[],
   customAssignments?: Record<string, string>
 ): User[] {
-  if (!Array.isArray(teachers) || teachers.length === 0) return teachers;
+  if (!Array.isArray(teachers)) return [];
 
-  const assignments = customAssignments && Object.keys(customAssignments).length > 0
+  // Exclude any deleted staff members
+  const cleanTeachers = teachers.filter(t => !isTeacherDeleted(t));
+  if (cleanTeachers.length === 0) return [];
+
+  const rawAssignments = customAssignments && Object.keys(customAssignments).length > 0
     ? customAssignments
-    : getClassTeacherAssignments(teachers);
+    : getClassTeacherAssignments(cleanTeachers);
 
-  if (!assignments || Object.keys(assignments).length === 0) {
-    return teachers;
+  if (!rawAssignments || Object.keys(rawAssignments).length === 0) {
+    return cleanTeachers;
   }
+
+  // Purge any assignments pointing to deleted staff members
+  const deletedSet = new Set(getDeletedTeacherIds().map(x => String(x).toLowerCase().trim()));
+  const assignments: Record<string, string> = {};
+  Object.entries(rawAssignments).forEach(([cls, teacherId]) => {
+    if (teacherId && !deletedSet.has(String(teacherId).toLowerCase().trim())) {
+      assignments[cls] = teacherId;
+    }
+  });
 
   const assignedClassesSet = new Set(Object.keys(assignments));
 
-  return teachers.map(t => {
+  return cleanTeachers.map(t => {
     // If not a teacher, keep unchanged
     if (t.role !== 'TEACHER') return t;
 
@@ -221,23 +236,18 @@ export async function assignClassTeacherDirectly(
       broadcastGlobalSync('ea_teachers', { action: 'UPDATE', teachers: updatedTeachers });
     }
 
-    // 6. Push to Master Server persistent database (/api/teachers & /api/sync/all)
-    saveServerEntity('/teachers', updatedTeachers).catch(e => {
-      console.warn('[ClassTeacherService] Master server teacher push error:', e);
-    });
-    saveServerEntity('/class-teacher-assignments', assignments).catch(e => {
-      console.warn('[ClassTeacherService] Master server assignments push error:', e);
-    });
-    pushMasterServerSync({
-      teachers: updatedTeachers,
-      classTeacherAssignments: assignments,
-      config: updatedConfig
-    }).catch(e => {
-      console.warn('[ClassTeacherService] Push master server sync notice:', e);
-    });
-
-    // 7. Push to Supabase ea_teachers table
-    const supabaseSuccess = await saveSupabaseTeachers(updatedTeachers);
+    // 6. Push to Master Server persistent database (/api/teachers & /api/sync/all) and Supabase
+    await Promise.allSettled([
+      saveServerEntity('/class-teacher-assignments', assignments),
+      saveServerEntity('/teachers', updatedTeachers),
+      pushMasterServerSync({
+        teachers: updatedTeachers,
+        classTeacherAssignments: assignments,
+        config: updatedConfig
+      }),
+      saveSupabaseTeachers(updatedTeachers),
+      updatedConfig ? saveSupabaseConfig(updatedConfig) : Promise.resolve(true)
+    ]);
 
     return {
       updatedTeachers,
@@ -291,15 +301,17 @@ export async function saveAllClassAssignmentsDirectly(
       broadcastSync('teachers', updatedTeachers);
     }
 
-    saveServerEntity('/teachers', updatedTeachers).catch(() => {});
-    saveServerEntity('/class-teacher-assignments', assignments).catch(() => {});
-    pushMasterServerSync({
-      teachers: updatedTeachers,
-      classTeacherAssignments: assignments,
-      config: updatedConfig
-    }).catch(() => {});
-
-    await saveSupabaseTeachers(updatedTeachers);
+    await Promise.allSettled([
+      saveServerEntity('/class-teacher-assignments', assignments),
+      saveServerEntity('/teachers', updatedTeachers),
+      pushMasterServerSync({
+        teachers: updatedTeachers,
+        classTeacherAssignments: assignments,
+        config: updatedConfig
+      }),
+      saveSupabaseTeachers(updatedTeachers),
+      updatedConfig ? saveSupabaseConfig(updatedConfig) : Promise.resolve(true)
+    ]);
 
     return { updatedTeachers, success: true };
   } catch (err: any) {
