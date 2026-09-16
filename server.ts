@@ -31,14 +31,13 @@ function isDemoStudent(s: any): boolean {
 
 function sanitizeDeletedStudentIds(ids: any[]): string[] {
   if (!Array.isArray(ids)) return [];
+  const invalidLiterals = new Set([
+    'null', 'undefined', 'all_students', 'students', 'all', '[object object]', ''
+  ]);
   return ids.filter(item => {
     if (typeof item !== 'string') return false;
     const s = item.trim().toLowerCase();
-    if (!s) return false;
-    // Never allow roll numbers (with / or spaces or backslashes) or student names to be tombstoned
-    if (s.includes('/') || s.includes(' ') || s.includes('\\')) return false;
-    if (s.startsWith('ea') || s.startsWith('kg') || s.startsWith('p') || s.startsWith('j') || s.startsWith('n')) return false;
-    if (!s.startsWith('st-') && !s.startsWith('st') && !s.startsWith('usr-') && !s.match(/^[0-9a-f]{8}-[0-9a-f]{4}/i)) return false;
+    if (!s || invalidLiterals.has(s)) return false;
     return true;
   });
 }
@@ -131,7 +130,7 @@ async function clearAllSupabaseStudentsOnServer(): Promise<void> {
 }
 
 function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
-  if (!s || !s.id) return false;
+  if (!s) return false;
   const db = dbCache || (fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, "utf-8")) : null);
   const rawList = [
     ...(db?.deletedStudentIds || []),
@@ -140,11 +139,20 @@ function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
   const allDeleted = new Set(sanitizeDeletedStudentIds(rawList).map(x => String(x).toLowerCase().trim()));
   if (allDeleted.size === 0) return false;
 
-  // ONLY match record unique ID. Roll numbers and pupil names MUST NEVER be tombstoned.
-  const cleanId = String(s.id).toLowerCase().trim();
-  if (allDeleted.has(cleanId)) return true;
-  const alphaId = cleanId.replace(/[^a-z0-9]/g, '');
-  if (alphaId && allDeleted.has(alphaId)) return true;
+  if (s.id) {
+    const cleanId = String(s.id).toLowerCase().trim();
+    if (allDeleted.has(cleanId)) return true;
+    const alphaId = cleanId.replace(/[^a-z0-9]/g, '');
+    if (alphaId && allDeleted.has(alphaId)) return true;
+  }
+  if (s.rollNumber) {
+    const cleanRoll = String(s.rollNumber).toLowerCase().trim();
+    if (allDeleted.has(cleanRoll)) return true;
+  }
+  if (s.name) {
+    const cleanName = String(s.name).toLowerCase().trim();
+    if (allDeleted.has(cleanName)) return true;
+  }
 
   return false;
 }
@@ -158,7 +166,7 @@ function loadServerStudents(): any[] {
     if (db && Array.isArray(db.students)) {
       return db.students.filter(s => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
     }
-    if (fs.existsSync(STUDENTS_CACHE_FILE)) {
+    if (!db?.rosterCleared && fs.existsSync(STUDENTS_CACHE_FILE)) {
       const data = fs.readFileSync(STUDENTS_CACHE_FILE, "utf-8");
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) return parsed.filter(s => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db?.deletedStudentIds));
@@ -1109,24 +1117,14 @@ async function startServer() {
     res.setHeader("Cloudflare-CDN-Cache-Control", "no-store");
     res.setHeader("Surrogate-Control", "no-store");
 
-    const students = req.body?.students;
+    const students = Array.isArray(req.body) ? req.body : req.body?.students;
     if (!Array.isArray(students)) {
       return res.status(400).json({ status: "error", message: "Expected students array" });
     }
 
-    const clearRoster = req.body?.clearRoster === true;
+    const clearRoster = req.body?.clearRoster === true || req.query?.clear === 'true';
 
-    if (students.length === 0) {
-      const db = loadServerDatabase();
-      if (!clearRoster && !db.rosterCleared && db.students && db.students.length > 0) {
-        console.warn(`[Server Students Sync Guard] Blocked empty students payload from overwriting ${db.students.length} existing server students.`);
-        return res.status(200).json({
-          status: "ignored",
-          count: db.students.length,
-          message: "Empty payload ignored to preserve existing recorded students",
-          timestamp: new Date().toISOString()
-        });
-      }
+    if (students.length === 0 || clearRoster) {
       saveServerStudents([]);
       await clearAllSupabaseStudentsOnServer();
       broadcastSse("CLEAR", "students", { action: "CLEAR", count: 0 });
@@ -1711,10 +1709,11 @@ async function startServer() {
     // Un-tombstone incoming teachers if explicitly being registered or modified
     const incomingTeacherIds = new Set(teachers.map((t: any) => String(t.id || '').toLowerCase().trim()).filter(Boolean));
     const incomingTeacherEmails = new Set(teachers.map((t: any) => String(t.email || '').toLowerCase().trim()).filter(Boolean));
+    const incomingTeacherNames = new Set(teachers.map((t: any) => String(t.name || '').toLowerCase().trim()).filter(Boolean));
     if (db.deletedTeacherIds && db.deletedTeacherIds.length > 0) {
       db.deletedTeacherIds = db.deletedTeacherIds.filter(id => {
         const norm = String(id).toLowerCase().trim();
-        return !incomingTeacherIds.has(norm) && !incomingTeacherEmails.has(norm);
+        return !incomingTeacherIds.has(norm) && !incomingTeacherEmails.has(norm) && !incomingTeacherNames.has(norm);
       });
     }
 

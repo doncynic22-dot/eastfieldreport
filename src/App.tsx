@@ -467,34 +467,36 @@ export default function App() {
 
         cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
-        // Bidirectional reconciliation: If local cache has newly admitted pupils not yet in Supabase,
-        // merge them and push to Supabase to keep remote cloud and local browser in 100% lockstep parity.
-        const remoteIds = new Set(cleanStudents.map(s => s.id));
-        const remoteNames = new Set(cleanStudents.map(s => (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ')));
-        const remoteRolls = new Set(cleanStudents.map(s => (s.rollNumber || '').trim().toLowerCase()));
+        // Only reconcile local students if roster is NOT cleared, cloud returned students, and students are not deleted
+        const isRosterCleared = typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
 
-        const unsyncedLocal = localStudents.filter(s => {
-          if (!s || !s.id) return false;
-          if (isStudentDeleted(s) || isDemoStudent(s)) return false;
-          if (remoteIds.has(s.id)) return false;
-          const nName = (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
-          if (nName && remoteNames.has(nName)) return false;
-          const nRoll = (s.rollNumber || '').trim().toLowerCase();
-          if (nRoll && remoteRolls.has(nRoll)) return false;
-          return true;
-        });
+        if (!isRosterCleared && cleanStudents.length > 0) {
+          const remoteIds = new Set(cleanStudents.map(s => s.id));
+          const remoteNames = new Set(cleanStudents.map(s => (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ')));
+          const remoteRolls = new Set(cleanStudents.map(s => (s.rollNumber || '').trim().toLowerCase()));
 
-        if (unsyncedLocal.length > 0) {
-          console.log(`[Supabase Student Sync] Merging ${unsyncedLocal.length} unsynced local pupil(s) into cloud roster.`);
-          cleanStudents = deduplicateStudents([...cleanStudents, ...unsyncedLocal]);
-          // Asynchronously push reconciled pupils to Supabase
-          saveSupabaseStudents(cleanStudents).catch(err => {
-            console.warn('[Supabase Student Sync] Background push of reconciled pupils warning:', err);
+          const unsyncedLocal = localStudents.filter(s => {
+            if (!s || !s.id) return false;
+            if (isStudentDeleted(s) || isDemoStudent(s)) return false;
+            if (remoteIds.has(s.id)) return false;
+            const nName = (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+            if (nName && remoteNames.has(nName)) return false;
+            const nRoll = (s.rollNumber || '').trim().toLowerCase();
+            if (nRoll && remoteRolls.has(nRoll)) return false;
+            return true;
           });
+
+          if (unsyncedLocal.length > 0) {
+            console.log(`[Supabase Student Sync] Merging ${unsyncedLocal.length} unsynced local pupil(s) into cloud roster.`);
+            cleanStudents = deduplicateStudents([...cleanStudents, ...unsyncedLocal]);
+            saveSupabaseStudents(cleanStudents).catch(err => {
+              console.warn('[Supabase Student Sync] Background push of reconciled pupils warning:', err);
+            });
+          }
         }
 
         // Deduplicate unified roster
-        const activeStudents = deduplicateStudents(cleanStudents);
+        const activeStudents = isRosterCleared ? [] : deduplicateStudents(cleanStudents);
 
         if (activeStudents.length > 0) {
           localStorage.removeItem('ea_students_cleared');
@@ -512,10 +514,11 @@ export default function App() {
         fetch('/api/sync/all', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ students: activeStudents })
+          body: JSON.stringify({ students: activeStudents, rosterCleared: activeStudents.length === 0 })
         }).catch(() => {});
       } else {
-        let cleanLocalStudents = localStudents.filter(
+        const isRosterCleared = typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
+        let cleanLocalStudents = isRosterCleared ? [] : localStudents.filter(
           s => !teacherIds.has(s.id)
         ).filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
         cleanLocalStudents = deduplicateStudents(cleanLocalStudents);
@@ -1173,10 +1176,18 @@ export default function App() {
           }
         } else if (payload && typeof payload === 'object') {
           const action = payload.action || type;
-          if (action === 'DELETE') {
+          if (action === 'CLEAR' || action === 'CLEAR_ALL' || type === 'CLEAR') {
+            setStudents([]);
+            localStorage.setItem('ea_students_cleared', 'true');
+            localStorage.setItem('ea_students', JSON.stringify([]));
+            localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
+            lastSavedStudentsSigRef.current = '';
+            window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: [] }));
+          } else if (action === 'DELETE') {
             const delId = payload.id;
             const delRoll = payload.rollNumber;
             const delName = payload.studentName;
+            recordDeletedStudentId(delId, delRoll, delName);
             setStudents(prev => {
               const updated = prev.filter(s => {
                 if (delId && (s.id === delId || String(s.id).toLowerCase() === String(delId).toLowerCase())) return false;
