@@ -8,7 +8,7 @@
  */
 
 import { User, ReportConfig } from '../types';
-import { saveSupabaseTeachers, saveSupabaseConfig, broadcastSync, broadcastGlobalSync, isTeacherDeleted, getDeletedTeacherIds } from '../lib/supabase';
+import { saveSupabaseTeachers, saveSingleSupabaseTeacher, saveSupabaseConfig, broadcastSync, broadcastGlobalSync, isTeacherDeleted, getDeletedTeacherIds } from '../lib/supabase';
 import { saveServerEntity, fetchServerEntity, pushMasterServerSync } from '../lib/globalSync';
 
 export const CLASS_TEACHER_ASSIGNMENTS_KEY = 'ea_class_teacher_assignments';
@@ -34,50 +34,58 @@ export const ALL_STANDARD_CLASSROOMS = [
  * Record<className, teacherId>
  */
 export function getClassTeacherAssignments(fallbackTeachers?: User[]): Record<string, string> {
-  if (typeof window === 'undefined') return {};
+  const result: Record<string, string> = {};
 
-  try {
-    const raw = localStorage.getItem(CLASS_TEACHER_ASSIGNMENTS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-        return parsed;
+  // 1. Explicitly saved assignments map in localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(CLASS_TEACHER_ASSIGNMENTS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          Object.entries(parsed).forEach(([cls, tid]) => {
+            if (tid && typeof tid === 'string') {
+              result[cls] = tid;
+            }
+          });
+        }
       }
+    } catch (err) {
+      console.warn('[ClassTeacherService] Error reading local assignments map:', err);
     }
-  } catch (err) {
-    console.warn('[ClassTeacherService] Error reading local assignments map:', err);
   }
 
-  // Fallback 1: check config cache
-  try {
-    const cfgRaw = localStorage.getItem('ea_config') || localStorage.getItem('mock_supabase_ea_config');
-    if (cfgRaw) {
-      const parsedCfg = JSON.parse(cfgRaw);
-      if (parsedCfg?.classTeacherAssignments && typeof parsedCfg.classTeacherAssignments === 'object' && Object.keys(parsedCfg.classTeacherAssignments).length > 0) {
-        localStorage.setItem(CLASS_TEACHER_ASSIGNMENTS_KEY, JSON.stringify(parsedCfg.classTeacherAssignments));
-        return parsedCfg.classTeacherAssignments;
+  // 2. Supplement from config cache if classroom not yet assigned
+  if (typeof window !== 'undefined') {
+    try {
+      const cfgRaw = localStorage.getItem('ea_config') || localStorage.getItem('mock_supabase_ea_config');
+      if (cfgRaw) {
+        const parsedCfg = JSON.parse(cfgRaw);
+        if (parsedCfg?.classTeacherAssignments && typeof parsedCfg.classTeacherAssignments === 'object') {
+          Object.entries(parsedCfg.classTeacherAssignments).forEach(([cls, tid]) => {
+            if (tid && typeof tid === 'string' && !result[cls]) {
+              result[cls] = tid;
+            }
+          });
+        }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
-  // Fallback 2: reconstruct from active teachers list if provided
-  const reconstructed: Record<string, string> = {};
+  // 3. Reconstruct assignments from active teachers' classes array for any unassigned classes
   if (Array.isArray(fallbackTeachers) && fallbackTeachers.length > 0) {
     const cleanTeachers = fallbackTeachers.filter(tch => !isTeacherDeleted(tch));
     ALL_STANDARD_CLASSROOMS.forEach(cls => {
-      const t = cleanTeachers.find(tch => tch.role === 'TEACHER' && tch.classes?.includes(cls));
-      if (t && t.id) {
-        reconstructed[cls] = t.id;
+      if (!result[cls]) {
+        const t = cleanTeachers.find(tch => tch.role === 'TEACHER' && Array.isArray(tch.classes) && tch.classes.includes(cls));
+        if (t && t.id) {
+          result[cls] = t.id;
+        }
       }
     });
-    if (Object.keys(reconstructed).length > 0) {
-      try {
-        localStorage.setItem(CLASS_TEACHER_ASSIGNMENTS_KEY, JSON.stringify(reconstructed));
-      } catch {}
-    }
   }
 
-  return reconstructed;
+  return result;
 }
 
 /**
@@ -132,11 +140,15 @@ export function reconcileTeachersWithClassAssignments(
     return cleanTeachers;
   }
 
-  // Purge any assignments pointing to deleted staff members
+  // Purge only assignments pointing to explicitly deleted staff members
   const deletedSet = new Set(getDeletedTeacherIds().map(x => String(x).toLowerCase().trim()));
   const assignments: Record<string, string> = {};
   Object.entries(rawAssignments).forEach(([cls, teacherId]) => {
-    if (teacherId && !deletedSet.has(String(teacherId).toLowerCase().trim())) {
+    if (
+      teacherId &&
+      typeof teacherId === 'string' &&
+      !deletedSet.has(teacherId.toLowerCase().trim())
+    ) {
       assignments[cls] = teacherId;
     }
   });
@@ -237,7 +249,7 @@ export async function assignClassTeacherDirectly(
     }
 
     // 6. Push to Master Server persistent database (/api/teachers & /api/sync/all) and Supabase
-    await Promise.allSettled([
+    const pushTasks: Promise<any>[] = [
       saveServerEntity('/class-teacher-assignments', assignments),
       saveServerEntity('/teachers', updatedTeachers),
       pushMasterServerSync({
@@ -247,7 +259,25 @@ export async function assignClassTeacherDirectly(
       }),
       saveSupabaseTeachers(updatedTeachers),
       updatedConfig ? saveSupabaseConfig(updatedConfig) : Promise.resolve(true)
-    ]);
+    ];
+
+    if (newTeacherId && newTeacherId.trim() !== '') {
+      const assignedTeacher = updatedTeachers.find(t => t.id === newTeacherId.trim());
+      if (assignedTeacher) {
+        pushTasks.push(saveSingleSupabaseTeacher(assignedTeacher));
+      }
+    }
+
+    // Also push any displaced teacher whose assigned class changed
+    const prevTeacher = currentTeachers.find(t => t.classes?.includes(className) && t.id !== newTeacherId);
+    if (prevTeacher) {
+      const updatedPrev = updatedTeachers.find(t => t.id === prevTeacher.id);
+      if (updatedPrev) {
+        pushTasks.push(saveSingleSupabaseTeacher(updatedPrev));
+      }
+    }
+
+    await Promise.allSettled(pushTasks);
 
     return {
       updatedTeachers,

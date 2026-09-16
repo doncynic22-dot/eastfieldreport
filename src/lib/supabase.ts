@@ -1589,6 +1589,35 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
 
     let cleanMapped = filterDeleted(mapped);
 
+    // Cross-check with Master Server / CDN endpoint so any students registered via server or admin across devices are never omitted
+    try {
+      const serverStudents = await fetchFromServer();
+      if (serverStudents && Array.isArray(serverStudents) && serverStudents.length > 0) {
+        const mappedIds = new Set(cleanMapped.map(s => s.id));
+        const mappedNames = new Set(cleanMapped.map(s => (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ')));
+        const mappedRolls = new Set(cleanMapped.map(s => (s.rollNumber || '').trim().toLowerCase()));
+
+        const unsyncedServer = serverStudents.filter(s => {
+          if (!s || !s.id) return false;
+          if (isStudentDeleted(s) || isDemoStudent(s)) return false;
+          if (mappedIds.has(s.id)) return false;
+          const nName = (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          if (nName && mappedNames.has(nName)) return false;
+          const nRoll = (s.rollNumber || '').trim().toLowerCase();
+          if (nRoll && mappedRolls.has(nRoll)) return false;
+          return true;
+        });
+
+        if (unsyncedServer.length > 0) {
+          console.log(`[Supabase Fetch] Reconciling ${unsyncedServer.length} server student(s) into Supabase cloud table.`);
+          cleanMapped = deduplicateStudents([...cleanMapped, ...unsyncedServer]);
+          saveSupabaseStudents(cleanMapped).catch(err => {
+            console.warn('[Fetch Students] Server student sync to Supabase warning:', err);
+          });
+        }
+      }
+    } catch (e) {}
+
     if (typeof localStorage !== 'undefined') {
       try {
         const raw = localStorage.getItem('ea_students');
@@ -2257,7 +2286,7 @@ export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
       ghana_card_number: t.ghanaCardNumber || null,
       updated_at: new Date().toISOString()
     }));
-    const { error } = await safeUpsert('ea_teachers', payloads, client);
+    const { error } = await safeUpsert('ea_teachers', payloads, client, 'id');
     if (error) {
       if (isMissingTableOrConnectionError(error)) {
         return true;
@@ -2265,29 +2294,12 @@ export async function saveSupabaseTeachers(teachers: User[]): Promise<boolean> {
       return false;
     }
 
-    // Prune deleted teachers safely
+    // Prune deleted teachers safely - ONLY delete teachers who are explicitly tombstoned/deleted by Admin
     try {
       const deletedIds = getDeletedTeacherIds();
       if (deletedIds.length > 0) {
         await client.from('ea_teachers').delete().in('id', deletedIds);
         try { await client.from('ea_teacher').delete().in('id', deletedIds); } catch (e) {}
-      }
-
-      if (cleanTeachers.length === 0) {
-        await client.from('ea_teachers').delete().not('id', 'is', null);
-      } else {
-        const { data: existingRows } = await client.from('ea_teachers').select('id');
-        if (existingRows && existingRows.length > 0) {
-          const activeIds = new Set(cleanTeachers.map(t => String(t.id)));
-          const toDeleteIds = existingRows
-            .filter(row => !activeIds.has(String(row.id)))
-            .map(row => row.id)
-            .filter(Boolean);
-          if (toDeleteIds.length > 0) {
-            await client.from('ea_teachers').delete().in('id', toDeleteIds);
-            try { await client.from('ea_teacher').delete().in('id', toDeleteIds); } catch (e) {}
-          }
-        }
       }
     } catch (pruneErr) {
       console.warn('Teacher prune notice:', pruneErr);

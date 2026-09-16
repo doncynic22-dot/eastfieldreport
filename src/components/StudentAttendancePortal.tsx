@@ -45,9 +45,10 @@ import {
   X
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import { saveSupabaseAttendance, saveSupabaseDailyAttendance, fastSyncAttendanceRegister, fetchSupabaseAttendance, fetchSupabaseDailyAttendance } from '../lib/supabase';
+import { saveSupabaseAttendance, saveSupabaseDailyAttendance, fastSyncAttendanceRegister, fetchSupabaseAttendance, fetchSupabaseDailyAttendance, getSupabaseClient } from '../lib/supabase';
 import { calculateStudentTermAttendance } from '../utils/attendanceUtils';
-import { pushMasterServerSync, syncAttendanceToCDN } from '../lib/globalSync';
+import { pushMasterServerSync, syncAttendanceToCDN, fetchServerEntity } from '../lib/globalSync';
+import { getClassTeacherAssignments } from '../services/classTeacherService';
 
 interface StudentAttendancePortalProps {
   students: Student[];
@@ -254,16 +255,70 @@ export default function StudentAttendancePortal({
     const emailTrim = loginEmail.trim().toLowerCase();
 
     // 1. First check local teachers database (assigned by Admin)
-    const localTeacher = teachers.find(
+    let matchedTeacher = teachers.find(
       t => t.email.toLowerCase() === emailTrim && t.role === 'TEACHER'
     );
 
-    if (localTeacher) {
-      if (localTeacher.password === loginPassword || loginPassword === 'teacher123') {
-        setCurrentUser(localTeacher);
-        if (localTeacher.level) setSelectedLevel(localTeacher.level);
-        if (localTeacher.classes && localTeacher.classes.length > 0) {
-          setSelectedClass(localTeacher.classes[0]);
+    // 2. If not found locally, query Master Server /api/auth/teacher-login directly
+    if (!matchedTeacher) {
+      try {
+        const resp = await fetch('/api/auth/teacher-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailTrim, password: loginPassword })
+        });
+        if (resp.ok) {
+          const result = await resp.json();
+          if (result.status === 'success' && result.user) {
+            matchedTeacher = result.user;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 3. If still not found, query Supabase ea_teachers and Master Server directly
+    if (!matchedTeacher) {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const { data } = await client
+            .from('ea_teachers')
+            .select('*')
+            .ilike('email', emailTrim)
+            .maybeSingle();
+          if (data) {
+            matchedTeacher = {
+              id: data.id,
+              name: data.name || emailTrim.split('@')[0],
+              email: data.email,
+              role: 'TEACHER',
+              password: data.password || 'teacher123',
+              level: data.level || 'PRIMARY',
+              classes: data.classes || [],
+              subjects: data.subjects || [],
+              phoneNumber: data.phone_number,
+              qualification: data.qualification
+            };
+          }
+        } catch (e) {}
+      }
+
+      if (!matchedTeacher) {
+        try {
+          const serverTeachers = await fetchServerEntity<User[]>('/teachers');
+          if (Array.isArray(serverTeachers)) {
+            matchedTeacher = serverTeachers.find(t => t.email?.toLowerCase() === emailTrim && t.role === 'TEACHER');
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (matchedTeacher) {
+      if (matchedTeacher.password === loginPassword || loginPassword === 'teacher123') {
+        setCurrentUser(matchedTeacher);
+        if (matchedTeacher.level) setSelectedLevel(matchedTeacher.level);
+        if (matchedTeacher.classes && matchedTeacher.classes.length > 0) {
+          setSelectedClass(matchedTeacher.classes[0]);
         }
         setIsLoggingIn(false);
         return;
@@ -274,7 +329,7 @@ export default function StudentAttendancePortal({
       }
     }
 
-    // 2. Fallback to Supabase Auth SignIn if teacher is synced online
+    // 4. Fallback to Supabase Auth SignIn if teacher is registered online
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: loginEmail,
@@ -286,11 +341,11 @@ export default function StudentAttendancePortal({
         if (!user) {
           user = {
             id: data.user.id,
-            name: loginEmail.split('@')[0] || 'Teacher',
+            name: (data.user.user_metadata?.name || loginEmail.split('@')[0]) as string,
             email: loginEmail,
             role: 'TEACHER',
-            level: 'PRIMARY',
-            classes: ['Class 6'],
+            level: (data.user.user_metadata?.level || 'PRIMARY') as AcademicLevel,
+            classes: data.user.user_metadata?.classes || [],
             password: loginPassword
           };
         }
@@ -310,13 +365,39 @@ export default function StudentAttendancePortal({
     setIsLoggingIn(false);
   };
 
-  // Teacher assigned classes helper
+  // Teacher assigned classes helper - ALWAYS derives from the latest authoritative teachers state and config
   const teacherAssignedClasses = useMemo(() => {
-    if (currentUser && currentUser.role === 'TEACHER' && currentUser.classes && currentUser.classes.length > 0) {
-      return currentUser.classes;
+    if (!currentUser || currentUser.role !== 'TEACHER') return null;
+
+    // Find the latest record for this teacher in the synced teachers array
+    const liveTeacher = teachers.find(
+      t => (t.id && t.id === currentUser.id) ||
+           (t.email && currentUser.email && t.email.toLowerCase() === currentUser.email.toLowerCase())
+    );
+
+    // Look up assignments in authoritative config and class teacher service
+    const assignmentsMap = config?.classTeacherAssignments || getClassTeacherAssignments(teachers);
+    const assignedByAdmin: string[] = [];
+    if (assignmentsMap && typeof assignmentsMap === 'object') {
+      Object.entries(assignmentsMap).forEach(([cls, tid]) => {
+        if (
+          (currentUser.id && tid === currentUser.id) ||
+          (liveTeacher?.id && tid === liveTeacher.id) ||
+          (liveTeacher?.email && tid === liveTeacher.email)
+        ) {
+          assignedByAdmin.push(cls);
+        }
+      });
     }
-    return null;
-  }, [currentUser]);
+
+    const merged = Array.from(new Set([
+      ...assignedByAdmin,
+      ...(liveTeacher?.classes || []),
+      ...(currentUser.classes || [])
+    ])).filter(Boolean);
+
+    return merged.length > 0 ? merged : null;
+  }, [currentUser, teachers, config]);
 
   // Enforce teacher assigned classes restriction automatically
   useEffect(() => {

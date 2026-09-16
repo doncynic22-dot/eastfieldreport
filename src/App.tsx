@@ -400,12 +400,14 @@ export default function App() {
           activeTeachers = reconcileTeachersWithClassAssignments(cleanRemote, authoritativeAssignments);
           setTeachers(activeTeachers);
           localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
+          lastSavedTeachersSigRef.current = activeTeachers.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
         }
       } else {
         // Query failed or fallback -> populate clean local teachers or defaults
         activeTeachers = reconcileTeachersWithClassAssignments(activeTeachers, authoritativeAssignments);
         setTeachers(activeTeachers);
         localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
+        lastSavedTeachersSigRef.current = activeTeachers.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
       }
 
       // 3. Process & Sync Students
@@ -933,6 +935,7 @@ export default function App() {
             const reconciledTeachers = reconcileTeachersWithClassAssignments(cleanTeachers, master.classTeacherAssignments);
             setTeachers(reconciledTeachers);
             localStorage.setItem('ea_teachers', JSON.stringify(reconciledTeachers));
+            lastSavedTeachersSigRef.current = reconciledTeachers.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
           }
           if (Array.isArray((master as any).deletedStudentIds)) {
             (master as any).deletedStudentIds.forEach((id: string) => {
@@ -1192,7 +1195,7 @@ export default function App() {
           });
         } else if (Array.isArray(payload)) {
           const cleanTeachers = payload.filter(t => !isTeacherDeleted(t));
-          const assignments = getClassTeacherAssignments(cleanTeachers);
+          const assignments = getClassTeacherAssignments();
           const reconciled = reconcileTeachersWithClassAssignments(cleanTeachers, assignments);
           setTeachers(reconciled);
           localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
@@ -1789,7 +1792,7 @@ export default function App() {
 
         if (remoteTeachers && Array.isArray(remoteTeachers)) {
           const cleanRemote = remoteTeachers.filter(t => !isTeacherDeleted(t));
-          const assignments = getClassTeacherAssignments(cleanRemote);
+          const assignments = getClassTeacherAssignments();
           const reconciled = reconcileTeachersWithClassAssignments(cleanRemote, assignments);
           setTeachers(prev => {
             const prevSig = prev.map(t => `${t.id}:${(t.classes || []).join(',')}`).join('|');
@@ -2113,7 +2116,8 @@ export default function App() {
       }
       if (remoteTeachers && Array.isArray(remoteTeachers)) {
         const cleanRemote = remoteTeachers.filter(t => !isTeacherDeleted(t));
-        const reconciled = reconcileTeachersWithClassAssignments(cleanRemote);
+        const assignments = getClassTeacherAssignments();
+        const reconciled = reconcileTeachersWithClassAssignments(cleanRemote, assignments);
         setTeachers(reconciled);
         localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
       }

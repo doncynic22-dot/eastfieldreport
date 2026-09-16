@@ -346,12 +346,17 @@ export default function AdminDashboard({
       const result = await assignClassTeacherDirectly(clsName, newTeacherId, teachers, config);
       if (result.success) {
         setTeachers(result.updatedTeachers);
+        const updatedConfig: ReportConfig = {
+          ...config,
+          classTeacherAssignments: result.updatedAssignments,
+          updatedAt: new Date().toISOString()
+        };
+        setConfig(updatedConfig);
+        try {
+          localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+        } catch (e) {}
+
         if (onPushToSupabase) {
-          const updatedConfig: ReportConfig = {
-            ...config,
-            classTeacherAssignments: result.updatedAssignments,
-            updatedAt: new Date().toISOString()
-          };
           onPushToSupabase(undefined, updatedConfig, result.updatedTeachers).catch(() => {});
         }
         const assignedT = result.updatedTeachers.find(t => t.id === newTeacherId);
@@ -379,12 +384,17 @@ export default function AdminDashboard({
       const res = await saveAllClassAssignmentsDirectly(currentMap, teachers, config);
       if (res.success) {
         setTeachers(res.updatedTeachers);
+        const updatedConfig: ReportConfig = {
+          ...config,
+          classTeacherAssignments: currentMap,
+          updatedAt: new Date().toISOString()
+        };
+        setConfig(updatedConfig);
+        try {
+          localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+        } catch (e) {}
+
         if (onPushToSupabase) {
-          const updatedConfig: ReportConfig = {
-            ...config,
-            classTeacherAssignments: currentMap,
-            updatedAt: new Date().toISOString()
-          };
           await onPushToSupabase(undefined, updatedConfig, res.updatedTeachers);
         }
         setAssignmentSuccessToast('All classroom assignments verified and permanently synced to Cloud & Database!');
