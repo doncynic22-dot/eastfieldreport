@@ -303,6 +303,12 @@ export default function AdminDashboard({
         localStorage.setItem('ea_teachers', JSON.stringify(activeDefaults));
       }
       const success = await saveSupabaseTeachers(listToSave);
+
+      // Trigger authoritative server-side sync to Supabase as well
+      try {
+        await fetch('/api/teachers/sync-supabase', { method: 'POST' });
+      } catch (e) {}
+
       if (success) {
         setStaffSyncMsg(`Successfully synchronized all ${listToSave.length} staff records to Supabase!`);
       } else {
@@ -3830,10 +3836,10 @@ export default function AdminDashboard({
                 onClick={handlePopulateDefaultStaff}
                 disabled={isSyncingStaff}
                 className="bg-mauve-100 hover:bg-mauve-200 text-mauve-900 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition cursor-pointer border border-mauve-300"
-                title="Populate all 13 official academy teachers across Nursery, Kindergarten, Primary, and JHS"
+                title={`Populate all ${INITIAL_USERS.length} official academy teachers across Nursery, Kindergarten, Primary, and JHS`}
               >
                 <Users className="w-3.5 h-3.5 text-mauve-700" />
-                <span>Populate All 13 Teachers</span>
+                <span>Populate All Staff ({INITIAL_USERS.length})</span>
               </button>
 
               <button

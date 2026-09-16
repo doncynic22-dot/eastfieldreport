@@ -397,10 +397,38 @@ export default function App() {
           }
         } else {
           const cleanRemote = sTeachers.filter(t => !isTeacherDeleted(t));
-          activeTeachers = reconcileTeachersWithClassAssignments(cleanRemote, authoritativeAssignments);
+          const remoteIds = new Set(cleanRemote.map(t => t.id));
+          const remoteEmails = new Set(cleanRemote.map(t => (t.email || '').toLowerCase().trim()));
+
+          // Bidirectional sync: If local cache or initial users has teachers not yet in Supabase,
+          // merge them so no teacher is lost, and push them to Supabase
+          const candidateStaff = [...cleanLocalTeachers, ...cleanDefaults];
+          const unsyncedStaff = candidateStaff.filter(t => {
+            if (!t || !t.id) return false;
+            if (isTeacherDeleted(t)) return false;
+            if (remoteIds.has(t.id)) return false;
+            if (t.email && remoteEmails.has(t.email.toLowerCase().trim())) return false;
+            return true;
+          });
+
+          const mergedMap = new Map<string, User>();
+          cleanRemote.forEach(t => mergedMap.set(t.id, t));
+          unsyncedStaff.forEach(t => {
+            if (!mergedMap.has(t.id)) {
+              mergedMap.set(t.id, t);
+            }
+          });
+
+          const combinedList = Array.from(mergedMap.values());
+          activeTeachers = reconcileTeachersWithClassAssignments(combinedList, authoritativeAssignments);
           setTeachers(activeTeachers);
           localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
           lastSavedTeachersSigRef.current = activeTeachers.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
+
+          if (unsyncedStaff.length > 0) {
+            console.log(`[App.tsx] Bidirectional sync: pushing ${unsyncedStaff.length} missing staff to Supabase ea_teachers...`);
+            saveSupabaseTeachers(activeTeachers).catch(() => {});
+          }
         }
       } else {
         // Query failed or fallback -> populate clean local teachers or defaults
@@ -2117,9 +2145,15 @@ export default function App() {
       if (remoteTeachers && Array.isArray(remoteTeachers)) {
         const cleanRemote = remoteTeachers.filter(t => !isTeacherDeleted(t));
         const assignments = getClassTeacherAssignments();
-        const reconciled = reconcileTeachersWithClassAssignments(cleanRemote, assignments);
-        setTeachers(reconciled);
-        localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+        setTeachers(prev => {
+          const remoteIds = new Set(cleanRemote.map(t => t.id));
+          const remoteEmails = new Set(cleanRemote.map(t => (t.email || '').toLowerCase().trim()));
+          const localOnly = prev.filter(t => !isTeacherDeleted(t) && !remoteIds.has(t.id) && (!t.email || !remoteEmails.has((t.email || '').toLowerCase().trim())));
+          const merged = localOnly.length > 0 ? [...cleanRemote, ...localOnly] : cleanRemote;
+          const reconciled = reconcileTeachersWithClassAssignments(merged, assignments);
+          localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+          return reconciled;
+        });
       }
       if (remoteConfig) {
         setConfig(prev => ({ ...prev, ...remoteConfig }));

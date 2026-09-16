@@ -499,22 +499,25 @@ UPDATE auth.users
 SET email_confirmed_at = now()
 WHERE email_confirmed_at IS NULL;
 
--- 6. Populate All Academy Teaching Staff (13 Teachers across Nursery, KG, Primary, JHS)
+-- 6. Populate All Academy Teaching Staff (16 Teachers across Nursery, KG, Primary, JHS)
 INSERT INTO public.ea_teachers (id, name, email, role, password, level, classes, subjects, updated_at)
 VALUES
-  ('tch-01', 'Kojo Mensah (Nursery 1)', 'nursery@eastfield.com', 'TEACHER', 'password123', 'NURSERY', '["Nursery 1"]'::jsonb, '["sub-n-lit", "sub-n-num"]'::jsonb, now()),
-  ('tch-n2', 'Esi Agyeman (Nursery 2)', 'nursery2@eastfield.com', 'TEACHER', 'password123', 'NURSERY', '["Nursery 2"]'::jsonb, '["sub-n-cr", "sub-n-pho"]'::jsonb, now()),
-  ('tch-k1', 'Akosua Boakye (KG 1)', 'kg1@eastfield.com', 'TEACHER', 'password123', 'KINDERGARTEN', '["Kindergarten 1"]'::jsonb, '["sub-k-lit", "sub-k-num"]'::jsonb, now()),
-  ('tch-k2', 'Kofi Osei (KG 2)', 'kg2@eastfield.com', 'TEACHER', 'password123', 'KINDERGARTEN', '["Kindergarten 2"]'::jsonb, '["sub-k-owop", "sub-k-ca"]'::jsonb, now()),
-  ('tch-02', 'Ama Serwaa (Primary 1)', 'primary@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 1"]'::jsonb, '["sub-p-math", "sub-p-eng"]'::jsonb, now()),
-  ('tch-p2', 'Kwame Nkrumah (Primary 2)', 'primary2@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 2"]'::jsonb, '["sub-p-math", "sub-p-eng"]'::jsonb, now()),
-  ('tch-p3', 'Abena Darko (Primary 3)', 'primary3@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 3"]'::jsonb, '["sub-p-math", "sub-p-sci"]'::jsonb, now()),
-  ('tch-p4', 'Yaa Asantewaa (Primary 4)', 'primary4@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 4"]'::jsonb, '["sub-p-eng", "sub-p-soc"]'::jsonb, now()),
-  ('tch-p5', 'Kofi Addo (Primary 5)', 'primary5@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 5"]'::jsonb, '["sub-p-math", "sub-p-rme"]'::jsonb, now()),
-  ('tch-p6', 'Adwoa Mansa (Primary 6)', 'primary6@eastfield.com', 'TEACHER', 'password123', 'PRIMARY', '["Primary 6"]'::jsonb, '["sub-p-eng", "sub-p-ict"]'::jsonb, now()),
-  ('tch-03', 'Kwesi Appiah', 'jhs@eastfield.com', 'TEACHER', 'password123', 'JHS', '[]'::jsonb, '["sub-j-math", "sub-j-ca"]'::jsonb, now()),
-  ('tch-04', 'Abena Gyamfi', 'jhs2@eastfield.com', 'TEACHER', 'password123', 'JHS', '[]'::jsonb, '["sub-j-eng", "sub-j-sci"]'::jsonb, now()),
-  ('tch-05', 'Yaw Asamoah', 'jhs3@eastfield.com', 'TEACHER', 'password123', 'JHS', '[]'::jsonb, '["sub-j-soc", "sub-j-rme"]'::jsonb, now())
+  ('73c0317c-5409-47d9-9b32-a3cba0f2e9ed', 'Deborah Mabe Nteyado', 'nteyado@gmail.com', 'TEACHER', 'Jsaves247', 'PRIMARY', '["Primary 6"]'::jsonb, '["sub-p-eng","sub-p-math","sub-p-sci","sub-p-his","sub-p-rme","sub-p-gh","sub-p-art","sub-p-soc","sub-p-ict","sub-p-fr"]'::jsonb, now()),
+  ('26c36a9d-3782-418e-9757-838efe98b037', 'OBUO ABIGAIL', 'OBUOABIGAIL35@GMAIL.COM', 'TEACHER', 'we123456', 'PRIMARY', '["Primary 2"]'::jsonb, '["sub-p-eng","sub-p-math","sub-p-sci","sub-p-his","sub-p-rme","sub-p-gh","sub-p-art","sub-p-soc","sub-p-ict","sub-p-fr"]'::jsonb, now()),
+  ('2065ab34-a039-4b14-89a0-a60eaa7e9e99', 'AKPENE BRIKU JENNIFER', 'akpenebrikujennifer@gmail.com', 'TEACHER', 'jenny@5858', 'PRIMARY', '["Primary 3"]'::jsonb, '["sub-p-eng","sub-p-math","sub-p-sci","sub-p-his","sub-p-rme","sub-p-gh","sub-p-art","sub-p-soc","sub-p-ict","sub-p-fr"]'::jsonb, now()),
+  ('user-t-reg-1784883616230', 'Grace Darkoa', 'adhepagracie@gmail.com', 'TEACHER', '3011', 'PRIMARY', '["Primary 1"]'::jsonb, '["sub-p-eng","sub-p-math","sub-p-sci","sub-p-his","sub-p-rme","sub-p-gh","sub-p-art","sub-p-soc","sub-p-ict","sub-p-fr"]'::jsonb, now()),
+  ('944bccd2-17cc-4dba-8791-2f1c0e0cd63f', 'Osafo Stephen', 'jhaycyclone@gmail.com', 'TEACHER', '@Tr_0201036057', 'NURSERY', '["Nursery 1"]'::jsonb, '["sub-n-cr","sub-n-lit","sub-n-num","sub-n-pho","sub-n-psy"]'::jsonb, now()),
+  ('user-t-reg-1784883215842', 'Mabel Mawusi', 'mawusimabel96@gmail.com', 'TEACHER', 'ken2', 'KINDERGARTEN', '["Kindergarten 1"]'::jsonb, '["sub-k-lit","sub-k-num","sub-k-owop","sub-k-ca","sub-k-wrt"]'::jsonb, now()),
+  ('user-t-reg-1784882532978', 'Emmanuel Baah Boateng ', 'baahboateng674@gmail.com', 'TEACHER', '2030', 'PRIMARY', '["Primary 5"]'::jsonb, '["sub-p-eng","sub-p-math","sub-p-sci","sub-p-his","sub-p-rme","sub-p-gh","sub-p-art","sub-p-soc","sub-p-ict","sub-p-fr"]'::jsonb, now()),
+  ('user-t-reg-1784706570519', 'OBED DANSO', 'OBEDDANSO2013@GMAIL.COM', 'TEACHER', 'Portia@13', 'JHS', '["JHS 3"]'::jsonb, '["sub-j-eng"]'::jsonb, now()),
+  ('c2bc65b4-811b-4f3e-bf45-b2bb83c4a9ef', 'GIDEON BAIDEN', 'gbnbbaiden@gmail.com', 'TEACHER', 'creativearts', 'JHS', '[]'::jsonb, '["sub-j-ca"]'::jsonb, now()),
+  ('user-t-reg-1784637715235', 'DESMOND   AMEYAW', 'NANAZOE4@GMAIL.COM', 'TEACHER', 'we123456', 'JHS', '["JHS 1"]'::jsonb, '["sub-j-ict"]'::jsonb, now()),
+  ('d71154f7-79fc-478e-890f-bfab8336fda8', 'MOSES NARTEH', 'MOSESNARTEH72@gmail.com', 'TEACHER', 'moses123', 'PRIMARY', '[]'::jsonb, '["sub-p-eng","sub-p-math","sub-p-sci","sub-p-his","sub-p-rme","sub-p-gh","sub-p-art","sub-p-soc","sub-p-ict","sub-p-fr"]'::jsonb, now()),
+  ('ba136f83-7beb-4d64-b0d6-08e1455157ec', 'AMADAH PERFECT', 'amadahperfect@gmail.com', 'TEACHER', 'we123456', 'KINDERGARTEN', '["Kindergarten 2"]'::jsonb, '["sub-k-lit","sub-k-num","sub-k-owop","sub-k-ca","sub-k-wrt"]'::jsonb, now()),
+  ('dadbd6cb-a4da-4c1a-9cc9-52bf05fd4c61', 'Stephen Osafo', 'dailyfacts5567@gmail.com', 'TEACHER', '@Tr_0201036057', 'NURSERY', '["Nursery 2"]'::jsonb, '["sub-n-cr","sub-n-lit","sub-n-num","sub-n-pho","sub-n-psy"]'::jsonb, now()),
+  ('user-t-1789462065021', 'ASIAM OHENE JOSEPH', 'ASIAMOHENEJOSEPH@GMAIL.COM', 'TEACHER', 'teacher123', 'JHS', '[]'::jsonb, '["sub-j-eng","sub-j-math","sub-j-sci"]'::jsonb, now()),
+  ('user-t-1789463013281', 'Oduro Lemuel Appiah', 'odurolemuelappiah@gmail.com', 'TEACHER', 'teacher123', 'JHS', '[]'::jsonb, '["sub-j-eng","sub-j-math","sub-j-sci"]'::jsonb, now()),
+  ('user-t-reg-1789432950809', 'Primary 4 Class Teacher', 'primary4teacher@eastfield.com', 'TEACHER', 'teacher123', 'PRIMARY', '["Primary 4"]'::jsonb, '["sub-p-eng","sub-p-math","sub-p-sci"]'::jsonb, now())
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   email = EXCLUDED.email,

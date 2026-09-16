@@ -1590,6 +1590,38 @@ async function startServer() {
     broadcastSse("UPDATE", "classTeacherAssignments", db.classTeacherAssignments);
     broadcastSse("UPDATE", "teachers", db.teachers);
     console.log(`[Global Teacher Sync] Updated staff registry: ${db.teachers.length} staff members.`);
+
+    // Synchronize to Supabase in the background
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+    if (supabaseUrl && supabaseKey) {
+      import("@supabase/supabase-js").then(async ({ createClient }) => {
+        try {
+          const client = createClient(supabaseUrl, supabaseKey);
+          const payloads = cleanTeachers.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            email: t.email,
+            role: t.role || "TEACHER",
+            password: t.password || null,
+            level: t.level || null,
+            subjects: t.subjects || null,
+            classes: t.classes || null,
+            date_of_birth: t.dateOfBirth || null,
+            phone_number: t.phoneNumber || null,
+            qualification: t.qualification || null,
+            profile_picture: t.profilePicture || null,
+            hometown: t.hometown || null,
+            ghana_card_number: t.ghanaCardNumber || null,
+            updated_at: new Date().toISOString()
+          }));
+          await client.from("ea_teachers").upsert(payloads, { onConflict: "id" });
+        } catch (err: any) {
+          console.warn("[Global Teacher Sync] Background Supabase upsert notice:", err?.message || err);
+        }
+      }).catch(() => {});
+    }
+
     return res.status(200).json({ status: "success", count: db.teachers.length, assignments: db.classTeacherAssignments, version: db.version });
   });
 
@@ -1628,7 +1660,155 @@ async function startServer() {
     broadcastSse("UPDATE", "teachers", remaining);
     broadcastSse("UPDATE", "classTeacherAssignments", db.classTeacherAssignments);
     console.log(`[Global Teacher Sync] Teacher '${targetId}' deleted. Remaining active staff: ${remaining.length}`);
+
+    // Remove from Supabase and record tombstone in background
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+    if (supabaseUrl && supabaseKey) {
+      import("@supabase/supabase-js").then(async ({ createClient }) => {
+        try {
+          const client = createClient(supabaseUrl, supabaseKey);
+          await client.from("ea_teachers").delete().eq("id", targetId);
+          await client.from("ea_deleted_records").insert([{
+            record_type: "TEACHER",
+            record_id: targetId,
+            name: name || null,
+            details: { id: targetId, email, name, timestamp: new Date().toISOString() },
+            deleted_at: new Date().toISOString()
+          }]);
+        } catch (e) {}
+      }).catch(() => {});
+    }
+
     return res.status(200).json({ status: "success", count: remaining.length, deletedTeacherIds: db.deletedTeacherIds, version: db.version });
+  });
+
+  // GET /api/teachers/sync-status: Cross-checks counts across Server DB and Supabase ea_teachers
+  app.get("/api/teachers/sync-status", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    const db = loadServerDatabase();
+    const serverCount = (db.teachers || []).length;
+
+    let supabaseCount: number | null = null;
+    let supabaseStatus = "disconnected";
+    let supabaseError: string | null = null;
+
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+
+    if (supabaseUrl && supabaseKey) {
+      try {
+        const { createClient } = await import("@supabase/supabase-js");
+        const client = createClient(supabaseUrl, supabaseKey);
+        const { count, error } = await client.from("ea_teachers").select("*", { count: "exact", head: true });
+        if (error) {
+          supabaseStatus = "error";
+          supabaseError = error.message;
+        } else {
+          supabaseStatus = "connected";
+          supabaseCount = count;
+        }
+      } catch (err: any) {
+        supabaseStatus = "error";
+        supabaseError = err?.message || String(err);
+      }
+    }
+
+    return res.status(200).json({
+      status: "success",
+      serverCount,
+      supabaseCount,
+      inSync: supabaseCount !== null && serverCount === supabaseCount,
+      supabaseStatus,
+      supabaseError,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // POST /api/teachers/sync-supabase: Triggers an authoritative bidirectional sync
+  app.post("/api/teachers/sync-supabase", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(400).json({ status: "error", message: "Supabase credentials not configured." });
+    }
+
+    try {
+      const { createClient } = await import("@supabase/supabase-js");
+      const client = createClient(supabaseUrl, supabaseKey);
+
+      const db = loadServerDatabase();
+      const serverTeachers = db.teachers || [];
+
+      const { data: remoteTeachers, error } = await client.from("ea_teachers").select("*");
+      if (error) {
+        return res.status(500).json({ status: "error", message: error.message });
+      }
+
+      const remoteIds = new Set((remoteTeachers || []).map((t: any) => t.id));
+      const missingFromRemote = serverTeachers.filter((t: any) => t && t.id && !remoteIds.has(t.id));
+
+      if (missingFromRemote.length > 0) {
+        const payloads = missingFromRemote.map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          email: t.email,
+          role: t.role || "TEACHER",
+          password: t.password || null,
+          level: t.level || null,
+          subjects: t.subjects || null,
+          classes: t.classes || null,
+          date_of_birth: t.dateOfBirth || null,
+          phone_number: t.phoneNumber || null,
+          qualification: t.qualification || null,
+          profile_picture: t.profilePicture || null,
+          hometown: t.hometown || null,
+          ghana_card_number: t.ghanaCardNumber || null,
+          updated_at: new Date().toISOString()
+        }));
+        await client.from("ea_teachers").upsert(payloads, { onConflict: "id" });
+      }
+
+      const serverIds = new Set(serverTeachers.map((t: any) => t.id));
+      const missingFromServer = (remoteTeachers || []).filter((t: any) => t && t.id && !serverIds.has(t.id));
+      if (missingFromServer.length > 0) {
+        const mapped = missingFromServer.map((r: any) => ({
+          id: r.id,
+          name: r.name || "",
+          email: r.email || "",
+          role: r.role || "TEACHER",
+          password: r.password || undefined,
+          level: r.level || undefined,
+          subjects: r.subjects || undefined,
+          classes: r.classes || undefined,
+          dateOfBirth: r.date_of_birth || undefined,
+          phoneNumber: r.phone_number || undefined,
+          qualification: r.qualification || undefined,
+          profilePicture: r.profile_picture || undefined,
+          hometown: r.hometown || undefined,
+          ghanaCardNumber: r.ghana_card_number || undefined
+        }));
+        db.teachers = [...serverTeachers, ...mapped];
+        saveServerDatabase(db, "teachers", db.teachers);
+      }
+
+      const freshDb = loadServerDatabase();
+      const { count: finalCount } = await client.from("ea_teachers").select("*", { count: "exact", head: true });
+
+      return res.status(200).json({
+        status: "success",
+        pushedToSupabase: missingFromRemote.length,
+        pulledFromServer: missingFromServer.length,
+        totalServerTeachers: freshDb.teachers.length,
+        totalSupabaseTeachers: finalCount,
+        inSync: freshDb.teachers.length === finalCount,
+        timestamp: new Date().toISOString()
+      });
+    } catch (err: any) {
+      return res.status(500).json({ status: "error", message: err?.message || String(err) });
+    }
   });
 
   // Class Teacher Assignments: GET & POST
@@ -2077,9 +2257,12 @@ async function startServer() {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log(`Server running on http://0.0.0.0:${PORT}`);
 
-    // Authoritative background verification of Supabase ea_students on startup
+    // Authoritative background verification of Supabase ea_students and ea_teachers on startup
     syncSupabaseStudentsOnStartup().catch(err => {
       console.warn("[Startup] Supabase student sync error:", err);
+    });
+    syncSupabaseTeachersOnStartup().catch(err => {
+      console.warn("[Startup] Supabase teacher sync error:", err);
     });
   });
 
@@ -2150,6 +2333,95 @@ async function syncSupabaseStudentsOnStartup() {
     }
   } catch (err: any) {
     console.warn("[Startup Supabase Sync] Warning during background sync:", err?.message || err);
+  }
+}
+
+async function syncSupabaseTeachersOnStartup() {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+  if (!supabaseUrl || !supabaseKey) return;
+
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const client = createClient(supabaseUrl, supabaseKey);
+
+    const db = loadServerDatabase();
+    const serverTeachers = db.teachers || [];
+    const deletedSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
+
+    const { data: remoteTeachers, error } = await client.from("ea_teachers").select("*");
+    if (error) {
+      console.warn("[Startup Supabase Sync] Notice querying ea_teachers:", error.message);
+      return;
+    }
+
+    if (remoteTeachers && Array.isArray(remoteTeachers)) {
+      const remoteIds = new Set(remoteTeachers.map((t: any) => t.id));
+      const missingFromRemote = serverTeachers.filter((t: any) => {
+        if (!t || !t.id) return false;
+        if (remoteIds.has(t.id)) return false;
+        if (deletedSet.has(String(t.id).toLowerCase().trim())) return false;
+        if (t.email && deletedSet.has(String(t.email).toLowerCase().trim())) return false;
+        return true;
+      });
+
+      if (missingFromRemote.length > 0) {
+        console.log(`[Startup Supabase Sync] Pushing ${missingFromRemote.length} missing teacher(s) to Supabase ea_teachers...`);
+        const payloads = missingFromRemote.map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          email: t.email,
+          role: t.role || "TEACHER",
+          password: t.password || null,
+          level: t.level || null,
+          subjects: t.subjects || null,
+          classes: t.classes || null,
+          date_of_birth: t.dateOfBirth || null,
+          phone_number: t.phoneNumber || null,
+          qualification: t.qualification || null,
+          profile_picture: t.profilePicture || null,
+          hometown: t.hometown || null,
+          ghana_card_number: t.ghanaCardNumber || null,
+          updated_at: new Date().toISOString()
+        }));
+        await client.from("ea_teachers").upsert(payloads, { onConflict: "id" });
+        console.log(`[Startup Supabase Sync] Successfully populated missing teachers to Supabase ea_teachers.`);
+      }
+
+      const serverIds = new Set(serverTeachers.map((t: any) => t.id));
+      const missingFromServer = remoteTeachers.filter((t: any) => {
+        if (!t || !t.id) return false;
+        if (serverIds.has(t.id)) return false;
+        if (deletedSet.has(String(t.id).toLowerCase().trim())) return false;
+        if (t.email && deletedSet.has(String(t.email).toLowerCase().trim())) return false;
+        return true;
+      });
+
+      if (missingFromServer.length > 0) {
+        console.log(`[Startup Supabase Sync] Pulling ${missingFromServer.length} new teacher(s) from Supabase into server database...`);
+        const mapped = missingFromServer.map((r: any) => ({
+          id: r.id,
+          name: r.name || "",
+          email: r.email || "",
+          role: r.role || "TEACHER",
+          password: r.password || undefined,
+          level: r.level || undefined,
+          subjects: r.subjects || undefined,
+          classes: r.classes || undefined,
+          dateOfBirth: r.date_of_birth || undefined,
+          phoneNumber: r.phone_number || undefined,
+          qualification: r.qualification || undefined,
+          profilePicture: r.profile_picture || undefined,
+          hometown: r.hometown || undefined,
+          ghanaCardNumber: r.ghana_card_number || undefined
+        }));
+        db.teachers = [...serverTeachers, ...mapped];
+        saveServerDatabase(db, "teachers", db.teachers);
+      }
+      console.log(`[Startup Supabase Sync] Verified ea_teachers table synchronization: ${remoteTeachers.length + missingFromRemote.length} teachers total.`);
+    }
+  } catch (err: any) {
+    console.warn("[Startup Supabase Sync] Warning during teacher background sync:", err?.message || err);
   }
 }
 
