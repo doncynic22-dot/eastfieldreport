@@ -102,6 +102,76 @@ export const DEFAULT_REPORT_CONFIG: ReportConfig = {
 
 export const INITIAL_USERS: User[] = [
   {
+    id: "73c0317c-5409-47d9-9b32-a3cba0f2e9ed",
+    name: "Deborah Mabe Nteyado",
+    email: "nteyado@gmail.com",
+    role: "TEACHER",
+    password: "Jsaves247",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: ["Primary 6"]
+  },
+  {
+    id: "26c36a9d-3782-418e-9757-838efe98b037",
+    name: "OBUO ABIGAIL",
+    email: "OBUOABIGAIL35@GMAIL.COM",
+    role: "TEACHER",
+    password: "we123456",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: ["Primary 2"]
+  },
+  {
+    id: "2065ab34-a039-4b14-89a0-a60eaa7e9e99",
+    name: "AKPENE BRIKU JENNIFER",
+    email: "akpenebrikujennifer@gmail.com",
+    role: "TEACHER",
+    password: "jenny@5858",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: ["Primary 3"]
+  },
+  {
+    id: "user-t-reg-1784883616230",
+    name: "Grace Darkoa",
+    email: "adhepagracie@gmail.com",
+    role: "TEACHER",
+    password: "3011",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: ["Primary 1"]
+  },
+  {
+    id: "user-t-reg-1789432950809",
+    name: "Primary 4 Class Teacher",
+    email: "primary4teacher@eastfield.com",
+    role: "TEACHER",
+    password: "teacher123",
+    level: "PRIMARY",
+    classes: ["Primary 4"],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "user-t-reg-1784882532978",
+    name: "Emmanuel Baah Boateng ",
+    email: "baahboateng674@gmail.com",
+    role: "TEACHER",
+    password: "2030",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: ["Primary 5"]
+  },
+  {
+    id: "d71154f7-79fc-478e-890f-bfab8336fda8",
+    name: "MOSES NARTEH",
+    email: "MOSESNARTEH72@gmail.com",
+    role: "TEACHER",
+    password: "moses123",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: []
+  },
+  {
     id: "944bccd2-17cc-4dba-8791-2f1c0e0cd63f",
     name: "Osafo Stephen",
     email: "jhaycyclone@gmail.com",
@@ -142,56 +212,6 @@ export const INITIAL_USERS: User[] = [
     subjects: ["sub-k-lit", "sub-k-num", "sub-k-owop", "sub-k-ca", "sub-k-wrt"]
   },
   {
-    id: "user-t-reg-1784883616230",
-    name: "Grace Darkoa",
-    email: "adhepagracie@gmail.com",
-    role: "TEACHER",
-    password: "3011",
-    level: "PRIMARY",
-    classes: ["Primary 1"],
-    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
-  },
-  {
-    id: "26c36a9d-3782-418e-9757-838efe98b037",
-    name: "OBUO ABIGAIL",
-    email: "OBUOABIGAIL35@GMAIL.COM",
-    role: "TEACHER",
-    password: "we123456",
-    level: "PRIMARY",
-    classes: ["Primary 2"],
-    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
-  },
-  {
-    id: "2065ab34-a039-4b14-89a0-a60eaa7e9e99",
-    name: "AKPENE BRIKU JENNIFER",
-    email: "akpenebrikujennifer@gmail.com",
-    role: "TEACHER",
-    password: "jenny@5858",
-    level: "PRIMARY",
-    classes: ["Primary 3"],
-    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
-  },
-  {
-    id: "user-t-reg-1784882532978",
-    name: "Emmanuel Baah Boateng ",
-    email: "baahboateng674@gmail.com",
-    role: "TEACHER",
-    password: "2030",
-    level: "PRIMARY",
-    classes: ["Primary 5"],
-    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
-  },
-  {
-    id: "d71154f7-79fc-478e-890f-bfab8336fda8",
-    name: "MOSES NARTEH",
-    email: "MOSESNARTEH72@gmail.com",
-    role: "TEACHER",
-    password: "moses123",
-    level: "PRIMARY",
-    classes: [],
-    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
-  },
-  {
     id: "user-t-reg-1784637715235",
     name: "DESMOND   AMEYAW",
     email: "NANAZOE4@GMAIL.COM",
@@ -202,14 +222,14 @@ export const INITIAL_USERS: User[] = [
     subjects: ["sub-j-ict"]
   },
   {
-    id: "user-t-reg-1789104201932",
-    name: "Odurol emuel appiah",
+    id: "user-t-1789463013281",
+    name: "Oduro Lemuel Appiah",
     email: "odurolemuelappiah@gmail.com",
     role: "TEACHER",
-    password: "@Tr_0201036057",
+    password: "teacher123",
     level: "JHS",
-    classes: ["JHS 2"],
-    subjects: ["sub-j-sci"]
+    classes: [],
+    subjects: ["sub-j-eng", "sub-j-math", "sub-j-sci"]
   },
   {
     id: "user-t-reg-1784706570519",
@@ -232,14 +252,14 @@ export const INITIAL_USERS: User[] = [
     subjects: ["sub-j-ca"]
   },
   {
-    id: "user-t-reg-1789103869441",
-    name: "Asiam Ohene Joseph",
-    email: "asiamohenejoseph@gmail.com",
+    id: "user-t-1789462065021",
+    name: "ASIAM OHENE JOSEPH",
+    email: "ASIAMOHENEJOSEPH@GMAIL.COM",
     role: "TEACHER",
-    password: "0413",
+    password: "teacher123",
     level: "JHS",
     classes: [],
-    subjects: ["sub-j-gh", "sub-j-rme"]
+    subjects: ["sub-j-eng", "sub-j-math", "sub-j-sci"]
   }
 ];
 
