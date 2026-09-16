@@ -38,61 +38,40 @@ export function getStudentClassRank(className?: string): number {
  */
 export function deduplicateStudents(students: Student[]): Student[] {
   if (!Array.isArray(students)) return [];
-  
-  // 1. Group by normalized pupil full name
-  const byName = new Map<string, Student[]>();
-  const withoutName: Student[] = [];
+
+  const clean: Student[] = [];
+  const seenIds = new Set<string>();
+  const seenRolls = new Set<string>();
+  const seenClassAndName = new Set<string>();
 
   for (const s of students) {
     if (!s) continue;
     const rawId = (s.id || '').trim();
     if (!rawId) continue;
-    
-    const normName = (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
-    if (!normName) {
-      withoutName.push(s);
+    const idLower = rawId.toLowerCase();
+
+    if (seenIds.has(idLower)) continue;
+
+    // Check duplicate roll number (if non-empty)
+    const normRoll = (s.rollNumber || '').trim().toLowerCase();
+    if (normRoll && seenRolls.has(normRoll)) {
       continue;
     }
 
-    if (!byName.has(normName)) {
-      byName.set(normName, []);
+    // Check duplicate entry in the exact same class with exact same name
+    const normName = (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const normClass = (s.className || '').trim().toLowerCase();
+    if (normName && normClass) {
+      const classKey = `${normName}:::${normClass}`;
+      if (seenClassAndName.has(classKey)) {
+        continue;
+      }
+      seenClassAndName.add(classKey);
     }
-    byName.get(normName)!.push(s);
-  }
 
-  const clean: Student[] = [];
-  const seenIds = new Set<string>();
-  const seenRolls = new Set<string>();
-
-  for (const [, list] of byName.entries()) {
-    // Sort so highest academic class rank and most recent update is first
-    list.sort((a, b) => {
-      const rankA = getStudentClassRank(a.className);
-      const rankB = getStudentClassRank(b.className);
-      if (rankA !== rankB) return rankB - rankA;
-      const timeA = new Date((a as any).updated_at || a.updatedAt || 0).getTime();
-      const timeB = new Date((b as any).updated_at || b.updatedAt || 0).getTime();
-      return timeB - timeA;
-    });
-
-    for (const candidate of list) {
-      const normRoll = candidate.rollNumber ? candidate.rollNumber.trim().toLowerCase() : '';
-      if (seenIds.has(candidate.id)) continue;
-      if (normRoll && seenRolls.has(normRoll)) continue;
-
-      clean.push(candidate);
-      seenIds.add(candidate.id);
-      if (normRoll) seenRolls.add(normRoll);
-      break; // Only keep the single best record for this student name
-    }
-  }
-
-  // Add any valid students without names that have unique IDs
-  for (const s of withoutName) {
-    if (!seenIds.has(s.id)) {
-      seenIds.add(s.id);
-      clean.push(s);
-    }
+    seenIds.add(idLower);
+    if (normRoll) seenRolls.add(normRoll);
+    clean.push(s);
   }
 
   return clean;

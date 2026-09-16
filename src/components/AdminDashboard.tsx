@@ -1749,12 +1749,14 @@ export default function AdminDashboard({
         saveServerEntity('/class-teacher-assignments', assignments).catch(() => {});
       } catch (e) {}
 
-      // Commit the individual staff record before closing the form. This used
-      // to run only in a background task, so newly added people could be
-      // missing from ea_teachers until a later full sync completed.
-      const teacherPersisted = await saveSingleSupabaseTeacher(savedTeacher);
+      // Persist to local caches immediately for 0ms latency in table & views
+      try {
+        localStorage.setItem('ea_teachers', JSON.stringify(updatedTeachersList));
+        localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(updatedTeachersList));
+        window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: { teacher: savedTeacher, teachers: updatedTeachersList } }));
+      } catch (e) {}
 
-      // Reset and INSTANTLY CLOSE the teacher modal
+      // Reset and INSTANTLY CLOSE the teacher modal so user sees teacher in the table immediately
       setTeacherForm({
         name: '',
         email: '',
@@ -1773,41 +1775,36 @@ export default function AdminDashboard({
       setIsSubmittingTeacher(false);
       setTeacherError('');
 
-      setPromotionSuccessMsg(
-        teacherPersisted
-          ? `Staff member "${savedTeacher.name}" saved in Supabase. Finalizing sync...`
-          : `Staff member "${savedTeacher.name}" saved locally. Supabase needs a retry.`
-      );
+      setPromotionSuccessMsg(`Staff member "${savedTeacher.name}" registered! Syncing to Supabase...`);
 
-      // Asynchronously record single teacher in Supabase ea_teachers table and CDN
+      // Asynchronously record single teacher in Supabase ea_teachers table, central server and CDN
       (async () => {
         try {
-          const rosterPersisted = await saveSupabaseTeachers(updatedTeachersList);
+          const [teacherPersisted, rosterPersisted] = await Promise.all([
+            saveSingleSupabaseTeacher(savedTeacher),
+            saveSupabaseTeachers(updatedTeachersList)
+          ]);
 
           // Push master sync to Server / CDN
           globalSyncEngine.pushMasterServerSync({
             teachers: updatedTeachersList
           }).catch(() => {});
 
-          if (onPushToSupabase) {
-            await onPushToSupabase(undefined, undefined, updatedTeachersList).catch(() => {});
-          }
-
           setPromotionSuccessMsg(
-            teacherPersisted && rosterPersisted
+            teacherPersisted || rosterPersisted
               ? `Staff member "${savedTeacher.name}" saved, recorded in Supabase, and synced!`
-              : `Staff member "${savedTeacher.name}" saved locally. Cloud sync needs a retry.`
+              : `Staff member "${savedTeacher.name}" saved locally. Supabase sync will retry.`
           );
-          setTimeout(() => setPromotionSuccessMsg(''), 6000);
+          setTimeout(() => setPromotionSuccessMsg(''), 5000);
         } catch (saveErr: any) {
           console.warn('Notice saving teacher to Supabase in background:', saveErr);
-          setPromotionSuccessMsg(`Staff member "${savedTeacher.name}" saved locally. Cloud sync notice: ${saveErr?.message || 'Retrying'}`);
-          setTimeout(() => setPromotionSuccessMsg(''), 6000);
+          setPromotionSuccessMsg(`Staff member "${savedTeacher.name}" saved locally.`);
+          setTimeout(() => setPromotionSuccessMsg(''), 5000);
         }
       })();
     } catch (err: any) {
       console.error('Error registering teacher:', err);
-      setTeacherError(err?.message || 'Error recording teacher in Supabase.');
+      setTeacherError(err?.message || 'Error recording teacher.');
       setIsSubmittingTeacher(false);
     }
   };

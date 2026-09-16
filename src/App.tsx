@@ -47,6 +47,7 @@ import {
   isStudentDeleted,
   getDeletedStudentIds,
   recordDeletedStudentId,
+  removeDeletedStudentId,
   recordDeletedBookStockId,
   subscribeToGlobalRealtime,
   broadcastSync,
@@ -1191,7 +1192,8 @@ export default function App() {
             });
           } else if ((action === 'ADMIT' || action === 'UPSERT') && payload.student) {
             const newStudent = payload.student;
-            if (!isStudentDeleted(newStudent) && !isDemoStudent(newStudent)) {
+            removeDeletedStudentId(newStudent.id, newStudent.rollNumber, newStudent.name);
+            if (!isDemoStudent(newStudent)) {
               setStudents(prev => {
                 const existingIdx = prev.findIndex(s => s.id === newStudent.id);
                 let updated: Student[];
@@ -1204,7 +1206,7 @@ export default function App() {
                 localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updated));
                 localStorage.removeItem('ea_students_cleared');
                 lastSavedStudentsSigRef.current = updated.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
-                window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: updated }));
+                window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: { source: 'internal_save', student: newStudent } }));
                 return updated;
               });
             }
@@ -1221,14 +1223,30 @@ export default function App() {
             localStorage.setItem('ea_teachers', JSON.stringify(updated));
             return updated;
           });
-        } else if (Array.isArray(payload)) {
-          const cleanTeachers = payload.filter(t => !isTeacherDeleted(t));
+        } else if (Array.isArray(payload) || (payload && typeof payload === 'object' && (payload as any).id)) {
+          const list: User[] = Array.isArray(payload) ? payload : [payload];
+          const cleanTeachers = list.filter(t => !isTeacherDeleted(t));
           const assignments = getClassTeacherAssignments();
-          const reconciled = reconcileTeachersWithClassAssignments(cleanTeachers, assignments);
-          setTeachers(reconciled);
-          localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
-          lastSavedTeachersSigRef.current = reconciled.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
-          window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: reconciled }));
+          setTeachers(prev => {
+            let combined: User[];
+            if (Array.isArray(payload)) {
+              combined = cleanTeachers;
+            } else {
+              const single = cleanTeachers[0];
+              if (!single) return prev;
+              const idx = prev.findIndex(t => t.id === single.id || (single.email && t.email && t.email.toLowerCase() === single.email.toLowerCase()));
+              if (idx >= 0) {
+                combined = prev.map((t, i) => i === idx ? { ...t, ...single } : t);
+              } else {
+                combined = [...prev, single];
+              }
+            }
+            const reconciled = reconcileTeachersWithClassAssignments(combined, assignments);
+            localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+            lastSavedTeachersSigRef.current = reconciled.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
+            return reconciled;
+          });
+          window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: cleanTeachers }));
         }
       } else if (entity === 'classTeacherAssignments' && payload && typeof payload === 'object') {
         saveClassTeacherAssignmentsLocally(payload);
@@ -1665,7 +1683,7 @@ export default function App() {
   // Listen for local or multi-tab student deletion/update events
   useEffect(() => {
     const handleStudentsUpdated = (e?: Event) => {
-      if (e && (e as CustomEvent).detail?.source === 'internal_save') return;
+      if (e && ((e as CustomEvent).detail?.source === 'internal_save' || (e as CustomEvent).detail?.source === 'admit_student')) return;
       if (e instanceof StorageEvent && e.key && e.key !== 'ea_students') return;
       try {
         const raw = localStorage.getItem('ea_students');

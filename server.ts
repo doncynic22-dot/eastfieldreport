@@ -35,12 +35,99 @@ function sanitizeDeletedStudentIds(ids: any[]): string[] {
     if (typeof item !== 'string') return false;
     const s = item.trim().toLowerCase();
     if (!s) return false;
-    // Never allow roll numbers (with / or class prefixes) or student names to be tombstoned
+    // Never allow roll numbers (with / or spaces or backslashes) or student names to be tombstoned
     if (s.includes('/') || s.includes(' ') || s.includes('\\')) return false;
     if (s.startsWith('ea') || s.startsWith('kg') || s.startsWith('p') || s.startsWith('j') || s.startsWith('n')) return false;
-    if (!s.startsWith('st-') && !s.startsWith('st')) return false;
+    if (!s.startsWith('st-') && !s.startsWith('st') && !s.startsWith('usr-') && !s.match(/^[0-9a-f]{8}-[0-9a-f]{4}/i)) return false;
     return true;
   });
+}
+
+async function deleteSupabaseStudentOnServer(id: string, rollNumber?: string, studentName?: string): Promise<void> {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+  if (!supabaseUrl || !supabaseKey || !id) return;
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const client = createClient(supabaseUrl, supabaseKey);
+
+    const keys = [id, rollNumber].filter(Boolean) as string[];
+    for (const k of keys) {
+      try { await client.from("ea_grades").delete().eq("student_id", k); } catch (e) {}
+      try { await client.from("ea_attendance").delete().eq("student_id", k); } catch (e) {}
+      try { await client.from("ea_daily_attendance").delete().eq("student_id", k); } catch (e) {}
+      try { await client.from("ea_bills").delete().eq("student_id", k); } catch (e) {}
+      try { await client.from("ea_fee_payments").delete().eq("student_id", k); } catch (e) {}
+      try { await client.from("ea_jhs_mock_exams").delete().eq("student_id", k); } catch (e) {}
+      try { await client.from("ea_students").delete().eq("id", k); } catch (e) {}
+      try { await client.from("ea_student").delete().eq("id", k); } catch (e) {}
+    }
+    if (rollNumber) {
+      try { await client.from("ea_students").delete().eq("roll_number", rollNumber.trim()); } catch (e) {}
+      try { await client.from("ea_student").delete().eq("roll_number", rollNumber.trim()); } catch (e) {}
+    }
+    if (studentName) {
+      try { await client.from("ea_students").delete().ilike("name", studentName.trim()); } catch (e) {}
+      try { await client.from("ea_student").delete().ilike("name", studentName.trim()); } catch (e) {}
+    }
+
+    const tombId = `del_st_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    await client.from("ea_deleted_records").upsert([{
+      id: tombId,
+      record_type: "STUDENT",
+      record_id: id,
+      roll_number: rollNumber || null,
+      name: studentName || null,
+      details: { id, rollNumber, studentName, timestamp: new Date().toISOString() },
+      deleted_at: new Date().toISOString()
+    }]);
+    console.log(`[Server Supabase Deletion] Student '${id}' permanently deleted from Supabase & recorded tombstone.`);
+  } catch (err: any) {
+    console.warn("[Server Supabase Deletion] Warning deleting student from Supabase:", err?.message || err);
+  }
+}
+
+async function clearAllSupabaseStudentsOnServer(): Promise<void> {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+  if (!supabaseUrl || !supabaseKey) return;
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const client = createClient(supabaseUrl, supabaseKey);
+
+    // 1. Fetch current student IDs to tombstone
+    const { data: currentRows } = await client.from("ea_students").select("id, roll_number, name");
+    if (currentRows && Array.isArray(currentRows) && currentRows.length > 0) {
+      const allIds = currentRows.map((r: any) => r.id).filter(Boolean);
+      for (let i = 0; i < allIds.length; i += 50) {
+        const chunk = allIds.slice(i, i + 50);
+        await client.from("ea_students").delete().in("id", chunk);
+        try { await client.from("ea_student").delete().in("id", chunk); } catch (e) {}
+      }
+    }
+
+    // Comprehensive wipes of student-related tables
+    try { await client.from("ea_students").delete().neq("id", "00000000-0000-0000-0000-000000000000"); } catch (e) {}
+    try { await client.from("ea_student").delete().neq("id", "00000000-0000-0000-0000-000000000000"); } catch (e) {}
+    try { await client.from("ea_grades").delete().neq("id", "00000000-0000-0000-0000-000000000000"); } catch (e) {}
+    try { await client.from("ea_attendance").delete().neq("id", "00000000-0000-0000-0000-000000000000"); } catch (e) {}
+    try { await client.from("ea_daily_attendance").delete().neq("id", "00000000-0000-0000-0000-000000000000"); } catch (e) {}
+    try { await client.from("ea_bills").delete().neq("id", "00000000-0000-0000-0000-000000000000"); } catch (e) {}
+    try { await client.from("ea_fee_payments").delete().neq("id", "00000000-0000-0000-0000-000000000000"); } catch (e) {}
+    try { await client.from("ea_jhs_mock_exams").delete().neq("id", "00000000-0000-0000-0000-000000000000"); } catch (e) {}
+
+    // Record ROSTER_CLEAR tombstone
+    await client.from("ea_deleted_records").upsert([{
+      id: `ROSTER_CLEAR_${Date.now()}`,
+      record_type: "ROSTER_CLEAR",
+      record_id: "ALL_STUDENTS",
+      details: { clearedAt: new Date().toISOString() },
+      deleted_at: new Date().toISOString()
+    }]);
+    console.log("[Server Supabase Deletion] All students cleared from Supabase & recorded ROSTER_CLEAR tombstone.");
+  } catch (err: any) {
+    console.warn("[Server Supabase Deletion] Warning clearing Supabase students:", err?.message || err);
+  }
 }
 
 function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
@@ -974,7 +1061,7 @@ async function startServer() {
   });
 
   // POST /api/students/clear: Instantly wipe student roster from global server cache and CDN
-  app.post("/api/students/clear", (req, res) => {
+  app.post("/api/students/clear", async (req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
@@ -983,7 +1070,9 @@ async function startServer() {
     res.setHeader("Surrogate-Control", "no-store");
 
     saveServerStudents([]);
-    console.log(`[Global Student Sync & CDN] Student roster cleared to 0 on server.`);
+    await clearAllSupabaseStudentsOnServer();
+    broadcastSse("CLEAR", "students", { action: "CLEAR", count: 0 });
+    console.log(`[Global Student Sync & CDN] Student roster cleared to 0 on server and Supabase.`);
     return res.status(200).json({
       status: "success",
       count: 0,
@@ -992,7 +1081,7 @@ async function startServer() {
   });
 
   // DELETE /api/students: Clear all students
-  app.delete("/api/students", (req, res) => {
+  app.delete("/api/students", async (req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
@@ -1001,7 +1090,9 @@ async function startServer() {
     res.setHeader("Surrogate-Control", "no-store");
 
     saveServerStudents([]);
-    console.log(`[Global Student Sync & CDN] Student roster cleared to 0 on server via DELETE.`);
+    await clearAllSupabaseStudentsOnServer();
+    broadcastSse("CLEAR", "students", { action: "CLEAR", count: 0 });
+    console.log(`[Global Student Sync & CDN] Student roster cleared to 0 on server and Supabase via DELETE.`);
     return res.status(200).json({
       status: "success",
       count: 0,
@@ -1010,7 +1101,7 @@ async function startServer() {
   });
 
   // POST /api/students: Bulk sync entire student roster with CDN
-  app.post("/api/students", (req, res) => {
+  app.post("/api/students", async (req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
@@ -1023,9 +1114,11 @@ async function startServer() {
       return res.status(400).json({ status: "error", message: "Expected students array" });
     }
 
+    const clearRoster = req.body?.clearRoster === true;
+
     if (students.length === 0) {
       const db = loadServerDatabase();
-      if (db.students && db.students.length > 0) {
+      if (!clearRoster && !db.rosterCleared && db.students && db.students.length > 0) {
         console.warn(`[Server Students Sync Guard] Blocked empty students payload from overwriting ${db.students.length} existing server students.`);
         return res.status(200).json({
           status: "ignored",
@@ -1035,6 +1128,8 @@ async function startServer() {
         });
       }
       saveServerStudents([]);
+      await clearAllSupabaseStudentsOnServer();
+      broadcastSse("CLEAR", "students", { action: "CLEAR", count: 0 });
       return res.status(200).json({
         status: "success",
         count: 0,
@@ -1111,14 +1206,73 @@ async function startServer() {
       const client = createClient(supabaseUrl, supabaseKey);
 
       const db = loadServerDatabase();
-      const serverStudents = db.students || [];
+
+      // 1. Fetch remote tombstones
+      try {
+        const { data: delRecords } = await client
+          .from("ea_deleted_records")
+          .select("*")
+          .in("record_type", ["STUDENT", "ROSTER_CLEAR"]);
+
+        if (delRecords && Array.isArray(delRecords)) {
+          const currentDeleted = new Set(sanitizeDeletedStudentIds(db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
+          let hasRosterClear = false;
+          delRecords.forEach((row: any) => {
+            if (row.record_type === "ROSTER_CLEAR") {
+              hasRosterClear = true;
+            } else if (row.record_id) {
+              const clean = String(row.record_id).toLowerCase().trim();
+              currentDeleted.add(clean);
+              const alpha = clean.replace(/[^a-z0-9]/g, '');
+              if (alpha) currentDeleted.add(alpha);
+            }
+          });
+          db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(currentDeleted));
+          if (hasRosterClear && (!db.students || db.students.length === 0)) {
+            db.rosterCleared = true;
+          }
+        }
+      } catch (e) {}
+
+      // 2. If roster was cleared, enforce empty
+      if (db.rosterCleared) {
+        db.students = [];
+        saveServerStudents([]);
+        try {
+          await client.from("ea_students").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+          await client.from("ea_student").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+        } catch (e) {}
+        return res.status(200).json({
+          status: "success",
+          pushedToSupabase: 0,
+          pulledFromServer: 0,
+          totalServerStudents: 0,
+          totalSupabaseStudents: 0,
+          inSync: true,
+          rosterCleared: true,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const serverStudents = (db.students || []).filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
 
       const { data: remoteStudents, error } = await client.from("ea_students").select("*");
       if (error) {
         return res.status(500).json({ status: "error", message: error.message });
       }
 
-      const remoteIds = new Set((remoteStudents || []).map((s: any) => s.id));
+      // Purge any remote students matching tombstones
+      const deletedRemote = (remoteStudents || []).filter((s: any) => isStudentDeletedOnServer(s, db.deletedStudentIds));
+      if (deletedRemote.length > 0) {
+        const purgeIds = deletedRemote.map((s: any) => s.id).filter(Boolean);
+        for (let i = 0; i < purgeIds.length; i += 50) {
+          await client.from("ea_students").delete().in("id", purgeIds.slice(i, i + 50));
+          try { await client.from("ea_student").delete().in("id", purgeIds.slice(i, i + 50)); } catch (e) {}
+        }
+      }
+
+      const activeRemote = (remoteStudents || []).filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
+      const remoteIds = new Set(activeRemote.map((s: any) => s.id));
       const missingFromRemote = serverStudents.filter((s: any) => s && s.id && !remoteIds.has(s.id));
 
       if (missingFromRemote.length > 0) {
@@ -1138,7 +1292,7 @@ async function startServer() {
       }
 
       const serverIds = new Set(serverStudents.map((s: any) => s.id));
-      const missingFromServer = (remoteStudents || []).filter((s: any) => s && s.id && !serverIds.has(s.id));
+      const missingFromServer = activeRemote.filter((s: any) => s && s.id && !serverIds.has(s.id));
       if (missingFromServer.length > 0) {
         const mapped = missingFromServer.map((r: any) => ({
           id: r.id,
@@ -1173,7 +1327,7 @@ async function startServer() {
   });
 
   // DELETE /api/students/:id: Delete pupil from global server store & invalidate CDN cache
-  app.delete("/api/students/:id", (req, res) => {
+  app.delete("/api/students/:id", async (req, res) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
@@ -1196,6 +1350,8 @@ async function startServer() {
 
     const isMatch = (s: any) => {
       if (s.id && (s.id === targetId || String(s.id).toLowerCase().trim() === targetId.toLowerCase().trim())) return true;
+      if (rollNumber && s.rollNumber && String(s.rollNumber).toLowerCase().trim() === String(rollNumber).toLowerCase().trim()) return true;
+      if (studentName && s.name && String(s.name).toLowerCase().trim() === String(studentName).toLowerCase().trim()) return true;
       return false;
     };
 
@@ -1226,6 +1382,9 @@ async function startServer() {
     try {
       fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(updated, null, 2), "utf-8");
     } catch (e) {}
+
+    // Synchronize Supabase deletion directly on server
+    deleteSupabaseStudentOnServer(targetId, rollNumber, studentName).catch(() => {});
 
     // Broadcast specific DELETE event across SSE
     broadcastSse("DELETE", "students", { action: "DELETE", id: targetId, rollNumber, studentName, remainingCount: updated.length });
@@ -1387,6 +1546,7 @@ async function startServer() {
           currentDeleted.add(clean);
           const alpha = clean.replace(/[^a-z0-9]/g, '');
           if (alpha) currentDeleted.add(alpha);
+          deleteSupabaseStudentOnServer(clean).catch(() => {});
         }
       });
       db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(currentDeleted));
@@ -1398,6 +1558,7 @@ async function startServer() {
       if (cleanStudents.length === 0) {
         db.rosterCleared = true;
         db.rosterClearedAt = new Date().toISOString();
+        clearAllSupabaseStudentsOnServer().catch(() => {});
       } else {
         db.rosterCleared = false;
       }
@@ -1409,6 +1570,7 @@ async function startServer() {
       db.students = [];
       db.rosterCleared = true;
       db.rosterClearedAt = new Date().toISOString();
+      clearAllSupabaseStudentsOnServer().catch(() => {});
       try {
         fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify([], null, 2), "utf-8");
       } catch (e) {}
@@ -1546,6 +1708,16 @@ async function startServer() {
     const teachers = req.body?.teachers || req.body;
     if (!Array.isArray(teachers)) return res.status(400).json({ status: "error", message: "Expected teachers array" });
     const db = loadServerDatabase();
+    // Un-tombstone incoming teachers if explicitly being registered or modified
+    const incomingTeacherIds = new Set(teachers.map((t: any) => String(t.id || '').toLowerCase().trim()).filter(Boolean));
+    const incomingTeacherEmails = new Set(teachers.map((t: any) => String(t.email || '').toLowerCase().trim()).filter(Boolean));
+    if (db.deletedTeacherIds && db.deletedTeacherIds.length > 0) {
+      db.deletedTeacherIds = db.deletedTeacherIds.filter(id => {
+        const norm = String(id).toLowerCase().trim();
+        return !incomingTeacherIds.has(norm) && !incomingTeacherEmails.has(norm);
+      });
+    }
+
     const deletedSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
     const cleanTeachers = teachers.filter((t: any) => {
       if (t.id && deletedSet.has(String(t.id).toLowerCase().trim())) return false;
@@ -2281,7 +2453,47 @@ async function syncSupabaseStudentsOnStartup() {
     const client = createClient(supabaseUrl, supabaseKey);
 
     const db = loadServerDatabase();
-    const serverStudents = db.students || [];
+
+    // 1. Fetch remote tombstones from ea_deleted_records
+    try {
+      const { data: delRecords } = await client
+        .from("ea_deleted_records")
+        .select("*")
+        .in("record_type", ["STUDENT", "ROSTER_CLEAR"]);
+
+      if (delRecords && Array.isArray(delRecords)) {
+        const currentDeleted = new Set(sanitizeDeletedStudentIds(db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
+        let hasRosterClear = false;
+        delRecords.forEach((row: any) => {
+          if (row.record_type === "ROSTER_CLEAR") {
+            hasRosterClear = true;
+          } else if (row.record_id) {
+            const clean = String(row.record_id).toLowerCase().trim();
+            currentDeleted.add(clean);
+            const alpha = clean.replace(/[^a-z0-9]/g, '');
+            if (alpha) currentDeleted.add(alpha);
+          }
+        });
+        db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(currentDeleted));
+        if (hasRosterClear && (!db.students || db.students.length === 0)) {
+          db.rosterCleared = true;
+        }
+      }
+    } catch (e) {}
+
+    // 2. If roster was cleared, enforce 0 students and wipe any dangling remote rows
+    if (db.rosterCleared) {
+      db.students = [];
+      saveServerStudents([]);
+      try {
+        await client.from("ea_students").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+        await client.from("ea_student").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      } catch (e) {}
+      console.log("[Startup Supabase Sync] Roster marked cleared; student count remains 0.");
+      return;
+    }
+
+    const serverStudents = (db.students || []).filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
 
     const { data: remoteStudents, error } = await client.from("ea_students").select("*");
     if (error) {
@@ -2290,11 +2502,23 @@ async function syncSupabaseStudentsOnStartup() {
     }
 
     if (remoteStudents && Array.isArray(remoteStudents)) {
-      const remoteIds = new Set(remoteStudents.map((s: any) => s.id));
+      // Actively purge any remote students that have been tombstoned
+      const deletedRemote = remoteStudents.filter((s: any) => isStudentDeletedOnServer(s, db.deletedStudentIds));
+      if (deletedRemote.length > 0) {
+        console.log(`[Startup Supabase Sync] Purging ${deletedRemote.length} tombstoned student(s) from Supabase ea_students...`);
+        const purgeIds = deletedRemote.map((s: any) => s.id).filter(Boolean);
+        for (let i = 0; i < purgeIds.length; i += 50) {
+          await client.from("ea_students").delete().in("id", purgeIds.slice(i, i + 50));
+          try { await client.from("ea_student").delete().in("id", purgeIds.slice(i, i + 50)); } catch (e) {}
+        }
+      }
+
+      const activeRemote = remoteStudents.filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
+      const remoteIds = new Set(activeRemote.map((s: any) => s.id));
       const missingFromRemote = serverStudents.filter((s: any) => s && s.id && !remoteIds.has(s.id));
 
       if (missingFromRemote.length > 0) {
-        console.log(`[Startup Supabase Sync] Pushing ${missingFromRemote.length} missing student(s) to Supabase ea_students...`);
+        console.log(`[Startup Supabase Sync] Pushing ${missingFromRemote.length} active server student(s) to Supabase ea_students...`);
         const payloads = missingFromRemote.map((s: any) => ({
           id: s.id,
           name: s.name,
@@ -2308,11 +2532,11 @@ async function syncSupabaseStudentsOnStartup() {
           updated_at: new Date().toISOString()
         }));
         await client.from("ea_students").upsert(payloads, { onConflict: "id" });
-        console.log(`[Startup Supabase Sync] Successfully populated missing students to Supabase ea_students.`);
+        console.log(`[Startup Supabase Sync] Successfully populated missing active students to Supabase ea_students.`);
       }
 
       const serverIds = new Set(serverStudents.map((s: any) => s.id));
-      const missingFromServer = remoteStudents.filter((s: any) => s && s.id && !serverIds.has(s.id));
+      const missingFromServer = activeRemote.filter((s: any) => s && s.id && !serverIds.has(s.id));
       if (missingFromServer.length > 0) {
         console.log(`[Startup Supabase Sync] Pulling ${missingFromServer.length} new pupil(s) from Supabase into server database...`);
         const mapped = missingFromServer.map((r: any) => ({
@@ -2329,7 +2553,7 @@ async function syncSupabaseStudentsOnStartup() {
         const updated = [...serverStudents, ...mapped];
         saveServerStudents(updated);
       }
-      console.log(`[Startup Supabase Sync] Verified ea_students table synchronization: ${remoteStudents.length + missingFromRemote.length} students total.`);
+      console.log(`[Startup Supabase Sync] Verified ea_students table synchronization: ${activeRemote.length + missingFromRemote.length} students total.`);
     }
   } catch (err: any) {
     console.warn("[Startup Supabase Sync] Warning during background sync:", err?.message || err);
