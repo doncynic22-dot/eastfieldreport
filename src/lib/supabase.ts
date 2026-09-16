@@ -2340,12 +2340,13 @@ export async function saveSingleSupabaseTeacher(teacher: User): Promise<boolean>
     }
 
     // Parallel background cleanup & audit log without blocking main flow
+    const recordIdsToClean = [teacher.id, teacher.email, teacher.name].filter(Boolean) as string[];
     Promise.allSettled([
-      client.from('ea_deleted_records').delete().or(`record_id.eq.${teacher.id},record_id.eq.${teacher.email || ''}`),
+      client.from('ea_deleted_records').delete().in('record_id', recordIdsToClean),
       client.from('ea_sync_logs').insert([{
         id: `sync_tch_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         action_type: 'REGISTER_TEACHER',
-        description: `Staff member recorded & persisted: ${teacher.name} (${teacher.email}) - ${teacher.level}`,
+        description: `Staff member recorded & persisted: ${teacher.name} (${teacher.email || ''}) - ${teacher.level || ''}`,
         performed_by: 'Admin',
         status: upsertOk ? 'SUCCESS' : 'PENDING',
         details: { id: teacher.id, name: teacher.name, email: teacher.email, timestamp: new Date().toISOString() },
@@ -4616,31 +4617,40 @@ export async function uploadTeacherPhotoToSupabase(file: File, teacherId: string
     const fileExt = file.name.split('.').pop() || 'jpg';
     const fileName = `teacher-photos/${cleanId}_${Date.now()}.${fileExt}`;
 
-    try {
-      const { error: eaErr } = await client.storage
-        .from('ea')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: true,
-          contentType: file.type || 'image/jpeg',
-        });
+    // Try Supabase Storage with a fast 2s timeout
+    const storagePromise = (async () => {
+      try {
+        const { error: eaErr } = await client.storage
+          .from('ea')
+          .upload(fileName, file, {
+            cacheControl: '3600',
+            upsert: true,
+            contentType: file.type || 'image/jpeg',
+          });
 
-      if (!eaErr) {
-        const { data: urlData } = client.storage.from('ea').getPublicUrl(fileName);
-        if (urlData?.publicUrl) return urlData.publicUrl;
-      }
-    } catch (e) {}
+        if (!eaErr) {
+          const { data: urlData } = client.storage.from('ea').getPublicUrl(fileName);
+          if (urlData?.publicUrl) return urlData.publicUrl;
+        }
+      } catch (e) {}
 
-    await client.storage.createBucket('teacher-photos', { public: true }).catch(() => {});
-    const altFileName = `profiles/${cleanId}_${Date.now()}.jpg`;
-    const { error: uploadErr } = await client.storage
-      .from('teacher-photos')
-      .upload(altFileName, blob, { cacheControl: '3600', upsert: true, contentType: 'image/jpeg' });
+      try {
+        const altFileName = `profiles/${cleanId}_${Date.now()}.jpg`;
+        const { error: uploadErr } = await client.storage
+          .from('teacher-photos')
+          .upload(altFileName, blob, { cacheControl: '3600', upsert: true, contentType: 'image/jpeg' });
 
-    if (!uploadErr) {
-      const { data: urlData } = client.storage.from('teacher-photos').getPublicUrl(altFileName);
-      if (urlData?.publicUrl) return urlData.publicUrl;
-    }
+        if (!uploadErr) {
+          const { data: urlData } = client.storage.from('teacher-photos').getPublicUrl(altFileName);
+          if (urlData?.publicUrl) return urlData.publicUrl;
+        }
+      } catch (e) {}
+      return null;
+    })();
+
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000));
+    const storageUrl = await Promise.race([storagePromise, timeoutPromise]);
+    if (storageUrl) return storageUrl;
 
     // Fallback to Server CDN Storage
     try {

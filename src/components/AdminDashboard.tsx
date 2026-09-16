@@ -17,7 +17,7 @@ import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
 import DatabaseAuditTab from './DatabaseAuditTab';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSingleSupabaseTeacher, seedStudentAssociatedRecords, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials, SupabaseDetailedStatusReport, isTeacherDeleted } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSingleSupabaseTeacher, seedStudentAssociatedRecords, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, removeDeletedTeacherId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials, SupabaseDetailedStatusReport, isTeacherDeleted } from '../lib/supabase';
 import { globalSyncEngine, uploadAssetToCDN, saveServerEntity } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
@@ -1714,7 +1714,8 @@ export default function AdminDashboard({
           qualification: teacherForm.qualification,
           profilePicture: teacherForm.profilePicture,
           hometown: teacherForm.hometown,
-          ghanaCardNumber: teacherForm.ghanaCardNumber
+          ghanaCardNumber: teacherForm.ghanaCardNumber,
+          updatedAt: new Date().toISOString()
         };
         const updated = teachers.map(t => {
           if (selectedClasses.some(cls => t.classes?.includes(cls))) {
@@ -1728,11 +1729,16 @@ export default function AdminDashboard({
         updatedTeachersList = [...updated, savedTeacher];
       }
 
-      // Update in-memory state immediately
+      // 1. Immediately remove any tombstone records for this teacher
+      removeDeletedTeacherId(savedTeacher.id);
+      if (savedTeacher.email) removeDeletedTeacherId(savedTeacher.email);
+      if (savedTeacher.name) removeDeletedTeacherId(savedTeacher.name);
+
+      // 2. Update in-memory state immediately for instant UI visibility
       setTeachers(updatedTeachersList);
       setEditingTeacher(null);
 
-      // Synchronize class teacher assignments map for selectedClasses immediately
+      // 3. Synchronize class teacher assignments map for selectedClasses immediately
       try {
         const currentTeacherId = savedTeacher.id;
         const assignments = { ...getClassTeacherAssignments(teachers) };
@@ -1749,14 +1755,14 @@ export default function AdminDashboard({
         saveServerEntity('/class-teacher-assignments', assignments).catch(() => {});
       } catch (e) {}
 
-      // Persist to local caches immediately for 0ms latency in table & views
+      // 4. Persist to local caches immediately for 0ms latency in table & views
       try {
         localStorage.setItem('ea_teachers', JSON.stringify(updatedTeachersList));
         localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(updatedTeachersList));
         window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: { teacher: savedTeacher, teachers: updatedTeachersList } }));
       } catch (e) {}
 
-      // Reset and INSTANTLY CLOSE the teacher modal so user sees teacher in the table immediately
+      // 5. Reset and INSTANTLY CLOSE the teacher modal so user sees teacher in the table immediately
       setTeacherForm({
         name: '',
         email: '',
@@ -1775,31 +1781,28 @@ export default function AdminDashboard({
       setIsSubmittingTeacher(false);
       setTeacherError('');
 
-      setPromotionSuccessMsg(`Staff member "${savedTeacher.name}" registered! Syncing to Supabase...`);
+      setStaffSyncMsg(`Staff member "${savedTeacher.name}" registered! Fast syncing to Supabase...`);
 
-      // Asynchronously record single teacher in Supabase ea_teachers table, central server and CDN
+      // 6. Fast direct sync to Supabase and central server
       (async () => {
         try {
-          const [teacherPersisted, rosterPersisted] = await Promise.all([
-            saveSingleSupabaseTeacher(savedTeacher),
-            saveSupabaseTeachers(updatedTeachersList)
-          ]);
+          const teacherPersisted = await saveSingleSupabaseTeacher(savedTeacher);
+          if (teacherPersisted) {
+            setStaffSyncMsg(`Staff member "${savedTeacher.name}" registered and synced to Supabase!`);
+          } else {
+            setStaffSyncMsg(`Staff member "${savedTeacher.name}" registered locally and scheduled for cloud sync.`);
+          }
+          setTimeout(() => setStaffSyncMsg(''), 5000);
 
-          // Push master sync to Server / CDN
+          // Asynchronous non-blocking background roster & master sync
+          saveSupabaseTeachers(updatedTeachersList).catch(() => {});
           globalSyncEngine.pushMasterServerSync({
             teachers: updatedTeachersList
           }).catch(() => {});
-
-          setPromotionSuccessMsg(
-            teacherPersisted || rosterPersisted
-              ? `Staff member "${savedTeacher.name}" saved, recorded in Supabase, and synced!`
-              : `Staff member "${savedTeacher.name}" saved locally. Supabase sync will retry.`
-          );
-          setTimeout(() => setPromotionSuccessMsg(''), 5000);
         } catch (saveErr: any) {
           console.warn('Notice saving teacher to Supabase in background:', saveErr);
-          setPromotionSuccessMsg(`Staff member "${savedTeacher.name}" saved locally.`);
-          setTimeout(() => setPromotionSuccessMsg(''), 5000);
+          setStaffSyncMsg(`Staff member "${savedTeacher.name}" registered locally.`);
+          setTimeout(() => setStaffSyncMsg(''), 5000);
         }
       })();
     } catch (err: any) {
@@ -3907,7 +3910,7 @@ export default function AdminDashboard({
                 </tr>
               </thead>
               <tbody className="divide-y divide-mauve-50 text-xs text-gray-800">
-                {teachers.filter((t) => t.role === 'TEACHER').map((t) => (
+                {teachers.filter((t) => !t.role || t.role === 'TEACHER' || String(t.role).toUpperCase() === 'TEACHER').map((t) => (
                   <tr key={t.id} className="hover:bg-mauve-50/10">
                     <td className="p-3 pl-4">
                       <div className="flex items-center gap-2.5">

@@ -1103,11 +1103,18 @@ export default function App() {
           if (p.classTeacherAssignments && typeof p.classTeacherAssignments === 'object') {
             saveClassTeacherAssignmentsLocally(p.classTeacherAssignments);
           }
-          const reconciled = reconcileTeachersWithClassAssignments(cleanTeachers, p.classTeacherAssignments);
-          setTeachers(reconciled);
-          localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
-          lastSavedTeachersSigRef.current = reconciled.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
-          window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: reconciled }));
+          setTeachers(prev => {
+            const cleanPrev = (prev || []).filter(t => !isTeacherDeleted(t));
+            const teacherMap = new Map<string, User>();
+            cleanTeachers.forEach(t => { if (t?.id) teacherMap.set(String(t.id), t); });
+            cleanPrev.forEach(t => { if (t?.id && !teacherMap.has(String(t.id))) teacherMap.set(String(t.id), t); });
+            const reconciled = reconcileTeachersWithClassAssignments(Array.from(teacherMap.values()).filter(t => !isTeacherDeleted(t)), p.classTeacherAssignments);
+            localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+            localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(reconciled));
+            lastSavedTeachersSigRef.current = reconciled.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
+            return reconciled;
+          });
+          window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: cleanTeachers }));
         }
         if (Array.isArray(p.students)) {
           const creds = getSupabaseCredentials();
@@ -1239,21 +1246,26 @@ export default function App() {
           const cleanTeachers = list.filter(t => !isTeacherDeleted(t));
           const assignments = getClassTeacherAssignments();
           setTeachers(prev => {
+            const cleanPrev = (prev || []).filter(t => !isTeacherDeleted(t));
             let combined: User[];
             if (Array.isArray(payload)) {
-              combined = cleanTeachers;
+              const teacherMap = new Map<string, User>();
+              cleanTeachers.forEach(t => { if (t?.id) teacherMap.set(String(t.id), t); });
+              cleanPrev.forEach(t => { if (t?.id && !teacherMap.has(String(t.id))) teacherMap.set(String(t.id), t); });
+              combined = Array.from(teacherMap.values()).filter(t => !isTeacherDeleted(t));
             } else {
               const single = cleanTeachers[0];
               if (!single) return prev;
-              const idx = prev.findIndex(t => t.id === single.id || (single.email && t.email && t.email.toLowerCase() === single.email.toLowerCase()));
+              const idx = cleanPrev.findIndex(t => t.id === single.id || (single.email && t.email && t.email.toLowerCase() === single.email.toLowerCase()));
               if (idx >= 0) {
-                combined = prev.map((t, i) => i === idx ? { ...t, ...single } : t);
+                combined = cleanPrev.map((t, i) => i === idx ? { ...t, ...single } : t);
               } else {
-                combined = [...prev, single];
+                combined = [...cleanPrev, single];
               }
             }
             const reconciled = reconcileTeachersWithClassAssignments(combined, assignments);
             localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+            localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(reconciled));
             lastSavedTeachersSigRef.current = reconciled.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
             return reconciled;
           });
@@ -1745,9 +1757,46 @@ export default function App() {
         setTeachers(prev => reconcileTeachersWithClassAssignments(prev, assignments));
       }
     };
+
+    const handleTeachersUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const detail = customEvent.detail;
+      if (!detail) return;
+      const incomingList: User[] = Array.isArray(detail)
+        ? detail
+        : Array.isArray(detail.teachers)
+        ? detail.teachers
+        : detail.teacher
+        ? [detail.teacher]
+        : [];
+      if (incomingList.length === 0) return;
+
+      const cleanIncoming = incomingList.filter(t => !isTeacherDeleted(t));
+      setTeachers(prev => {
+        const cleanPrev = (prev || []).filter(t => !isTeacherDeleted(t));
+        const teacherMap = new Map<string, User>();
+        cleanPrev.forEach(t => { if (t?.id) teacherMap.set(String(t.id), t); });
+        cleanIncoming.forEach(t => {
+          if (t && t.id) {
+            const existing = teacherMap.get(String(t.id));
+            teacherMap.set(String(t.id), existing ? { ...existing, ...t } : t);
+          }
+        });
+        const assignments = getClassTeacherAssignments();
+        const merged = Array.from(teacherMap.values()).filter(t => !isTeacherDeleted(t));
+        const reconciled = reconcileTeachersWithClassAssignments(merged, assignments);
+        localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
+        localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(reconciled));
+        lastSavedTeachersSigRef.current = reconciled.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
+        return reconciled;
+      });
+    };
+
     window.addEventListener('ea_class_assignments_updated', handleClassAssignmentsUpdated);
+    window.addEventListener('ea_teachers_updated', handleTeachersUpdated);
     return () => {
       window.removeEventListener('ea_class_assignments_updated', handleClassAssignmentsUpdated);
+      window.removeEventListener('ea_teachers_updated', handleTeachersUpdated);
     };
   }, []);
 
@@ -1850,13 +1899,41 @@ export default function App() {
         if (remoteTeachers && Array.isArray(remoteTeachers)) {
           const cleanRemote = remoteTeachers.filter(t => !isTeacherDeleted(t));
           const assignments = getClassTeacherAssignments();
-          const reconciled = reconcileTeachersWithClassAssignments(cleanRemote, assignments);
           setTeachers(prev => {
-            const prevSig = prev.map(t => `${t.id}:${(t.classes || []).join(',')}`).join('|');
-            const remoteSig = reconciled.map(t => `${t.id}:${(t.classes || []).join(',')}`).join('|');
-            if (prevSig !== remoteSig) {
+            const cleanPrev = (prev || []).filter(t => !isTeacherDeleted(t));
+
+            // Create map with remote teachers
+            const teacherMap = new Map<string, User>();
+            cleanRemote.forEach(t => {
+              if (t && t.id) teacherMap.set(String(t.id), t);
+            });
+
+            // Preserve local non-deleted teachers so newly registered staff are never wiped out
+            cleanPrev.forEach(t => {
+              if (t && t.id && !isTeacherDeleted(t)) {
+                const existingRemote = teacherMap.get(String(t.id));
+                if (!existingRemote) {
+                  teacherMap.set(String(t.id), t);
+                } else {
+                  const localTime = t.updatedAt || (t as any).updated_at ? new Date(t.updatedAt || (t as any).updated_at || '').getTime() : 0;
+                  const remoteTime = existingRemote.updatedAt || (existingRemote as any).updated_at ? new Date(existingRemote.updatedAt || (existingRemote as any).updated_at || '').getTime() : 0;
+                  if (localTime >= remoteTime) {
+                    teacherMap.set(String(t.id), { ...existingRemote, ...t });
+                  }
+                }
+              }
+            });
+
+            const merged = Array.from(teacherMap.values()).filter(t => !isTeacherDeleted(t));
+            const reconciled = reconcileTeachersWithClassAssignments(merged, assignments);
+
+            const prevSig = cleanPrev.map(t => `${t.id}:${t.email}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).sort().join(';');
+            const newSig = reconciled.map(t => `${t.id}:${t.email}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).sort().join(';');
+
+            if (prevSig !== newSig) {
               localStorage.setItem('ea_teachers', JSON.stringify(reconciled));
               localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(reconciled));
+              lastSavedTeachersSigRef.current = newSig;
               return reconciled;
             }
             return prev;

@@ -1505,6 +1505,15 @@ async function startServer() {
       });
     }
     if (Array.isArray(incoming.teachers)) {
+      const incomingTeacherIds = new Set(incoming.teachers.map((t: any) => String(t.id || '').toLowerCase().trim()).filter(Boolean));
+      const incomingTeacherEmails = new Set(incoming.teachers.map((t: any) => String(t.email || '').toLowerCase().trim()).filter(Boolean));
+      const incomingTeacherNames = new Set(incoming.teachers.map((t: any) => String(t.name || '').toLowerCase().trim()).filter(Boolean));
+      if (db.deletedTeacherIds && db.deletedTeacherIds.length > 0) {
+        db.deletedTeacherIds = db.deletedTeacherIds.filter(id => {
+          const norm = String(id).toLowerCase().trim();
+          return !incomingTeacherIds.has(norm) && !incomingTeacherEmails.has(norm) && !incomingTeacherNames.has(norm);
+        });
+      }
       const deletedTeacherSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
       const existingTeachers = Array.isArray(db.teachers) ? db.teachers : [];
       const teacherMap = new Map<string, any>();
