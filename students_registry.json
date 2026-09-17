@@ -18,6 +18,32 @@
     "rollNumber": "EA/P1/2026/001",
     "level": "PRIMARY",
     "className": "Primary 1",
-    "updated_at": "2026-09-17T11:26:37.124Z"
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": "",
+    "updatedAt": "2026-09-17T11:26:37.399+00:00",
+    "updated_at": "2026-09-17T11:26:37.399+00:00"
+  },
+  {
+    "id": "st-kwame-mensah",
+    "name": "Kwame Mensah",
+    "rollNumber": "EA/P2/2026/001",
+    "level": "PRIMARY",
+    "className": "Primary 2",
+    "guardianName": "Kofi Mensah",
+    "guardianPhone": "0240000000",
+    "updated_at": "2026-09-17T11:42:11.119Z"
+  },
+  {
+    "id": "st-1789645145920",
+    "name": "Desmond Ameyaw",
+    "rollNumber": "EA/P1/2026/001",
+    "level": "PRIMARY",
+    "className": "Primary 1",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": ""
   }
 ]

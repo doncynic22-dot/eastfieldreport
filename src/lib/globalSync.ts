@@ -237,26 +237,48 @@ class GlobalSyncManager {
           if (fresh && (fresh.data || fresh.students || fresh.teachers)) {
             const fullPayload = fresh.data || fresh;
 
-            // Merge any deleted student IDs from server payload into localStorage
+            // Prune active students from local deletion tombstones
+            if (Array.isArray(fullPayload.students) && fullPayload.students.length > 0) {
+              try {
+                const activeIds = new Set(fullPayload.students.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
+                const activeAlphas = new Set(fullPayload.students.map((s: any) => String(s.id || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '')).filter(Boolean));
+                const savedDel = localStorage.getItem('ea_deleted_student_ids');
+                const delArr: string[] = savedDel ? JSON.parse(savedDel) : [];
+                const pruned = delArr.filter(id => {
+                  const norm = String(id).toLowerCase().trim();
+                  const normAlpha = norm.replace(/[^a-z0-9]/g, '');
+                  return !activeIds.has(norm) && !activeAlphas.has(normAlpha);
+                });
+                if (pruned.length !== delArr.length) {
+                  localStorage.setItem('ea_deleted_student_ids', JSON.stringify(pruned));
+                }
+              } catch (e) {}
+            }
+
+            // Merge any deleted student IDs from server payload into localStorage (excluding active pupils)
             const serverDeletedIds = fresh.deletedStudentIds || (fresh.data && fresh.data.deletedStudentIds);
             if (Array.isArray(serverDeletedIds) && serverDeletedIds.length > 0) {
               try {
+                const activeIds = new Set((fullPayload.students || []).map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
+                const activeAlphas = new Set((fullPayload.students || []).map((s: any) => String(s.id || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '')).filter(Boolean));
                 const savedDel = localStorage.getItem('ea_deleted_student_ids');
                 const delArr: string[] = savedDel ? JSON.parse(savedDel) : [];
                 const currentSet = new Set(delArr.map(x => String(x).toLowerCase().trim()));
                 let updated = false;
                 serverDeletedIds.forEach((id: string) => {
                   const clean = String(id).toLowerCase().trim();
-                  if (clean && !currentSet.has(clean)) {
-                    delArr.push(clean);
-                    currentSet.add(clean);
-                    updated = true;
-                  }
                   const alphanum = clean.replace(/[^a-z0-9]/g, '');
-                  if (alphanum && alphanum !== clean && !currentSet.has(alphanum)) {
-                    delArr.push(alphanum);
-                    currentSet.add(alphanum);
-                    updated = true;
+                  if (clean && !activeIds.has(clean) && !activeAlphas.has(alphanum)) {
+                    if (!currentSet.has(clean)) {
+                      delArr.push(clean);
+                      currentSet.add(clean);
+                      updated = true;
+                    }
+                    if (alphanum && alphanum !== clean && !currentSet.has(alphanum)) {
+                      delArr.push(alphanum);
+                      currentSet.add(alphanum);
+                      updated = true;
+                    }
                   }
                 });
                 if (updated) {

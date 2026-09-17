@@ -162,8 +162,23 @@ function loadServerStudents(): any[] {
 function saveServerStudents(students: any[]): boolean {
   try {
     const db = loadServerDatabase();
-    // Do NOT prune deletedStudentIds! Student deletions are permanent and must persist indefinitely.
-    const clean = (students || []).filter(s => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
+    const list = Array.isArray(students) ? students : [];
+
+    // Any student explicitly saved is active: prune any tombstones matching their IDs
+    const activeIds = new Set(list.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
+    const activeAlphas = new Set(list.map((s: any) => String(s.id || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '')).filter(Boolean));
+
+    if (db.deletedStudentIds && db.deletedStudentIds.length > 0) {
+      db.deletedStudentIds = sanitizeDeletedStudentIds(
+        db.deletedStudentIds.filter((id: string) => {
+          const norm = String(id).toLowerCase().trim();
+          const normAlpha = norm.replace(/[^a-z0-9]/g, '');
+          return !activeIds.has(norm) && !activeAlphas.has(normAlpha);
+        })
+      );
+    }
+
+    const clean = list.filter(s => s && s.id && !isDemoStudent(s));
     fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(clean, null, 2), "utf-8");
     // Also update unified server database
     db.students = clean;
@@ -230,6 +245,76 @@ function broadcastSse(type: string, entity: string, payload?: any) {
 
 const DEFAULT_SERVER_TEACHERS = [
   {
+    id: "73c0317c-5409-47d9-9b32-a3cba0f2e9ed",
+    name: "Deborah Mabe Nteyado",
+    email: "nteyado@gmail.com",
+    role: "TEACHER",
+    password: "Jsaves247",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: ["Primary 6"]
+  },
+  {
+    id: "26c36a9d-3782-418e-9757-838efe98b037",
+    name: "OBUO ABIGAIL",
+    email: "OBUOABIGAIL35@GMAIL.COM",
+    role: "TEACHER",
+    password: "we123456",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: ["Primary 2"]
+  },
+  {
+    id: "2065ab34-a039-4b14-89a0-a60eaa7e9e99",
+    name: "AKPENE BRIKU JENNIFER",
+    email: "akpenebrikujennifer@gmail.com",
+    role: "TEACHER",
+    password: "jenny@5858",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: ["Primary 3"]
+  },
+  {
+    id: "user-t-reg-1784883616230",
+    name: "Grace Darkoa",
+    email: "adhepagracie@gmail.com",
+    role: "TEACHER",
+    password: "3011",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: ["Primary 1"]
+  },
+  {
+    id: "user-t-reg-1789432950809",
+    name: "Primary 4 Class Teacher",
+    email: "primary4teacher@eastfield.com",
+    role: "TEACHER",
+    password: "teacher123",
+    level: "PRIMARY",
+    classes: ["Primary 4"],
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+  },
+  {
+    id: "user-t-reg-1784882532978",
+    name: "Emmanuel Baah Boateng ",
+    email: "baahboateng674@gmail.com",
+    role: "TEACHER",
+    password: "2030",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: ["Primary 5"]
+  },
+  {
+    id: "d71154f7-79fc-478e-890f-bfab8336fda8",
+    name: "MOSES NARTEH",
+    email: "MOSESNARTEH72@gmail.com",
+    role: "TEACHER",
+    password: "moses123",
+    level: "PRIMARY",
+    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"],
+    classes: []
+  },
+  {
     id: "944bccd2-17cc-4dba-8791-2f1c0e0cd63f",
     name: "Osafo Stephen",
     email: "jhaycyclone@gmail.com",
@@ -270,56 +355,6 @@ const DEFAULT_SERVER_TEACHERS = [
     subjects: ["sub-k-lit", "sub-k-num", "sub-k-owop", "sub-k-ca", "sub-k-wrt"]
   },
   {
-    id: "user-t-reg-1784883616230",
-    name: "Grace Darkoa",
-    email: "adhepagracie@gmail.com",
-    role: "TEACHER",
-    password: "3011",
-    level: "PRIMARY",
-    classes: ["Primary 1"],
-    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
-  },
-  {
-    id: "26c36a9d-3782-418e-9757-838efe98b037",
-    name: "OBUO ABIGAIL",
-    email: "OBUOABIGAIL35@GMAIL.COM",
-    role: "TEACHER",
-    password: "we123456",
-    level: "PRIMARY",
-    classes: ["Primary 2"],
-    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
-  },
-  {
-    id: "2065ab34-a039-4b14-89a0-a60eaa7e9e99",
-    name: "AKPENE BRIKU JENNIFER",
-    email: "akpenebrikujennifer@gmail.com",
-    role: "TEACHER",
-    password: "jenny@5858",
-    level: "PRIMARY",
-    classes: ["Primary 3"],
-    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
-  },
-  {
-    id: "user-t-reg-1784882532978",
-    name: "Emmanuel Baah Boateng ",
-    email: "baahboateng674@gmail.com",
-    role: "TEACHER",
-    password: "2030",
-    level: "PRIMARY",
-    classes: ["Primary 5"],
-    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
-  },
-  {
-    id: "d71154f7-79fc-478e-890f-bfab8336fda8",
-    name: "MOSES NARTEH",
-    email: "MOSESNARTEH72@gmail.com",
-    role: "TEACHER",
-    password: "moses123",
-    level: "PRIMARY",
-    classes: [],
-    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
-  },
-  {
     id: "user-t-reg-1784637715235",
     name: "DESMOND   AMEYAW",
     email: "NANAZOE4@GMAIL.COM",
@@ -330,14 +365,14 @@ const DEFAULT_SERVER_TEACHERS = [
     subjects: ["sub-j-ict"]
   },
   {
-    id: "user-t-reg-1789104201932",
-    name: "Odurol emuel appiah",
+    id: "user-t-1789463013281",
+    name: "Oduro Lemuel Appiah",
     email: "odurolemuelappiah@gmail.com",
     role: "TEACHER",
-    password: "@Tr_0201036057",
+    password: "teacher123",
     level: "JHS",
-    classes: ["JHS 2"],
-    subjects: ["sub-j-sci"]
+    classes: [],
+    subjects: ["sub-j-eng", "sub-j-math", "sub-j-sci"]
   },
   {
     id: "user-t-reg-1784706570519",
@@ -360,24 +395,14 @@ const DEFAULT_SERVER_TEACHERS = [
     subjects: ["sub-j-ca"]
   },
   {
-    id: "user-t-reg-1789103869441",
-    name: "Asiam Ohene Joseph",
-    email: "asiamohenejoseph@gmail.com",
+    id: "user-t-1789462065021",
+    name: "ASIAM OHENE JOSEPH",
+    email: "ASIAMOHENEJOSEPH@GMAIL.COM",
     role: "TEACHER",
-    password: "0413",
+    password: "teacher123",
     level: "JHS",
     classes: [],
-    subjects: ["sub-j-gh", "sub-j-rme"]
-  },
-  {
-    id: "73c0317c-5409-47d9-9b32-a3cba0f2e9ed",
-    name: "Deborah Mabe Nteyado",
-    email: "nteyado@gmail.com",
-    role: "TEACHER",
-    password: "Jsaves247",
-    level: "PRIMARY",
-    classes: ["Primary 6"],
-    subjects: ["sub-p-eng", "sub-p-math", "sub-p-sci", "sub-p-his", "sub-p-rme", "sub-p-gh", "sub-p-art", "sub-p-soc", "sub-p-ict", "sub-p-fr"]
+    subjects: ["sub-j-eng", "sub-j-math", "sub-j-sci"]
   }
 ];
 
@@ -1134,13 +1159,23 @@ async function startServer() {
 
     const clearRoster = req.body?.clearRoster === true || req.query?.clear === 'true';
 
-    if (students.length === 0 || clearRoster) {
+    if (clearRoster) {
       saveServerStudents([]);
       await clearAllSupabaseStudentsOnServer();
       broadcastSse("CLEAR", "students", { action: "CLEAR", count: 0 });
       return res.status(200).json({
         status: "success",
         count: 0,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    if (students.length === 0) {
+      const db = loadServerDatabase();
+      return res.status(200).json({
+        status: "success",
+        count: (db.students || []).length,
+        version: db.version,
         timestamp: new Date().toISOString()
       });
     }
@@ -1269,22 +1304,7 @@ async function startServer() {
         return res.status(500).json({ status: "error", message: error.message });
       }
 
-      // Purge any remote students matching tombstones (excluding active server pupils)
-      const activeServerIdSet = new Set(serverStudents.map((s: any) => String(s.id).toLowerCase().trim()));
-      const deletedRemote = (remoteStudents || []).filter((s: any) => {
-        if (!s || !s.id) return false;
-        if (activeServerIdSet.has(String(s.id).toLowerCase().trim())) return false;
-        return isStudentDeletedOnServer(s, db.deletedStudentIds);
-      });
-      if (deletedRemote.length > 0) {
-        const purgeIds = deletedRemote.map((s: any) => s.id).filter(Boolean);
-        for (let i = 0; i < purgeIds.length; i += 50) {
-          await client.from("ea_students").delete().in("id", purgeIds.slice(i, i + 50));
-          try { await client.from("ea_student").delete().in("id", purgeIds.slice(i, i + 50)); } catch (e) {}
-        }
-      }
-
-      const activeRemote = (remoteStudents || []).filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
+      const activeRemote = (remoteStudents || []).filter((s: any) => !isDemoStudent(s));
       const remoteIds = new Set(activeRemote.map((s: any) => s.id));
       const missingFromRemote = serverStudents.filter((s: any) => s && s.id && !remoteIds.has(s.id));
 
@@ -1822,6 +1842,82 @@ async function startServer() {
     }
 
     return res.status(200).json({ status: "success", count: db.teachers.length, assignments: db.classTeacherAssignments, version: db.version });
+  });
+
+  // Dedicated authoritative repopulate endpoint for all 16 staff
+  app.post("/api/teachers/repopulate", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
+    const db = loadServerDatabase();
+
+    // 1. Clear all server teacher tombstones
+    db.deletedTeacherIds = [];
+
+    // 2. Canonical 16 teachers (use incoming array if provided with length >= 16, or DEFAULT_SERVER_TEACHERS)
+    const incoming = Array.isArray(req.body?.teachers) && req.body.teachers.length >= 16 ? req.body.teachers : DEFAULT_SERVER_TEACHERS;
+    db.teachers = JSON.parse(JSON.stringify(incoming));
+
+    // 3. Rebuild class teacher assignments
+    const derived = buildAssignmentsFromTeachers(db.teachers);
+    db.classTeacherAssignments = derived;
+    if (db.config) {
+      db.config.classTeacherAssignments = derived;
+    }
+
+    saveServerDatabase(db, "teachers", db.teachers);
+    saveServerDatabase(db, "classTeacherAssignments", db.classTeacherAssignments);
+    saveServerDatabase(db, "deletedTeacherIds", []);
+
+    // 4. Broadcast via SSE to all connected clients
+    broadcastSse("UPDATE", "classTeacherAssignments", db.classTeacherAssignments);
+    broadcastSse("UPDATE", "teachers", db.teachers);
+    broadcastSse("UPDATE", "deletedTeacherIds", []);
+    console.log(`[Global Teacher Sync] Repopulated all ${db.teachers.length} canonical staff members and cleared tombstones.`);
+
+    // 5. Authoritative sync to Supabase (delete remote tombstones and upsert all 16 teachers)
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+    if (supabaseUrl && supabaseKey) {
+      try {
+        const { createClient } = await import("@supabase/supabase-js");
+        const client = createClient(supabaseUrl, supabaseKey);
+
+        // Delete remote teacher tombstones
+        await client.from("ea_deleted_records").delete().eq("record_type", "TEACHER");
+
+        const payloads = db.teachers.map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          email: t.email,
+          role: t.role || "TEACHER",
+          password: t.password || null,
+          level: t.level || null,
+          subjects: t.subjects || null,
+          classes: t.classes || null,
+          date_of_birth: t.dateOfBirth || null,
+          phone_number: t.phoneNumber || null,
+          qualification: t.qualification || null,
+          profile_picture: t.profilePicture || null,
+          hometown: t.hometown || null,
+          ghana_card_number: t.ghanaCardNumber || null,
+          updated_at: new Date().toISOString()
+        }));
+        await client.from("ea_teachers").upsert(payloads, { onConflict: "id" });
+        console.log(`[Global Teacher Sync] Synced ${payloads.length} repopulated teachers to Supabase ea_teachers.`);
+      } catch (err: any) {
+        console.warn("[Global Teacher Sync] Supabase repopulate notice:", err?.message || err);
+      }
+    }
+
+    return res.status(200).json({
+      status: "success",
+      count: db.teachers.length,
+      teachers: db.teachers,
+      assignments: db.classTeacherAssignments,
+      version: db.version
+    });
   });
 
   app.delete("/api/teachers/:id", (req, res) => {
@@ -2489,24 +2585,23 @@ async function syncSupabaseStudentsOnStartup() {
         .in("record_type", ["STUDENT", "ROSTER_CLEAR"]);
 
       if (delRecords && Array.isArray(delRecords)) {
-        const currentDeleted = new Set(sanitizeDeletedStudentIds(db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
+        const remoteDeleted = new Set<string>();
         const activeIds = new Set((db.students || []).map((s: any) => String(s.id).toLowerCase().trim()));
         let hasRosterClear = false;
         delRecords.forEach((row: any) => {
           if (row.record_type === "ROSTER_CLEAR") {
             hasRosterClear = true;
-          } else if (row.record_id) {
+          } else if (row.record_id && row.record_id !== "ALL_STUDENTS") {
             const clean = String(row.record_id).toLowerCase().trim();
             if (!activeIds.has(clean)) {
-              currentDeleted.add(clean);
+              remoteDeleted.add(clean);
               const alpha = clean.replace(/[^a-z0-9]/g, '');
-              if (alpha && !activeIds.has(alpha)) currentDeleted.add(alpha);
+              if (alpha && !activeIds.has(alpha)) remoteDeleted.add(alpha);
             }
           }
         });
-        db.deletedStudentIds = sanitizeDeletedStudentIds(
-          Array.from(currentDeleted).filter(id => !activeIds.has(id))
-        );
+        db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(remoteDeleted));
+        saveServerDatabase(db);
         if (activeIds.size > 0) {
           db.rosterCleared = false;
         } else if (hasRosterClear && (!db.students || db.students.length === 0)) {
@@ -2536,23 +2631,7 @@ async function syncSupabaseStudentsOnStartup() {
     }
 
     if (remoteStudents && Array.isArray(remoteStudents)) {
-      // Actively purge any remote students that have been tombstoned, strictly excluding active server pupils
-      const activeServerIdSet = new Set(serverStudents.map((s: any) => String(s.id).toLowerCase().trim()));
-      const deletedRemote = remoteStudents.filter((s: any) => {
-        if (!s || !s.id) return false;
-        if (activeServerIdSet.has(String(s.id).toLowerCase().trim())) return false;
-        return isStudentDeletedOnServer(s, db.deletedStudentIds);
-      });
-      if (deletedRemote.length > 0) {
-        console.log(`[Startup Supabase Sync] Purging ${deletedRemote.length} tombstoned student(s) from Supabase ea_students...`);
-        const purgeIds = deletedRemote.map((s: any) => s.id).filter(Boolean);
-        for (let i = 0; i < purgeIds.length; i += 50) {
-          await client.from("ea_students").delete().in("id", purgeIds.slice(i, i + 50));
-          try { await client.from("ea_student").delete().in("id", purgeIds.slice(i, i + 50)); } catch (e) {}
-        }
-      }
-
-      const activeRemote = remoteStudents.filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
+      const activeRemote = remoteStudents.filter((s: any) => !isDemoStudent(s));
       const remoteIds = new Set(activeRemote.map((s: any) => s.id));
       const missingFromRemote = serverStudents.filter((s: any) => s && s.id && !remoteIds.has(s.id));
 

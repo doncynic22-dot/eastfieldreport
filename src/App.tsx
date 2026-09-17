@@ -52,6 +52,7 @@ import {
   subscribeToGlobalRealtime,
   broadcastSync,
   pruneDeletedTombstones,
+  pruneDeletedStudentTombstones,
   isTeacherDeleted,
   recordDeletedTeacherId
 } from './lib/supabase';
@@ -1856,8 +1857,9 @@ export default function App() {
         ]);
 
         if (remoteStudents && Array.isArray(remoteStudents)) {
+          pruneDeletedStudentTombstones(remoteStudents);
           setStudents(prev => {
-            const cleanRemote = deduplicateStudents(remoteStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s)));
+            const cleanRemote = deduplicateStudents(remoteStudents.filter(s => !isDemoStudent(s)));
             const cleanPrev = (prev || []).filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
             // Create map with remote students
@@ -2242,7 +2244,8 @@ export default function App() {
       }
 
       if (remoteStudents && Array.isArray(remoteStudents)) {
-        const clean = deduplicateStudents(remoteStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s)));
+        pruneDeletedStudentTombstones(remoteStudents);
+        const clean = deduplicateStudents(remoteStudents.filter(s => !isDemoStudent(s)));
         lastSavedStudentsSigRef.current = clean.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
         setStudents(clean);
         if (clean.length > 0) {

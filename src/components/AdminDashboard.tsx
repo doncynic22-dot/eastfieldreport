@@ -17,7 +17,7 @@ import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
 import DatabaseAuditTab from './DatabaseAuditTab';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSingleSupabaseTeacher, seedStudentAssociatedRecords, saveSupabaseTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, removeDeletedTeacherId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials, SupabaseDetailedStatusReport, isTeacherDeleted } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSingleSupabaseTeacher, seedStudentAssociatedRecords, saveSupabaseTeachers, repopulateAllTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, removeDeletedTeacherId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials, SupabaseDetailedStatusReport, isTeacherDeleted } from '../lib/supabase';
 import { globalSyncEngine, uploadAssetToCDN, saveServerEntity } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
@@ -324,15 +324,33 @@ export default function AdminDashboard({
 
   const handlePopulateDefaultStaff = async () => {
     setIsSyncingStaff(true);
-    setStaffSyncMsg('');
+    setStaffSyncMsg('Repopulating all 16 Academy staff members and synchronizing globally...');
     try {
-      const activeDefaults = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
-      setTeachers(activeDefaults);
-      localStorage.setItem('ea_teachers', JSON.stringify(activeDefaults));
-      await saveSupabaseTeachers(activeDefaults);
-      setStaffSyncMsg(`Populated ${activeDefaults.length} standard Academy teachers and synced to database!`);
+      const result = await repopulateAllTeachers(INITIAL_USERS);
+      setTeachers(result.teachers);
+
+      // Reconcile and save class assignments
+      const newAssignments = getClassTeacherAssignments(result.teachers);
+      saveClassTeacherAssignmentsLocally(newAssignments);
+
+      const updatedConfig: ReportConfig = {
+        ...config,
+        classTeacherAssignments: newAssignments,
+        updatedAt: new Date().toISOString()
+      };
+      setConfig(updatedConfig);
+      try {
+        localStorage.setItem('ea_config', JSON.stringify(updatedConfig));
+      } catch (e) {}
+
+      if (onPushToSupabase) {
+        onPushToSupabase(undefined, updatedConfig, result.teachers).catch(() => {});
+      }
+
+      setStaffSyncMsg(`Successfully repopulated all ${result.teachers.length} Academy teachers and synchronized globally!`);
     } catch (err) {
-      setStaffSyncMsg('Populated staff locally and in server cache!');
+      console.error('[Repopulate Staff Error]', err);
+      setStaffSyncMsg('Repopulated staff locally and queued for synchronization!');
     } finally {
       setIsSyncingStaff(false);
       setTimeout(() => setStaffSyncMsg(''), 8000);

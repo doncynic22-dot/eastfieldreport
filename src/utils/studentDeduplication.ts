@@ -41,8 +41,6 @@ export function deduplicateStudents(students: Student[]): Student[] {
 
   const clean: Student[] = [];
   const seenIds = new Set<string>();
-  const seenRolls = new Set<string>();
-  const seenClassAndName = new Set<string>();
 
   for (const s of students) {
     if (!s) continue;
@@ -52,25 +50,7 @@ export function deduplicateStudents(students: Student[]): Student[] {
 
     if (seenIds.has(idLower)) continue;
 
-    // Check duplicate roll number (if non-empty)
-    const normRoll = (s.rollNumber || '').trim().toLowerCase();
-    if (normRoll && seenRolls.has(normRoll)) {
-      continue;
-    }
-
-    // Check duplicate entry in the exact same class with exact same name
-    const normName = (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
-    const normClass = (s.className || '').trim().toLowerCase();
-    if (normName && normClass) {
-      const classKey = `${normName}:::${normClass}`;
-      if (seenClassAndName.has(classKey)) {
-        continue;
-      }
-      seenClassAndName.add(classKey);
-    }
-
     seenIds.add(idLower);
-    if (normRoll) seenRolls.add(normRoll);
     clean.push(s);
   }
 
