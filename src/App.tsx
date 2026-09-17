@@ -738,8 +738,24 @@ export default function App() {
 
       const targetTeachers = customTeachers || teachers;
       const targetGrades = isRosterCleared ? [] : (customGrades !== undefined ? customGrades : grades);
-      const targetAttendance = isRosterCleared ? [] : (customAttendance !== undefined ? customAttendance : attendance);
-      const targetBills = isRosterCleared ? [] : (customBills !== undefined ? customBills : bills);
+      const targetAttendance = isRosterCleared ? [] : (customAttendance !== undefined ? customAttendance : (() => {
+        try {
+          const cached = localStorage.getItem('ea_attendance');
+          const parsed = cached ? JSON.parse(cached) : [];
+          return Array.isArray(parsed) && parsed.length > attendance.length ? parsed : attendance;
+        } catch (e) {
+          return attendance;
+        }
+      })());
+      const targetBills = isRosterCleared ? [] : (customBills !== undefined ? customBills : (() => {
+        try {
+          const cached = localStorage.getItem('ea_bills');
+          const parsed = cached ? JSON.parse(cached) : [];
+          return Array.isArray(parsed) && parsed.length > bills.length ? parsed : bills;
+        } catch (e) {
+          return bills;
+        }
+      })());
       const targetFeePayments = (() => {
         try {
           const cached = localStorage.getItem('ea_fee_payments');
@@ -1842,12 +1858,7 @@ export default function App() {
         if (remoteStudents && Array.isArray(remoteStudents)) {
           setStudents(prev => {
             const cleanRemote = deduplicateStudents(remoteStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s)));
-            const cleanPrev = prev.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
-
-            const isRosterCleared = typeof window !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
-            if (cleanRemote.length === 0 && cleanPrev.length > 0 && !isRosterCleared) {
-              return prev;
-            }
+            const cleanPrev = (prev || []).filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
             // Create map with remote students
             const studentMap = new Map<string, Student>();
@@ -1856,22 +1867,20 @@ export default function App() {
             });
 
             // Preserve local non-deleted students so newly admitted pupils are never automatically deleted
-            if (!isRosterCleared) {
-              cleanPrev.forEach(s => {
-                if (s && s.id && !isStudentDeleted(s) && !isDemoStudent(s)) {
-                  const existingRemote = studentMap.get(s.id);
-                  if (!existingRemote) {
-                    studentMap.set(s.id, s);
-                  } else {
-                    const localTime = s.updatedAt || s.updated_at ? new Date(s.updatedAt || s.updated_at || '').getTime() : 0;
-                    const remoteTime = existingRemote.updatedAt || existingRemote.updated_at ? new Date(existingRemote.updatedAt || existingRemote.updated_at || '').getTime() : 0;
-                    if (localTime > remoteTime) {
-                      studentMap.set(s.id, { ...existingRemote, ...s });
-                    }
+            cleanPrev.forEach(s => {
+              if (s && s.id && !isStudentDeleted(s) && !isDemoStudent(s)) {
+                const existingRemote = studentMap.get(s.id);
+                if (!existingRemote) {
+                  studentMap.set(s.id, s);
+                } else {
+                  const localTime = s.updatedAt || s.updated_at ? new Date(s.updatedAt || s.updated_at || '').getTime() : 0;
+                  const remoteTime = existingRemote.updatedAt || existingRemote.updated_at ? new Date(existingRemote.updatedAt || existingRemote.updated_at || '').getTime() : 0;
+                  if (localTime > remoteTime) {
+                    studentMap.set(s.id, { ...existingRemote, ...s });
                   }
                 }
-              });
-            }
+              }
+            });
 
             const merged = deduplicateStudents(Array.from(studentMap.values()).filter(s => !isStudentDeleted(s)));
             const prevSig = cleanPrev.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
@@ -1881,10 +1890,6 @@ export default function App() {
               if (merged.length > 0) {
                 try {
                   localStorage.removeItem('ea_students_cleared');
-                } catch (e) {}
-              } else {
-                try {
-                  localStorage.setItem('ea_students_cleared', 'true');
                 } catch (e) {}
               }
               localStorage.setItem('ea_students', JSON.stringify(merged));

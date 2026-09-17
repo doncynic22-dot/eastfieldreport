@@ -149,10 +149,6 @@ function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
     const cleanRoll = String(s.rollNumber).toLowerCase().trim();
     if (allDeleted.has(cleanRoll)) return true;
   }
-  if (s.name) {
-    const cleanName = String(s.name).toLowerCase().trim();
-    if (allDeleted.has(cleanName)) return true;
-  }
 
   return false;
 }
@@ -185,11 +181,9 @@ function saveServerStudents(students: any[]): boolean {
     fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(clean, null, 2), "utf-8");
     // Also update unified server database
     db.students = clean;
-    if (clean.length === 0) {
-      db.rosterCleared = true;
-      db.rosterClearedAt = new Date().toISOString();
-    } else {
+    if (clean.length > 0) {
       db.rosterCleared = false;
+      db.rosterClearedAt = undefined;
     }
     saveServerDatabase(db, "students", clean);
     return true;
@@ -1003,21 +997,39 @@ async function startServer() {
     }
 
     const db = loadServerDatabase();
-    // If roster was cleared, start fresh with just this student
-    const currentStudents = db.rosterCleared ? [] : loadServerStudents();
+    // Pupil is active - reset any rosterCleared status
+    db.rosterCleared = false;
+    db.rosterClearedAt = undefined;
+    const currentStudents = Array.isArray(db.students) ? db.students : loadServerStudents();
     const cleanId = String(student.id || `st-${Date.now()}`);
     const cleanRoll = String(student.rollNumber || "").trim();
+    const cleanName = String(student.name || "").trim().toLowerCase();
 
     // If this pupil was previously tombstoned, remove from deleted list
     if (Array.isArray(db.deletedStudentIds)) {
       const lowerId = cleanId.toLowerCase();
       const alphaId = lowerId.replace(/[^a-z0-9]/g, '');
+      const lowerRoll = cleanRoll.toLowerCase();
       db.deletedStudentIds = sanitizeDeletedStudentIds(
         db.deletedStudentIds.filter(id => {
           const item = String(id).toLowerCase().trim();
-          return item !== lowerId && item !== alphaId;
+          return item !== lowerId && item !== alphaId && (!lowerRoll || item !== lowerRoll) && (!cleanName || item !== cleanName);
         })
       );
+    }
+
+    // Also remove any stale ROSTER_CLEAR tombstone from Supabase
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+    if (supabaseUrl && supabaseKey) {
+      import("@supabase/supabase-js").then(async ({ createClient }) => {
+        try {
+          const client = createClient(supabaseUrl, supabaseKey);
+          await client.from("ea_deleted_records").delete().eq("record_type", "ROSTER_CLEAR");
+          if (cleanId) await client.from("ea_deleted_records").delete().eq("record_id", cleanId);
+          if (cleanRoll) await client.from("ea_deleted_records").delete().eq("roll_number", cleanRoll);
+        } catch (e) {}
+      }).catch(() => {});
     }
 
     // Check if student already exists by unique ID
@@ -1559,15 +1571,19 @@ async function startServer() {
       db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(currentDeleted));
     }
     if (Array.isArray(incoming.students)) {
-      // NOTE: Never prune db.deletedStudentIds! Student deletions are permanent.
+      const incomingIds = new Set(incoming.students.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
+      const incomingRolls = new Set(incoming.students.map((s: any) => String(s.rollNumber || '').toLowerCase().trim()).filter(Boolean));
+      if (db.deletedStudentIds && db.deletedStudentIds.length > 0) {
+        db.deletedStudentIds = db.deletedStudentIds.filter(id => {
+          const norm = String(id).toLowerCase().trim();
+          return !incomingIds.has(norm) && !incomingRolls.has(norm);
+        });
+      }
       const cleanStudents = incoming.students.filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
       db.students = cleanStudents;
-      if (cleanStudents.length === 0) {
-        db.rosterCleared = true;
-        db.rosterClearedAt = new Date().toISOString();
-        clearAllSupabaseStudentsOnServer().catch(() => {});
-      } else {
+      if (cleanStudents.length > 0) {
         db.rosterCleared = false;
+        db.rosterClearedAt = undefined;
       }
       try {
         fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(cleanStudents, null, 2), "utf-8");

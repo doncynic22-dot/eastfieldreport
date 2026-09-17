@@ -1324,9 +1324,8 @@ export function isStudentDeleted(student?: { id?: string; rollNumber?: string; n
   
   const deletedIds = getDeletedStudentIds();
   const deletedRolls = getDeletedStudentRolls();
-  const deletedNames = getDeletedStudentNames();
 
-  if (deletedIds.length === 0 && deletedRolls.length === 0 && deletedNames.length === 0) {
+  if (deletedIds.length === 0 && deletedRolls.length === 0) {
     return false;
   }
 
@@ -1349,17 +1348,16 @@ export function isStudentDeleted(student?: { id?: string; rollNumber?: string; n
     if (normRoll && normRollSet.has(normRoll)) return true;
   }
 
-  // 3. Check Name
-  if (student.name) {
-    const cleanName = String(student.name).toLowerCase().trim().replace(/\s+/g, ' ');
-    const nameSet = new Set(deletedNames.map(x => String(x).toLowerCase().trim().replace(/\s+/g, ' ')));
-    if (nameSet.has(cleanName)) return true;
-  }
-
   return false;
 }
 
 export function removeDeletedStudentId(id?: string, rollNumber?: string, studentName?: string): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('ea_students_cleared');
+    }
+  } catch (e) {}
+
   if (!id && !rollNumber && !studentName) return;
   try {
     if (id) {
@@ -1373,20 +1371,28 @@ export function removeDeletedStudentId(id?: string, rollNumber?: string, student
       localStorage.setItem('ea_deleted_student_ids', JSON.stringify(filtered));
     }
 
-    localStorage.removeItem('ea_deleted_student_rolls');
+    if (rollNumber) {
+      const currentRolls = getDeletedStudentRolls();
+      const cleanR = rollNumber.toLowerCase().trim();
+      const filteredRolls = currentRolls.filter(r => r.toLowerCase().trim() !== cleanR);
+      localStorage.setItem('ea_deleted_student_rolls', JSON.stringify(filteredRolls));
+    }
+
     localStorage.removeItem('ea_deleted_student_names');
 
     // Also remove from Supabase ea_deleted_records if client exists
     const client = getSupabaseClient();
     if (client) {
+      // Clear any ROSTER_CLEAR tombstone as we now have active student records
+      client.from('ea_deleted_records').delete().eq('record_type', 'ROSTER_CLEAR').then(() => {}, () => {});
       if (id) {
-        client.from('ea_deleted_records').delete().eq('record_id', id).then(() => {});
+        client.from('ea_deleted_records').delete().eq('record_id', id).then(() => {}, () => {});
       }
       if (rollNumber) {
-        client.from('ea_deleted_records').delete().eq('roll_number', rollNumber).then(() => {});
+        client.from('ea_deleted_records').delete().eq('roll_number', rollNumber).then(() => {}, () => {});
       }
       if (studentName) {
-        client.from('ea_deleted_records').delete().ilike('name', studentName.trim()).then(() => {});
+        client.from('ea_deleted_records').delete().ilike('name', studentName.trim()).then(() => {}, () => {});
       }
     }
   } catch (e) {}
@@ -1580,12 +1586,40 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     }
 
     if (!data || data.length === 0) {
-      // Remote Supabase table has 0 records - update local caches to reflect clean empty roster
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('ea_students', JSON.stringify([]));
-        localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
-        localStorage.setItem('ea_students_cleared', 'true');
+      // Supabase returned 0 rows. Check if local cache has newly admitted pupils that haven't been cleared
+      const isExplicitlyCleared = typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
+      const cached = typeof localStorage !== 'undefined' ? (localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students')) : null;
+      let localClean: Student[] = [];
+      if (cached && !isExplicitlyCleared) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            localClean = filterDeleted(parsed);
+          }
+        } catch (e) {}
       }
+
+      if (localClean.length > 0) {
+        // Local has pupils (e.g. freshly admitted) that need to be pushed to cloud
+        saveSupabaseStudents(localClean).catch(() => {});
+        return localClean;
+      }
+
+      // Fallback check to central server
+      const serverResult = await fetchFromServer();
+      if (serverResult && serverResult.length > 0) {
+        const cleanServer = filterDeleted(serverResult);
+        if (cleanServer.length > 0) {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('ea_students', JSON.stringify(cleanServer));
+            localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanServer));
+            localStorage.removeItem('ea_students_cleared');
+          }
+          saveSupabaseStudents(cleanServer).catch(() => {});
+          return cleanServer;
+        }
+      }
+
       return [];
     }
 
@@ -1599,6 +1633,8 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
       guardianEmail: item.guardian_email || '',
       guardianPhone: item.guardian_phone || '',
       photoUrl: item.photo_url || '',
+      updatedAt: item.updated_at || item.created_at || new Date().toISOString(),
+      updated_at: item.updated_at || item.created_at || new Date().toISOString()
     }));
 
     // Actively purge any tombstoned students that were returned from Supabase
@@ -1611,22 +1647,53 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
 
     const cleanMapped = filterDeleted(mapped);
 
-    if (typeof localStorage !== 'undefined') {
-      if (cleanMapped.length > 0) {
-        localStorage.removeItem('ea_students_cleared');
-      } else {
-        localStorage.setItem('ea_students_cleared', 'true');
+    // Reconcile with local students (e.g. freshly admitted students that are not yet in remote)
+    const studentMap = new Map<string, Student>();
+    cleanMapped.forEach(s => {
+      if (s && s.id) studentMap.set(s.id, s);
+    });
+
+    const isExplicitlyCleared = typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
+    if (!isExplicitlyCleared && typeof localStorage !== 'undefined') {
+      const cached = localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            const localClean = filterDeleted(parsed);
+            localClean.forEach(s => {
+              if (s && s.id && !studentMap.has(s.id)) {
+                studentMap.set(s.id, s);
+              } else if (s && s.id && studentMap.has(s.id)) {
+                const remote = studentMap.get(s.id)!;
+                const localTime = new Date(s.updatedAt || s.updated_at || '').getTime() || 0;
+                const remoteTime = new Date(remote.updatedAt || remote.updated_at || '').getTime() || 0;
+                if (localTime > remoteTime) {
+                  studentMap.set(s.id, { ...remote, ...s });
+                }
+              }
+            });
+          }
+        } catch (e) {}
       }
-      localStorage.setItem('ea_students', JSON.stringify(cleanMapped));
-      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanMapped));
+    }
+
+    const mergedStudents = deduplicateStudents(filterDeleted(Array.from(studentMap.values())));
+
+    if (typeof localStorage !== 'undefined') {
+      if (mergedStudents.length > 0) {
+        localStorage.removeItem('ea_students_cleared');
+      }
+      localStorage.setItem('ea_students', JSON.stringify(mergedStudents));
+      localStorage.setItem('mock_supabase_ea_students', JSON.stringify(mergedStudents));
     }
 
     // Keep server / CDN synchronized in background with latest Supabase roster
     try {
-      saveServerEntity('/students', cleanMapped).catch(() => {});
+      saveServerEntity('/students', mergedStudents).catch(() => {});
     } catch (e) {}
 
-    return cleanMapped;
+    return mergedStudents;
   } catch (err: any) {
     return await getMergedFallback();
   }
@@ -1685,6 +1752,7 @@ export async function saveSingleSupabaseStudent(student: Student): Promise<boole
     try {
       // Clear any remote tombstone from ea_deleted_records
       try {
+        await client.from('ea_deleted_records').delete().eq('record_type', 'ROSTER_CLEAR');
         if (student.id) {
           await client.from('ea_deleted_records').delete().eq('record_id', student.id);
         }
