@@ -1133,21 +1133,26 @@ export default function App() {
           window.dispatchEvent(new CustomEvent('ea_teachers_updated', { detail: cleanTeachers }));
         }
         if (Array.isArray(p.students)) {
-          const creds = getSupabaseCredentials();
-          // Keep ea_students table authoritative when cloud is active
-          if (!creds.isConfigured) {
-            const filtered = p.students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
-            setStudents(filtered);
-            localStorage.setItem('ea_students', JSON.stringify(filtered));
-            localStorage.setItem('mock_supabase_ea_students', JSON.stringify(filtered));
-            lastSavedStudentsSigRef.current = filtered.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
-            window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: filtered }));
-            if (filtered.length === 0) {
-              localStorage.setItem('ea_students_cleared', 'true');
-            } else {
+          const incomingClean = deduplicateStudents(p.students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s)));
+          setStudents(prev => {
+            const cleanPrev = (prev || []).filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
+            const studentMap = new Map<string, Student>();
+            incomingClean.forEach(s => { if (s?.id) studentMap.set(s.id, s); });
+            cleanPrev.forEach(s => {
+              if (s?.id && !studentMap.has(s.id)) {
+                studentMap.set(s.id, s);
+              }
+            });
+            const reconciled = deduplicateStudents(Array.from(studentMap.values()).filter(s => !isStudentDeleted(s)));
+            localStorage.setItem('ea_students', JSON.stringify(reconciled));
+            localStorage.setItem('mock_supabase_ea_students', JSON.stringify(reconciled));
+            lastSavedStudentsSigRef.current = reconciled.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+            window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: reconciled }));
+            if (reconciled.length > 0) {
               localStorage.removeItem('ea_students_cleared');
             }
-          }
+            return reconciled;
+          });
         }
         if (Array.isArray(p.grades)) {
           setGrades(p.grades);
@@ -1208,25 +1213,20 @@ export default function App() {
             window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: [] }));
           } else if (action === 'DELETE') {
             const delId = payload.id;
-            const delRoll = payload.rollNumber;
-            const delName = payload.studentName;
-            recordDeletedStudentId(delId, delRoll, delName);
-            setStudents(prev => {
-              const updated = prev.filter(s => {
-                if (delId && (s.id === delId || String(s.id).toLowerCase() === String(delId).toLowerCase())) return false;
-                if (delRoll && s.rollNumber && s.rollNumber.trim().toLowerCase() === delRoll.trim().toLowerCase()) return false;
-                if (delName && s.name && s.name.trim().toLowerCase() === delName.trim().toLowerCase()) return false;
-                return true;
+            if (delId) {
+              recordDeletedStudentId(delId);
+              setStudents(prev => {
+                const updated = prev.filter(s => s.id !== delId && String(s.id).toLowerCase() !== String(delId).toLowerCase());
+                localStorage.setItem('ea_students', JSON.stringify(updated));
+                localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updated));
+                lastSavedStudentsSigRef.current = updated.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+                window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: updated }));
+                return updated;
               });
-              localStorage.setItem('ea_students', JSON.stringify(updated));
-              localStorage.setItem('mock_supabase_ea_students', JSON.stringify(updated));
-              lastSavedStudentsSigRef.current = updated.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
-              window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: updated }));
-              return updated;
-            });
+            }
           } else if ((action === 'ADMIT' || action === 'UPSERT') && payload.student) {
             const newStudent = payload.student;
-            removeDeletedStudentId(newStudent.id, newStudent.rollNumber, newStudent.name);
+            if (newStudent.id) removeDeletedStudentId(newStudent.id);
             if (!isDemoStudent(newStudent)) {
               setStudents(prev => {
                 const existingIdx = prev.findIndex(s => s.id === newStudent.id);

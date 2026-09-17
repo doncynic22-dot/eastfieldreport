@@ -299,10 +299,6 @@ class GlobalSyncManager {
                     if (!s) return false;
                     const id = s.id ? String(s.id).toLowerCase().trim() : '';
                     if (id && (delSet.has(id) || delSet.has(id.replace(/[^a-z0-9]/g, '')))) return false;
-                    const roll = s.rollNumber ? String(s.rollNumber).toLowerCase().trim() : '';
-                    if (roll && (delSet.has(roll) || delSet.has(roll.replace(/[^a-z0-9]/g, '')))) return false;
-                    const name = s.name ? String(s.name).toLowerCase().trim() : '';
-                    if (name && (delSet.has(name) || delSet.has(name.replace(/[^a-z0-9]/g, '')))) return false;
                     return true;
                   });
                 }

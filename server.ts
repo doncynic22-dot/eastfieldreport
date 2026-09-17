@@ -42,7 +42,7 @@ function sanitizeDeletedStudentIds(ids: any[]): string[] {
   });
 }
 
-async function deleteSupabaseStudentOnServer(id: string, rollNumber?: string, studentName?: string): Promise<void> {
+async function deleteSupabaseStudentOnServer(id: string, _rollNumber?: string, _studentName?: string): Promise<void> {
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
   const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
   if (!supabaseUrl || !supabaseKey || !id) return;
@@ -50,7 +50,7 @@ async function deleteSupabaseStudentOnServer(id: string, rollNumber?: string, st
     const { createClient } = await import("@supabase/supabase-js");
     const client = createClient(supabaseUrl, supabaseKey);
 
-    const keys = [id, rollNumber].filter(Boolean) as string[];
+    const keys = [id].filter(Boolean) as string[];
     for (const k of keys) {
       try { await client.from("ea_grades").delete().eq("student_id", k); } catch (e) {}
       try { await client.from("ea_attendance").delete().eq("student_id", k); } catch (e) {}
@@ -61,23 +61,15 @@ async function deleteSupabaseStudentOnServer(id: string, rollNumber?: string, st
       try { await client.from("ea_students").delete().eq("id", k); } catch (e) {}
       try { await client.from("ea_student").delete().eq("id", k); } catch (e) {}
     }
-    if (rollNumber) {
-      try { await client.from("ea_students").delete().eq("roll_number", rollNumber.trim()); } catch (e) {}
-      try { await client.from("ea_student").delete().eq("roll_number", rollNumber.trim()); } catch (e) {}
-    }
-    if (studentName) {
-      try { await client.from("ea_students").delete().ilike("name", studentName.trim()); } catch (e) {}
-      try { await client.from("ea_student").delete().ilike("name", studentName.trim()); } catch (e) {}
-    }
 
     const tombId = `del_st_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     await client.from("ea_deleted_records").upsert([{
       id: tombId,
       record_type: "STUDENT",
       record_id: id,
-      roll_number: rollNumber || null,
-      name: studentName || null,
-      details: { id, rollNumber, studentName, timestamp: new Date().toISOString() },
+      roll_number: null,
+      name: null,
+      details: { id, timestamp: new Date().toISOString() },
       deleted_at: new Date().toISOString()
     }]);
     console.log(`[Server Supabase Deletion] Student '${id}' permanently deleted from Supabase & recorded tombstone.`);
@@ -130,7 +122,7 @@ async function clearAllSupabaseStudentsOnServer(): Promise<void> {
 }
 
 function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
-  if (!s) return false;
+  if (!s || !s.id) return false;
   const db = dbCache || (fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, "utf-8")) : null);
   const rawList = [
     ...(db?.deletedStudentIds || []),
@@ -139,16 +131,10 @@ function isStudentDeletedOnServer(s: any, deletedIds?: string[]): boolean {
   const allDeleted = new Set(sanitizeDeletedStudentIds(rawList).map(x => String(x).toLowerCase().trim()));
   if (allDeleted.size === 0) return false;
 
-  if (s.id) {
-    const cleanId = String(s.id).toLowerCase().trim();
-    if (allDeleted.has(cleanId)) return true;
-    const alphaId = cleanId.replace(/[^a-z0-9]/g, '');
-    if (alphaId && allDeleted.has(alphaId)) return true;
-  }
-  if (s.rollNumber) {
-    const cleanRoll = String(s.rollNumber).toLowerCase().trim();
-    if (allDeleted.has(cleanRoll)) return true;
-  }
+  const cleanId = String(s.id).toLowerCase().trim();
+  if (allDeleted.has(cleanId)) return true;
+  const alphaId = cleanId.replace(/[^a-z0-9]/g, '');
+  if (alphaId && allDeleted.has(alphaId)) return true;
 
   return false;
 }
@@ -1009,27 +995,12 @@ async function startServer() {
     if (Array.isArray(db.deletedStudentIds)) {
       const lowerId = cleanId.toLowerCase();
       const alphaId = lowerId.replace(/[^a-z0-9]/g, '');
-      const lowerRoll = cleanRoll.toLowerCase();
       db.deletedStudentIds = sanitizeDeletedStudentIds(
         db.deletedStudentIds.filter(id => {
           const item = String(id).toLowerCase().trim();
-          return item !== lowerId && item !== alphaId && (!lowerRoll || item !== lowerRoll) && (!cleanName || item !== cleanName);
+          return item !== lowerId && item !== alphaId;
         })
       );
-    }
-
-    // Also remove any stale ROSTER_CLEAR tombstone from Supabase
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
-    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
-    if (supabaseUrl && supabaseKey) {
-      import("@supabase/supabase-js").then(async ({ createClient }) => {
-        try {
-          const client = createClient(supabaseUrl, supabaseKey);
-          await client.from("ea_deleted_records").delete().eq("record_type", "ROSTER_CLEAR");
-          if (cleanId) await client.from("ea_deleted_records").delete().eq("record_id", cleanId);
-          if (cleanRoll) await client.from("ea_deleted_records").delete().eq("roll_number", cleanRoll);
-        } catch (e) {}
-      }).catch(() => {});
     }
 
     // Check if student already exists by unique ID
@@ -1052,6 +1023,33 @@ async function startServer() {
       rollNumber: finalRoll,
       updated_at: new Date().toISOString()
     };
+
+    // Also remove any stale ROSTER_CLEAR tombstone and upsert directly into Supabase ea_students
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+    if (supabaseUrl && supabaseKey) {
+      import("@supabase/supabase-js").then(async ({ createClient }) => {
+        try {
+          const client = createClient(supabaseUrl, supabaseKey);
+          await client.from("ea_deleted_records").delete().eq("record_type", "ROSTER_CLEAR");
+          if (cleanId) await client.from("ea_deleted_records").delete().eq("record_id", cleanId);
+          const sbPayload = {
+            id: normalizedStudent.id,
+            name: normalizedStudent.name,
+            roll_number: normalizedStudent.rollNumber,
+            level: normalizedStudent.level || "PRIMARY",
+            class_name: normalizedStudent.className,
+            guardian_name: normalizedStudent.guardianName || "",
+            guardian_email: normalizedStudent.guardianEmail || "",
+            guardian_phone: normalizedStudent.guardianPhone || "",
+            photo_url: normalizedStudent.photoUrl || "",
+            updated_at: new Date().toISOString()
+          };
+          await client.from("ea_students").upsert([sbPayload], { onConflict: "id" });
+          try { await client.from("ea_student").upsert([sbPayload], { onConflict: "id" }); } catch (e) {}
+        } catch (e) {}
+      }).catch(() => {});
+    }
 
     let updatedList: any[];
     if (existingIndex >= 0) {
@@ -1271,8 +1269,13 @@ async function startServer() {
         return res.status(500).json({ status: "error", message: error.message });
       }
 
-      // Purge any remote students matching tombstones
-      const deletedRemote = (remoteStudents || []).filter((s: any) => isStudentDeletedOnServer(s, db.deletedStudentIds));
+      // Purge any remote students matching tombstones (excluding active server pupils)
+      const activeServerIdSet = new Set(serverStudents.map((s: any) => String(s.id).toLowerCase().trim()));
+      const deletedRemote = (remoteStudents || []).filter((s: any) => {
+        if (!s || !s.id) return false;
+        if (activeServerIdSet.has(String(s.id).toLowerCase().trim())) return false;
+        return isStudentDeletedOnServer(s, db.deletedStudentIds);
+      });
       if (deletedRemote.length > 0) {
         const purgeIds = deletedRemote.map((s: any) => s.id).filter(Boolean);
         for (let i = 0; i < purgeIds.length; i += 50) {
@@ -2487,26 +2490,33 @@ async function syncSupabaseStudentsOnStartup() {
 
       if (delRecords && Array.isArray(delRecords)) {
         const currentDeleted = new Set(sanitizeDeletedStudentIds(db.deletedStudentIds || []).map(x => String(x).toLowerCase().trim()));
+        const activeIds = new Set((db.students || []).map((s: any) => String(s.id).toLowerCase().trim()));
         let hasRosterClear = false;
         delRecords.forEach((row: any) => {
           if (row.record_type === "ROSTER_CLEAR") {
             hasRosterClear = true;
           } else if (row.record_id) {
             const clean = String(row.record_id).toLowerCase().trim();
-            currentDeleted.add(clean);
-            const alpha = clean.replace(/[^a-z0-9]/g, '');
-            if (alpha) currentDeleted.add(alpha);
+            if (!activeIds.has(clean)) {
+              currentDeleted.add(clean);
+              const alpha = clean.replace(/[^a-z0-9]/g, '');
+              if (alpha && !activeIds.has(alpha)) currentDeleted.add(alpha);
+            }
           }
         });
-        db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(currentDeleted));
-        if (hasRosterClear && (!db.students || db.students.length === 0)) {
+        db.deletedStudentIds = sanitizeDeletedStudentIds(
+          Array.from(currentDeleted).filter(id => !activeIds.has(id))
+        );
+        if (activeIds.size > 0) {
+          db.rosterCleared = false;
+        } else if (hasRosterClear && (!db.students || db.students.length === 0)) {
           db.rosterCleared = true;
         }
       }
     } catch (e) {}
 
     // 2. If roster was cleared, enforce 0 students and wipe any dangling remote rows
-    if (db.rosterCleared) {
+    if (db.rosterCleared && (!db.students || db.students.length === 0)) {
       db.students = [];
       saveServerStudents([]);
       try {
@@ -2526,8 +2536,13 @@ async function syncSupabaseStudentsOnStartup() {
     }
 
     if (remoteStudents && Array.isArray(remoteStudents)) {
-      // Actively purge any remote students that have been tombstoned
-      const deletedRemote = remoteStudents.filter((s: any) => isStudentDeletedOnServer(s, db.deletedStudentIds));
+      // Actively purge any remote students that have been tombstoned, strictly excluding active server pupils
+      const activeServerIdSet = new Set(serverStudents.map((s: any) => String(s.id).toLowerCase().trim()));
+      const deletedRemote = remoteStudents.filter((s: any) => {
+        if (!s || !s.id) return false;
+        if (activeServerIdSet.has(String(s.id).toLowerCase().trim())) return false;
+        return isStudentDeletedOnServer(s, db.deletedStudentIds);
+      });
       if (deletedRemote.length > 0) {
         console.log(`[Startup Supabase Sync] Purging ${deletedRemote.length} tombstoned student(s) from Supabase ea_students...`);
         const purgeIds = deletedRemote.map((s: any) => s.id).filter(Boolean);

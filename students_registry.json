@@ -1,10 +1,23 @@
 [
   {
-    "id": "st-verify-admit-1",
-    "name": "Test Admitted Student",
-    "rollNumber": "TEST-001",
-    "className": "Primary 1",
+    "id": "st-1789642454248",
+    "name": "Asumadu David",
+    "rollNumber": "EA/J3/2026/002",
+    "level": "JHS",
+    "className": "JHS 3",
+    "guardianName": "",
+    "guardianEmail": "",
+    "guardianPhone": "",
+    "photoUrl": "",
+    "updatedAt": "2026-09-17T11:05:19.7+00:00",
+    "updated_at": "2026-09-17T11:05:19.7+00:00"
+  },
+  {
+    "id": "st-nathaniel-adams",
+    "name": "Nathaniel Adams",
+    "rollNumber": "EA/P1/2026/001",
     "level": "PRIMARY",
-    "updated_at": "2026-09-17T09:32:31.726Z"
+    "className": "Primary 1",
+    "updated_at": "2026-09-17T11:26:37.124Z"
   }
 ]
