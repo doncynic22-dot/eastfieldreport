@@ -1859,7 +1859,16 @@ export default function App() {
         if (remoteStudents && Array.isArray(remoteStudents)) {
           pruneDeletedStudentTombstones(remoteStudents);
           setStudents(prev => {
+            const isRosterCleared = typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
             const cleanRemote = deduplicateStudents(remoteStudents.filter(s => !isDemoStudent(s)));
+
+            if (cleanRemote.length === 0 && isRosterCleared) {
+              localStorage.setItem('ea_students', JSON.stringify([]));
+              localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
+              lastSavedStudentsSigRef.current = '';
+              return [];
+            }
+
             const cleanPrev = (prev || []).filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
             // Create map with remote students
@@ -1868,21 +1877,23 @@ export default function App() {
               if (s && s.id) studentMap.set(s.id, s);
             });
 
-            // Preserve local non-deleted students so newly admitted pupils are never automatically deleted
-            cleanPrev.forEach(s => {
-              if (s && s.id && !isStudentDeleted(s) && !isDemoStudent(s)) {
-                const existingRemote = studentMap.get(s.id);
-                if (!existingRemote) {
-                  studentMap.set(s.id, s);
-                } else {
-                  const localTime = s.updatedAt || s.updated_at ? new Date(s.updatedAt || s.updated_at || '').getTime() : 0;
-                  const remoteTime = existingRemote.updatedAt || existingRemote.updated_at ? new Date(existingRemote.updatedAt || existingRemote.updated_at || '').getTime() : 0;
-                  if (localTime > remoteTime) {
-                    studentMap.set(s.id, { ...existingRemote, ...s });
+            // Preserve local non-deleted students only if roster was NOT explicitly cleared
+            if (!isRosterCleared) {
+              cleanPrev.forEach(s => {
+                if (s && s.id && !isStudentDeleted(s) && !isDemoStudent(s)) {
+                  const existingRemote = studentMap.get(s.id);
+                  if (!existingRemote) {
+                    studentMap.set(s.id, s);
+                  } else {
+                    const localTime = s.updatedAt || s.updated_at ? new Date(s.updatedAt || s.updated_at || '').getTime() : 0;
+                    const remoteTime = existingRemote.updatedAt || existingRemote.updated_at ? new Date(existingRemote.updatedAt || existingRemote.updated_at || '').getTime() : 0;
+                    if (localTime > remoteTime) {
+                      studentMap.set(s.id, { ...existingRemote, ...s });
+                    }
                   }
                 }
-              }
-            });
+              });
+            }
 
             const merged = deduplicateStudents(Array.from(studentMap.values()).filter(s => !isStudentDeleted(s)));
             const prevSig = cleanPrev.map(s => `${s.id}_${s.className}_${s.name}_${s.rollNumber}`).sort().join(';');
@@ -1893,6 +1904,8 @@ export default function App() {
                 try {
                   localStorage.removeItem('ea_students_cleared');
                 } catch (e) {}
+              } else if (isRosterCleared) {
+                localStorage.setItem('ea_students_cleared', 'true');
               }
               localStorage.setItem('ea_students', JSON.stringify(merged));
               localStorage.setItem('mock_supabase_ea_students', JSON.stringify(merged));

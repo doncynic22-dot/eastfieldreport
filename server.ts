@@ -161,20 +161,11 @@ function loadServerStudents(): any[] {
 
 function getDefaultServerStudents(): any[] {
   try {
-    let list: any[] = [];
-    if (fs.existsSync("cached_students.json")) {
-      const cached = JSON.parse(fs.readFileSync("cached_students.json", "utf-8"));
-      if (Array.isArray(cached)) list = cached;
+    const db = dbCache || (fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, "utf-8")) : null);
+    if (db && db.rosterCleared) {
+      return [];
     }
-    const current = (dbCache?.students || []);
-    const idSet = new Set(list.map((s: any) => s.id));
-    for (const cur of current) {
-      if (cur && cur.id && !idSet.has(cur.id) && !isDemoStudent(cur)) {
-        list.push(cur);
-        idSet.add(cur.id);
-      }
-    }
-    return list.filter((s: any) => s && s.id && !isDemoStudent(s));
+    return (db?.students || []).filter((s: any) => s && s.id && !isDemoStudent(s));
   } catch (e) {
     return [];
   }
@@ -203,7 +194,15 @@ function saveServerStudents(students: any[]): boolean {
     fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(clean, null, 2), "utf-8");
     // Also update unified server database
     db.students = clean;
-    if (clean.length > 0) {
+    if (clean.length === 0) {
+      db.rosterCleared = true;
+      db.rosterClearedAt = new Date().toISOString();
+      try {
+        if (fs.existsSync("students_registry.json")) {
+          fs.writeFileSync("students_registry.json", JSON.stringify([], null, 2), "utf-8");
+        }
+      } catch (e) {}
+    } else {
       db.rosterCleared = false;
       db.rosterClearedAt = undefined;
     }
@@ -443,13 +442,14 @@ function buildAssignmentsFromTeachers(teachers: any[]): Record<string, string> {
 }
 
 function getDefaultDatabase(): ServerDatabase {
-  const existingStudents = loadServerStudents();
   return {
     version: 1,
     lastUpdated: new Date().toISOString(),
     config: null,
     teachers: DEFAULT_SERVER_TEACHERS,
-    students: existingStudents,
+    students: [],
+    rosterCleared: true,
+    rosterClearedAt: new Date().toISOString(),
     grades: [],
     attendance: [],
     dailyAttendance: [],
@@ -476,17 +476,16 @@ function loadServerDatabase(): ServerDatabase {
       const data = fs.readFileSync(DB_FILE, "utf-8");
       const parsed = JSON.parse(data);
       if (parsed && typeof parsed === "object") {
-        if (!parsed.rosterCleared && (!Array.isArray(parsed.students) || parsed.students.length === 0)) {
-          const fallbackStudents = loadServerStudents();
-          if (fallbackStudents.length > 0) {
-            parsed.students = fallbackStudents;
-          }
-        }
+        const isRosterCleared = Boolean(parsed.rosterCleared);
+        const rawStudents = Array.isArray(parsed.students) ? parsed.students : [];
+        const loadedStudents = isRosterCleared ? [] : rawStudents.filter((s: any) => !isDemoStudent(s));
         const loadedDb: ServerDatabase = {
           ...getDefaultDatabase(),
           ...parsed,
+          rosterCleared: isRosterCleared,
+          rosterClearedAt: parsed.rosterClearedAt,
           deletedStudentIds: sanitizeDeletedStudentIds(parsed.deletedStudentIds || []),
-          students: parsed.rosterCleared ? [] : (parsed.students || []).filter((s: any) => !isDemoStudent(s))
+          students: loadedStudents
         };
         const derived = buildAssignmentsFromTeachers(loadedDb.teachers || []);
         loadedDb.classTeacherAssignments = { ...derived, ...(loadedDb.classTeacherAssignments || {}) };
@@ -1178,17 +1177,24 @@ async function startServer() {
       return res.status(400).json({ status: "error", message: "Expected students array" });
     }
 
-    const clearRoster = req.body?.clearRoster === true || req.query?.clear === 'true';
+    const clearRoster = req.body?.clearRoster === true || req.body?.rosterCleared === true || req.query?.clear === 'true';
 
-    if (clearRoster) {
-      saveServerStudents([]);
-      await clearAllSupabaseStudentsOnServer();
-      broadcastSse("CLEAR", "students", { action: "CLEAR", count: 0 });
-      return res.status(200).json({
-        status: "success",
-        count: 0,
-        timestamp: new Date().toISOString()
-      });
+    if (clearRoster || (students.length === 0 && (req.body?.students !== undefined || Array.isArray(req.body)))) {
+      const db = loadServerDatabase();
+      if (clearRoster || db.rosterCleared || students.length === 0) {
+        saveServerStudents([]);
+        if (clearRoster) {
+          await clearAllSupabaseStudentsOnServer();
+        }
+        broadcastSse("CLEAR", "students", { action: "CLEAR", count: 0 });
+        return res.status(200).json({
+          status: "success",
+          count: 0,
+          students: [],
+          version: db.version,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
 
     if (students.length === 0) {
@@ -1196,6 +1202,7 @@ async function startServer() {
       return res.status(200).json({
         status: "success",
         count: (db.students || []).length,
+        students: db.students || [],
         version: db.version,
         timestamp: new Date().toISOString()
       });
@@ -2686,9 +2693,12 @@ async function syncSupabaseStudentsOnStartup() {
         const remoteDeleted = new Set<string>();
         const activeIds = new Set((db.students || []).map((s: any) => String(s.id).toLowerCase().trim()));
         let hasRosterClear = false;
+        let rosterClearTime = 0;
         delRecords.forEach((row: any) => {
           if (row.record_type === "ROSTER_CLEAR") {
             hasRosterClear = true;
+            const t = new Date(row.deleted_at || row.created_at || "").getTime();
+            if (t > rosterClearTime) rosterClearTime = t;
           } else if (row.record_id && row.record_id !== "ALL_STUDENTS") {
             const clean = String(row.record_id).toLowerCase().trim();
             if (!activeIds.has(clean)) {
@@ -2699,10 +2709,22 @@ async function syncSupabaseStudentsOnStartup() {
           }
         });
         db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(remoteDeleted));
+        if (hasRosterClear) {
+          const remainingStudents = (db.students || []).filter((s: any) => {
+            if (!s) return false;
+            const studentTime = s.updated_at || s.updatedAt ? new Date(s.updated_at || s.updatedAt).getTime() : 0;
+            return studentTime > rosterClearTime;
+          });
+          db.students = remainingStudents;
+          if (remainingStudents.length === 0) {
+            db.rosterCleared = true;
+            db.rosterClearedAt = new Date(rosterClearTime || Date.now()).toISOString();
+          }
+        }
         saveServerDatabase(db);
-        if (activeIds.size > 0) {
+        if (db.students && db.students.length > 0) {
           db.rosterCleared = false;
-        } else if (hasRosterClear && (!db.students || db.students.length === 0)) {
+        } else if (hasRosterClear) {
           db.rosterCleared = true;
         }
       }
@@ -2729,6 +2751,12 @@ async function syncSupabaseStudentsOnStartup() {
     }
 
     if (remoteStudents && Array.isArray(remoteStudents)) {
+      if (remoteStudents.length === 0 && db.rosterCleared) {
+        db.students = [];
+        saveServerStudents([]);
+        console.log("[Startup Supabase Sync] Verified 0 students in Supabase and server. Roster remains cleared.");
+        return;
+      }
       const activeRemote = remoteStudents.filter((s: any) => !isDemoStudent(s));
       const remoteIds = new Set(activeRemote.map((s: any) => s.id));
       const missingFromRemote = serverStudents.filter((s: any) => s && s.id && !remoteIds.has(s.id));

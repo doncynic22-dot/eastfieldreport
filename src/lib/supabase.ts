@@ -1517,6 +1517,11 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
   };
 
   const getMergedFallback = async (): Promise<Student[] | null> => {
+    const isExplicitlyCleared = typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
+    if (isExplicitlyCleared) {
+      return [];
+    }
+
     const serverResult = await fetchFromServer();
     if (serverResult !== null && Array.isArray(serverResult)) {
       const clean = filterDeleted(serverResult);
@@ -1610,11 +1615,15 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     }
 
     if (!data || data.length === 0) {
-      // Supabase returned 0 rows. Check if local cache has newly admitted pupils that haven't been cleared
       const isExplicitlyCleared = typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
+      if (isExplicitlyCleared) {
+        return [];
+      }
+
+      // Supabase returned 0 rows. Check if local cache has newly admitted pupils that haven't been cleared
       const cached = typeof localStorage !== 'undefined' ? (localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students')) : null;
       let localClean: Student[] = [];
-      if (cached && !isExplicitlyCleared) {
+      if (cached) {
         try {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed)) {
@@ -1629,7 +1638,7 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
         return localClean;
       }
 
-      // Fallback check to central server
+      // Fallback check to central server only if roster wasn't cleared
       const serverResult = await fetchFromServer();
       if (serverResult && serverResult.length > 0) {
         const cleanServer = filterDeleted(serverResult);
