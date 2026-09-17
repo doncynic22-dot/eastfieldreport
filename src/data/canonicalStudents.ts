@@ -1,4 +1,6 @@
-[
+import { Student } from "../types";
+
+export const CANONICAL_STUDENTS: Student[] = [
   {
     "id": "st-1788785095291",
     "name": "Asomani Juliana Tabuah",
@@ -1737,4 +1739,4 @@
     "guardianPhone": "0240000000",
     "photoUrl": ""
   }
-]
+];

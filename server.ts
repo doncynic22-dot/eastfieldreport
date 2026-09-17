@@ -159,6 +159,27 @@ function loadServerStudents(): any[] {
   return [];
 }
 
+function getDefaultServerStudents(): any[] {
+  try {
+    let list: any[] = [];
+    if (fs.existsSync("cached_students.json")) {
+      const cached = JSON.parse(fs.readFileSync("cached_students.json", "utf-8"));
+      if (Array.isArray(cached)) list = cached;
+    }
+    const current = (dbCache?.students || []);
+    const idSet = new Set(list.map((s: any) => s.id));
+    for (const cur of current) {
+      if (cur && cur.id && !idSet.has(cur.id) && !isDemoStudent(cur)) {
+        list.push(cur);
+        idSet.add(cur.id);
+      }
+    }
+    return list.filter((s: any) => s && s.id && !isDemoStudent(s));
+  } catch (e) {
+    return [];
+  }
+}
+
 function saveServerStudents(students: any[]): boolean {
   try {
     const db = loadServerDatabase();
@@ -1189,6 +1210,83 @@ async function startServer() {
       count: db.students.length,
       version: db.version,
       timestamp: new Date().toISOString()
+    });
+  });
+
+  // Dedicated authoritative repopulate endpoint for all Academy students
+  app.post("/api/students/repopulate", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("CDN-Cache-Control", "no-store");
+    res.setHeader("Surrogate-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
+    const db = loadServerDatabase();
+
+    // 1. Clear all server student tombstones & roster cleared flags
+    db.deletedStudentIds = [];
+    db.rosterCleared = false;
+    db.rosterClearedAt = undefined;
+
+    // 2. Canonical students (use incoming array if provided with length > 0, or default list)
+    let incoming = Array.isArray(req.body?.students) && req.body.students.length > 0
+      ? req.body.students
+      : getDefaultServerStudents();
+
+    if (!Array.isArray(incoming) || incoming.length === 0) {
+      incoming = getDefaultServerStudents();
+    }
+
+    const clean = incoming.filter((s: any) => s && s.id && !isDemoStudent(s));
+    db.students = JSON.parse(JSON.stringify(clean));
+
+    saveServerStudents(db.students);
+    saveServerDatabase(db, "students", db.students);
+    saveServerDatabase(db, "deletedStudentIds", []);
+
+    // 3. Broadcast via SSE to all connected clients
+    broadcastSse("REPOPULATE", "students", { count: db.students.length, students: db.students });
+    broadcastSse("UPDATE", "deletedStudentIds", []);
+    console.log(`[Global Student Sync] Repopulated all ${db.students.length} canonical pupils and cleared tombstones.`);
+
+    // 4. Authoritative sync to Supabase (delete remote tombstones and upsert all students to ea_students and ea_student)
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+    if (supabaseUrl && supabaseKey) {
+      try {
+        const { createClient } = await import("@supabase/supabase-js");
+        const client = createClient(supabaseUrl, supabaseKey);
+
+        // Delete remote student tombstones & roster clear records
+        await client.from("ea_deleted_records").delete().in("record_type", ["STUDENT", "ROSTER_CLEAR"]);
+
+        const payloads = db.students.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          roll_number: s.rollNumber || s.roll_number || "",
+          level: s.level || "PRIMARY",
+          class_name: s.className || s.class_name || "Primary 1",
+          guardian_name: s.guardianName || s.guardian_name || "",
+          guardian_email: s.guardianEmail || s.guardian_email || "",
+          guardian_phone: s.guardianPhone || s.guardian_phone || "",
+          photo_url: s.photoUrl || s.photo_url || "",
+          updated_at: new Date().toISOString()
+        }));
+
+        for (let i = 0; i < payloads.length; i += 50) {
+          const chunk = payloads.slice(i, i + 50);
+          await client.from("ea_students").upsert(chunk, { onConflict: "id" });
+          try { await client.from("ea_student").upsert(chunk, { onConflict: "id" }); } catch (e) {}
+        }
+        console.log(`[Global Student Sync] Synced ${payloads.length} repopulated pupils to Supabase ea_students.`);
+      } catch (err: any) {
+        console.warn("[Global Student Sync] Supabase student repopulate notice:", err?.message || err);
+      }
+    }
+
+    return res.status(200).json({
+      status: "success",
+      count: db.students.length,
+      students: db.students,
+      version: db.version
     });
   });
 

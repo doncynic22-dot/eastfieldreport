@@ -4,6 +4,7 @@
  */
 
 import { Student, Subject, User, GradingScaleRule, ReportConfig, Grade, Attendance, FeePayment, ClassroomInventoryRecord, BookStockItem, BookSaleRecord } from '../types';
+import { CANONICAL_STUDENTS } from './canonicalStudents';
 
 export const INITIAL_CLASSES = {
   NURSERY: ['Nursery 1', 'Nursery 2'],
@@ -52,7 +53,7 @@ export const INITIAL_SUBJECTS: Subject[] = [
   { id: 'sub-j-ict', name: 'Computing', code: 'COMP', level: 'JHS' }
 ];
 
-export const INITIAL_STUDENTS: Student[] = [];
+export const INITIAL_STUDENTS: Student[] = CANONICAL_STUDENTS;
 
 export const INITIAL_GRADING_SCALE: GradingScaleRule[] = [
   { grade: 'A1', minScore: 80, maxScore: 100, gpa: 4.0, remarks: 'HIGHEST' },

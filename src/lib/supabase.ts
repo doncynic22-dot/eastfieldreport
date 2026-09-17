@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 import { Student, User, Grade, Attendance, ReportConfig, StudentBill, FeePayment, FeeStructureItem, DailyCollectionSummary, SyncAuditLog, ClassroomInventoryRecord, JHSMockExamRecord, BookStockItem, BookSaleRecord, DailyAttendanceRecord, DailyAttendanceStatus } from '../types';
-import { DEFAULT_INVENTORY_DATA, DEFAULT_BOOK_STOCK_ITEMS, DEFAULT_BOOK_SALES, INITIAL_USERS } from '../data/mockData';
+import { DEFAULT_INVENTORY_DATA, DEFAULT_BOOK_STOCK_ITEMS, DEFAULT_BOOK_SALES, INITIAL_USERS, INITIAL_STUDENTS } from '../data/mockData';
 import { isDemoStudent } from '../data/demoPupils';
 import { deduplicateStudents, getStudentClassRank } from '../utils/studentDeduplication';
 import { fetchServerEntity, saveServerEntity, pushMasterServerSync, globalSyncEngine, getAntiCacheHeaders, syncStudentAdditionToCDN, syncStudentDeletionToCDN, syncTeacherDeletionToCDN, uploadAssetToCDN } from './globalSync';
@@ -1349,6 +1349,16 @@ export function clearAllDeletedStudentIds(): void {
   } catch (e) {}
 }
 
+export function clearAllDeletedStudentTombstones(): void {
+  try {
+    localStorage.removeItem('ea_deleted_student_ids');
+    localStorage.setItem('ea_deleted_student_ids', '[]');
+    localStorage.removeItem('ea_deleted_student_rolls');
+    localStorage.removeItem('ea_deleted_student_names');
+    localStorage.removeItem('ea_students_cleared');
+  } catch (e) {}
+}
+
 // Helper to track deleted teacher IDs in localStorage
 export function getDeletedTeacherIds(): string[] {
   try {
@@ -2348,6 +2358,91 @@ export async function repopulateAllTeachers(canonicalList: User[] = INITIAL_USER
   } catch (e) {}
 
   return { success: true, count: cleanList.length, teachers: cleanList };
+}
+
+/**
+ * Authoritative global repopulate of Academy students.
+ * Resets tombstones, updates local caches, synchronizes with the server,
+ * upserts into Supabase, and broadcasts globally across all tabs and clients.
+ */
+export async function repopulateAllStudents(canonicalList: Student[] = INITIAL_STUDENTS): Promise<{ success: boolean; count: number; students: Student[] }> {
+  // 1. Clear all local student tombstones
+  clearAllDeletedStudentTombstones();
+
+  // 2. Clone canonical list
+  const cleanList = canonicalList.map(s => ({ ...s }));
+
+  // 3. Immediately update local storage and caches for 0ms reactivity
+  try {
+    localStorage.setItem('ea_students', JSON.stringify(cleanList));
+    localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanList));
+    localStorage.removeItem('ea_students_cleared');
+    localStorage.removeItem('ea_deleted_student_ids');
+    localStorage.setItem('ea_deleted_student_ids', '[]');
+  } catch (e) {}
+
+  // 4. Send repopulate request to central server endpoint
+  try {
+    const res = await fetch(`/api/students/repopulate?_t=${Date.now()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ students: cleanList })
+    });
+    if (!res.ok) {
+      // Fallback
+      await fetch(`/api/students?_t=${Date.now()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ students: cleanList, repopulate: true })
+      });
+    }
+  } catch (err) {
+    console.warn('[Repopulate Students] Server endpoint notice:', err);
+  }
+
+  // 5. Direct sync to Supabase (purge tombstones from ea_deleted_records and upsert all students to ea_students and ea_student)
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      // Delete any remote student tombstones & roster clear records
+      await client.from('ea_deleted_records').delete().in('record_type', ['STUDENT', 'ROSTER_CLEAR']);
+
+      const payloads = cleanList.map(s => ({
+        id: s.id,
+        name: s.name,
+        roll_number: s.rollNumber || s.roll_number || '',
+        level: s.level || 'PRIMARY',
+        class_name: s.className || s.class_name || 'Primary 1',
+        guardian_name: s.guardianName || s.guardian_name || '',
+        guardian_email: s.guardianEmail || s.guardian_email || '',
+        guardian_phone: s.guardianPhone || s.guardian_phone || '',
+        photo_url: s.photoUrl || s.photo_url || '',
+        updated_at: new Date().toISOString()
+      }));
+
+      // Batch upsert in chunks of 50
+      for (let i = 0; i < payloads.length; i += 50) {
+        const chunk = payloads.slice(i, i + 50);
+        await safeUpsert('ea_students', chunk, client, 'id');
+        try { await safeUpsert('ea_student', chunk, client, 'id'); } catch (e) {}
+      }
+      console.log(`[Repopulate Students] Upserted ${payloads.length} students to Supabase ea_students.`);
+    } catch (err) {
+      console.warn('[Repopulate Students] Supabase upsert notice:', err);
+    }
+  }
+
+  // 6. Broadcast across tabs and components
+  try {
+    broadcastGlobalSync('ea_students', { students: cleanList, action: 'REPOPULATE' });
+    broadcastSync('students', cleanList, 'sync');
+    window.dispatchEvent(new CustomEvent('ea_students_updated', {
+      detail: { students: cleanList, isRepopulate: true, action: 'REPOPULATE' }
+    }));
+    window.dispatchEvent(new Event('storage'));
+  } catch (e) {}
+
+  return { success: true, count: cleanList.length, students: cleanList };
 }
 
 // Dedicated single-teacher registration/update & instant cloud persistence

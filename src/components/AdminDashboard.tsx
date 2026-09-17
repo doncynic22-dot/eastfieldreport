@@ -17,12 +17,12 @@ import BulkSMSModule from './BulkSMSModule';
 import ReportCardSMSAlertModule from './ReportCardSMSAlertModule';
 import TeacherDashboard from './TeacherDashboard';
 import DatabaseAuditTab from './DatabaseAuditTab';
-import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSingleSupabaseTeacher, seedStudentAssociatedRecords, saveSupabaseTeachers, repopulateAllTeachers, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, removeDeletedTeacherId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials, SupabaseDetailedStatusReport, isTeacherDeleted } from '../lib/supabase';
+import { getSupabaseCredentials, getSupabaseClient, deleteSupabaseStudent, deleteSupabaseTeacher, saveSupabaseGrades, saveSupabaseAttendance, saveSupabaseConfig, saveSupabaseStudents, saveSingleSupabaseStudent, saveSingleSupabaseTeacher, seedStudentAssociatedRecords, saveSupabaseTeachers, repopulateAllTeachers, repopulateAllStudents, uploadStudentPhotoToSupabase, uploadTeacherPhotoToSupabase, compressPassportPhoto, fetchSupabaseBookStock, saveSupabaseBookStock, removeDeletedStudentId, removeDeletedTeacherId, clearAllSupabaseStudents, FRESH_STUDENTS_TABLE_SQL, FRESH_TEACHERS_TABLE_SQL, FRESH_BOOK_STOCK_TABLE_SQL, SUPABASE_SQL_REPAIR, setCustomSupabaseCredentials, SupabaseDetailedStatusReport, isTeacherDeleted } from '../lib/supabase';
 import { globalSyncEngine, uploadAssetToCDN, saveServerEntity } from '../lib/globalSync';
 import { createBatchEmailDispatchList, generateEmailReportBody, generateBatchEmailDigest } from '../services/emailDispatcher';
 import { promoteStudents, getNextClassAndLevel, isAutoPromotionDue, undoPromotion, restoreAllStudentsToAdmittedLevels, restoreStudentsFromTerminalReport, assignStudentsToCorrectClassesFromId, resolveClassAndLevelFromStudentId, getUpdatedRollNumber, getUpdatedStudentId, deduplicateStudents } from '../services/promotionService';
 import { formatReopeningDate } from '../utils/dateUtils';
-import { INITIAL_SUBJECTS, INITIAL_USERS } from '../data/mockData';
+import { INITIAL_SUBJECTS, INITIAL_USERS, INITIAL_STUDENTS } from '../data/mockData';
 import { matchesSubject } from '../utils/subjectUtils';
 import { calculateStudentTermAttendance } from '../utils/attendanceUtils';
 import { assignClassTeacherDirectly, getClassTeacherAssignments, saveClassTeacherAssignmentsLocally, saveAllClassAssignmentsDirectly, ALL_STANDARD_CLASSROOMS } from '../services/classTeacherService';
@@ -354,6 +354,30 @@ export default function AdminDashboard({
     } finally {
       setIsSyncingStaff(false);
       setTimeout(() => setStaffSyncMsg(''), 8000);
+    }
+  };
+
+  const [isSyncingPupilsRoster, setIsSyncingPupilsRoster] = useState(false);
+  const [pupilsRosterSyncMsg, setPupilsRosterSyncMsg] = useState('');
+
+  const handlePopulateDefaultStudents = async () => {
+    setIsSyncingPupilsRoster(true);
+    setPupilsRosterSyncMsg('Repopulating all academy students and synchronizing globally to ea_students...');
+    try {
+      const result = await repopulateAllStudents(INITIAL_STUDENTS);
+      if (result && Array.isArray(result.students)) {
+        setStudents(result.students);
+        if (onPushToSupabase) {
+          onPushToSupabase(result.students).catch(() => {});
+        }
+        setPupilsRosterSyncMsg(`Successfully repopulated all ${result.students.length} students and synchronized globally to ea_students!`);
+      }
+    } catch (err: any) {
+      console.error('[Repopulate Students Error]', err);
+      setPupilsRosterSyncMsg('Repopulated students locally and queued for global synchronization!');
+    } finally {
+      setIsSyncingPupilsRoster(false);
+      setTimeout(() => setPupilsRosterSyncMsg(''), 8000);
     }
   };
 
@@ -3026,6 +3050,16 @@ export default function AdminDashboard({
             <h3 className="font-display font-bold text-mauve-900 text-base uppercase tracking-wide">Student Admissions Registry</h3>
             <div className="flex flex-wrap items-center gap-2">
               <button
+                type="button"
+                onClick={handlePopulateDefaultStudents}
+                disabled={isSyncingPupilsRoster}
+                className="bg-mauve-800 hover:bg-mauve-900 text-white font-bold px-3 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider disabled:opacity-50"
+                title={`Repopulate all ${INITIAL_STUDENTS.length} official academy students across all classes and synchronize globally to ea_students`}
+              >
+                <Users className="w-3.5 h-3.5 text-amber-300" />
+                <span>{isSyncingPupilsRoster ? 'Repopulating...' : `Repopulate All Students (${INITIAL_STUDENTS.length})`}</span>
+              </button>
+              <button
                 onClick={handleAssignClassesFromIds}
                 className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-3 py-2 rounded transition flex items-center gap-1.5 cursor-pointer shadow-sm text-xs uppercase tracking-wider"
                 title="Scan and assign all students to their correct class based on their Student ID (e.g. EA/J1/2026/005 -> JHS 1)"
@@ -3099,6 +3133,13 @@ export default function AdminDashboard({
               </button>
             </div>
           </div>
+
+          {pupilsRosterSyncMsg && (
+            <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 animate-fadeIn shadow-sm font-medium">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{pupilsRosterSyncMsg}</span>
+            </div>
+          )}
 
           {/* Search filters */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-white p-3 rounded border border-mauve-500/20 shadow-sm">
