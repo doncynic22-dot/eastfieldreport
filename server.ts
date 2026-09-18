@@ -1699,14 +1699,6 @@ async function startServer() {
       db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(currentDeleted));
     }
     if (Array.isArray(incoming.students)) {
-      const incomingIds = new Set(incoming.students.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
-      const incomingRolls = new Set(incoming.students.map((s: any) => String(s.rollNumber || '').toLowerCase().trim()).filter(Boolean));
-      if (db.deletedStudentIds && db.deletedStudentIds.length > 0) {
-        db.deletedStudentIds = db.deletedStudentIds.filter(id => {
-          const norm = String(id).toLowerCase().trim();
-          return !incomingIds.has(norm) && !incomingRolls.has(norm);
-        });
-      }
       const cleanStudents = incoming.students.filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
       db.students = cleanStudents;
       if (cleanStudents.length > 0) {

@@ -2416,18 +2416,21 @@ export async function repopulateAllStudents(canonicalList: Student[] = INITIAL_S
       // Delete any remote student tombstones & roster clear records
       await client.from('ea_deleted_records').delete().in('record_type', ['STUDENT', 'ROSTER_CLEAR']);
 
-      const payloads = cleanList.map(s => ({
-        id: s.id,
-        name: s.name,
-        roll_number: s.rollNumber || s.roll_number || '',
-        level: s.level || 'PRIMARY',
-        class_name: s.className || s.class_name || 'Primary 1',
-        guardian_name: s.guardianName || s.guardian_name || '',
-        guardian_email: s.guardianEmail || s.guardian_email || '',
-        guardian_phone: s.guardianPhone || s.guardian_phone || '',
-        photo_url: s.photoUrl || s.photo_url || '',
-        updated_at: new Date().toISOString()
-      }));
+      const payloads = cleanList.map(s => {
+        const legacyStudent = s as typeof s & Record<string, string | undefined>;
+        return {
+          id: s.id,
+          name: s.name,
+          roll_number: s.rollNumber || legacyStudent.roll_number || '',
+          level: s.level || 'PRIMARY',
+          class_name: s.className || legacyStudent.class_name || 'Primary 1',
+          guardian_name: s.guardianName || legacyStudent.guardian_name || '',
+          guardian_email: s.guardianEmail || legacyStudent.guardian_email || '',
+          guardian_phone: s.guardianPhone || legacyStudent.guardian_phone || '',
+          photo_url: s.photoUrl || legacyStudent.photo_url || '',
+          updated_at: new Date().toISOString()
+        };
+      });
 
       // Batch upsert in chunks of 50
       for (let i = 0; i < payloads.length; i += 50) {
