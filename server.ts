@@ -176,21 +176,12 @@ function saveServerStudents(students: any[]): boolean {
     const db = loadServerDatabase();
     const list = Array.isArray(students) ? students : [];
 
-    // Any student explicitly saved is active: prune any tombstones matching their IDs
-    const activeIds = new Set(list.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
-    const activeAlphas = new Set(list.map((s: any) => String(s.id || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '')).filter(Boolean));
-
-    if (db.deletedStudentIds && db.deletedStudentIds.length > 0) {
-      db.deletedStudentIds = sanitizeDeletedStudentIds(
-        db.deletedStudentIds.filter((id: string) => {
-          const norm = String(id).toLowerCase().trim();
-          const normAlpha = norm.replace(/[^a-z0-9]/g, '');
-          return !activeIds.has(norm) && !activeAlphas.has(normAlpha);
-        })
-      );
-    }
-
-    const clean = list.filter(s => s && s.id && !isDemoStudent(s));
+    // A roster snapshot can arrive out of order from another browser or a CDN edge.
+    // It must never undo a deletion.  Tombstones are removed only by the explicit
+    // admission endpoint, which is the single intentional "re-admit" operation.
+    const clean = list.filter(s =>
+      s && s.id && !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds)
+    );
     fs.writeFileSync(STUDENTS_CACHE_FILE, JSON.stringify(clean, null, 2), "utf-8");
     // Also update unified server database
     db.students = clean;
@@ -1699,14 +1690,9 @@ async function startServer() {
       db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(currentDeleted));
     }
     if (Array.isArray(incoming.students)) {
-      const incomingIds = new Set(incoming.students.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
-      const incomingRolls = new Set(incoming.students.map((s: any) => String(s.rollNumber || '').toLowerCase().trim()).filter(Boolean));
-      if (db.deletedStudentIds && db.deletedStudentIds.length > 0) {
-        db.deletedStudentIds = db.deletedStudentIds.filter(id => {
-          const norm = String(id).toLowerCase().trim();
-          return !incomingIds.has(norm) && !incomingRolls.has(norm);
-        });
-      }
+      // Do not infer re-admission from a bulk snapshot.  Snapshots can be stale,
+      // whereas tombstones are durable deletion operations.  /api/students/admit
+      // is responsible for intentionally removing a student's tombstone.
       const cleanStudents = incoming.students.filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
       db.students = cleanStudents;
       if (cleanStudents.length > 0) {

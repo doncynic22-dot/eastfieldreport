@@ -2419,13 +2419,13 @@ export async function repopulateAllStudents(canonicalList: Student[] = INITIAL_S
       const payloads = cleanList.map(s => ({
         id: s.id,
         name: s.name,
-        roll_number: s.rollNumber || s.roll_number || '',
+        roll_number: s.rollNumber || (s as any).roll_number || '',
         level: s.level || 'PRIMARY',
-        class_name: s.className || s.class_name || 'Primary 1',
-        guardian_name: s.guardianName || s.guardian_name || '',
-        guardian_email: s.guardianEmail || s.guardian_email || '',
-        guardian_phone: s.guardianPhone || s.guardian_phone || '',
-        photo_url: s.photoUrl || s.photo_url || '',
+        class_name: s.className || (s as any).class_name || 'Primary 1',
+        guardian_name: s.guardianName || (s as any).guardian_name || '',
+        guardian_email: s.guardianEmail || (s as any).guardian_email || '',
+        guardian_phone: s.guardianPhone || (s as any).guardian_phone || '',
+        photo_url: s.photoUrl || (s as any).photo_url || '',
         updated_at: new Date().toISOString()
       }));
 
