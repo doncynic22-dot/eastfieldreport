@@ -51,8 +51,6 @@ import {
   recordDeletedBookStockId,
   subscribeToGlobalRealtime,
   broadcastSync,
-  pruneDeletedTombstones,
-  pruneDeletedStudentTombstones,
   isTeacherDeleted,
   recordDeletedTeacherId
 } from './lib/supabase';
@@ -419,8 +417,6 @@ export default function App() {
 
       if (studentsFetchSuccess && sStudents !== null) {
         // Authoritative cloud pupils are active; ensure local browser deletion markers don't suppress enrolled pupils
-        pruneDeletedTombstones(sStudents, activeTeachers);
-
         let cleanStudents = sStudents.filter(
           s => !teacherIds.has(s.id) && !teacherEmails.has((s.guardianEmail || '').toLowerCase())
         );
@@ -1796,7 +1792,6 @@ export default function App() {
         ]);
 
         if (remoteStudents && Array.isArray(remoteStudents)) {
-          pruneDeletedStudentTombstones(remoteStudents);
           setStudents(() => {
             const isRosterCleared = typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
             const cleanRemote = deduplicateStudents(remoteStudents.filter(s => !isDemoStudent(s)));
@@ -2132,7 +2127,6 @@ export default function App() {
       }
 
       if (remoteStudents && Array.isArray(remoteStudents)) {
-        pruneDeletedStudentTombstones(remoteStudents);
         const clean = deduplicateStudents(remoteStudents.filter(s => !isDemoStudent(s)));
         lastSavedStudentsSigRef.current = clean.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
         setStudents(clean);
