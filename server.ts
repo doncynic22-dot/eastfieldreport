@@ -1645,28 +1645,9 @@ async function startServer() {
       });
     }
     if (Array.isArray(incoming.teachers)) {
-      const incomingTeacherIds = new Set(incoming.teachers.map((t: any) => String(t.id || '').toLowerCase().trim()).filter(Boolean));
-      const incomingTeacherEmails = new Set(incoming.teachers.map((t: any) => String(t.email || '').toLowerCase().trim()).filter(Boolean));
-      const incomingTeacherNames = new Set(incoming.teachers.map((t: any) => String(t.name || '').toLowerCase().trim()).filter(Boolean));
-      if (db.deletedTeacherIds && db.deletedTeacherIds.length > 0) {
-        db.deletedTeacherIds = db.deletedTeacherIds.filter(id => {
-          const norm = String(id).toLowerCase().trim();
-          return !incomingTeacherIds.has(norm) && !incomingTeacherEmails.has(norm) && !incomingTeacherNames.has(norm);
-        });
-      }
       const deletedTeacherSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
-      const existingTeachers = Array.isArray(db.teachers) ? db.teachers : [];
-      const teacherMap = new Map<string, any>();
-      existingTeachers.forEach((t: any) => {
-        if (t && t.id) teacherMap.set(String(t.id), t);
-      });
-      incoming.teachers.forEach((t: any) => {
-        if (t && t.id) {
-          const existing = teacherMap.get(String(t.id));
-          teacherMap.set(String(t.id), existing ? { ...existing, ...t } : t);
-        }
-      });
-      db.teachers = Array.from(teacherMap.values()).filter((t: any) => {
+      db.teachers = incoming.teachers.filter((t: any) => {
+        if (!t || !t.id) return false;
         if (t.id && deletedTeacherSet.has(String(t.id).toLowerCase().trim())) return false;
         if (t.email && deletedTeacherSet.has(String(t.email).toLowerCase().trim())) return false;
         if (t.name && deletedTeacherSet.has(String(t.name).toLowerCase().trim())) return false;
@@ -1859,42 +1840,16 @@ async function startServer() {
     const teachers = req.body?.teachers || req.body;
     if (!Array.isArray(teachers)) return res.status(400).json({ status: "error", message: "Expected teachers array" });
     const db = loadServerDatabase();
-    // Un-tombstone incoming teachers if explicitly being registered or modified
-    const incomingTeacherIds = new Set(teachers.map((t: any) => String(t.id || '').toLowerCase().trim()).filter(Boolean));
-    const incomingTeacherEmails = new Set(teachers.map((t: any) => String(t.email || '').toLowerCase().trim()).filter(Boolean));
-    const incomingTeacherNames = new Set(teachers.map((t: any) => String(t.name || '').toLowerCase().trim()).filter(Boolean));
-    if (db.deletedTeacherIds && db.deletedTeacherIds.length > 0) {
-      db.deletedTeacherIds = db.deletedTeacherIds.filter(id => {
-        const norm = String(id).toLowerCase().trim();
-        return !incomingTeacherIds.has(norm) && !incomingTeacherEmails.has(norm) && !incomingTeacherNames.has(norm);
-      });
-    }
-
     const deletedSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
     const cleanTeachers = teachers.filter((t: any) => {
+      if (!t || !t.id) return false;
       if (t.id && deletedSet.has(String(t.id).toLowerCase().trim())) return false;
       if (t.email && deletedSet.has(String(t.email).toLowerCase().trim())) return false;
       if (t.name && deletedSet.has(String(t.name).toLowerCase().trim())) return false;
       return true;
     });
 
-    const existingTeachers = Array.isArray(db.teachers) ? db.teachers : [];
-    const teacherMap = new Map<string, any>();
-    existingTeachers.forEach((t: any) => {
-      if (t && t.id) teacherMap.set(String(t.id), t);
-    });
-    cleanTeachers.forEach((t: any) => {
-      if (t && t.id) {
-        const existing = teacherMap.get(String(t.id));
-        teacherMap.set(String(t.id), existing ? { ...existing, ...t } : t);
-      }
-    });
-    db.teachers = Array.from(teacherMap.values()).filter((t: any) => {
-      if (t.id && deletedSet.has(String(t.id).toLowerCase().trim())) return false;
-      if (t.email && deletedSet.has(String(t.email).toLowerCase().trim())) return false;
-      if (t.name && deletedSet.has(String(t.name).toLowerCase().trim())) return false;
-      return true;
-    });
+    db.teachers = cleanTeachers;
 
     // Auto-update classTeacherAssignments:
     // 1. Any classes assigned to teachers in their `classes` array
@@ -2701,11 +2656,9 @@ async function syncSupabaseStudentsOnStartup() {
             if (t > rosterClearTime) rosterClearTime = t;
           } else if (row.record_id && row.record_id !== "ALL_STUDENTS") {
             const clean = String(row.record_id).toLowerCase().trim();
-            if (!activeIds.has(clean)) {
-              remoteDeleted.add(clean);
-              const alpha = clean.replace(/[^a-z0-9]/g, '');
-              if (alpha && !activeIds.has(alpha)) remoteDeleted.add(alpha);
-            }
+            remoteDeleted.add(clean);
+            const alpha = clean.replace(/[^a-z0-9]/g, '');
+            if (alpha) remoteDeleted.add(alpha);
           }
         });
         db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(remoteDeleted));
@@ -2751,53 +2704,30 @@ async function syncSupabaseStudentsOnStartup() {
     }
 
     if (remoteStudents && Array.isArray(remoteStudents)) {
-      if (remoteStudents.length === 0 && db.rosterCleared) {
+      if (remoteStudents.length === 0) {
         db.students = [];
+        db.rosterCleared = true;
+        db.rosterClearedAt = new Date().toISOString();
         saveServerStudents([]);
-        console.log("[Startup Supabase Sync] Verified 0 students in Supabase and server. Roster remains cleared.");
+        console.log("[Startup Supabase Sync] Verified 0 students in Supabase. Server roster synchronized to cleared.");
         return;
       }
-      const activeRemote = remoteStudents.filter((s: any) => !isDemoStudent(s));
-      const remoteIds = new Set(activeRemote.map((s: any) => s.id));
-      const missingFromRemote = serverStudents.filter((s: any) => s && s.id && !remoteIds.has(s.id));
-
-      if (missingFromRemote.length > 0) {
-        console.log(`[Startup Supabase Sync] Pushing ${missingFromRemote.length} active server student(s) to Supabase ea_students...`);
-        const payloads = missingFromRemote.map((s: any) => ({
-          id: s.id,
-          name: s.name,
-          roll_number: s.rollNumber,
-          level: s.level,
-          class_name: s.className,
-          guardian_name: s.guardianName || "",
-          guardian_email: s.guardianEmail || "",
-          guardian_phone: s.guardianPhone || "",
-          photo_url: s.photoUrl || "",
-          updated_at: new Date().toISOString()
-        }));
-        await client.from("ea_students").upsert(payloads, { onConflict: "id" });
-        console.log(`[Startup Supabase Sync] Successfully populated missing active students to Supabase ea_students.`);
-      }
-
-      const serverIds = new Set(serverStudents.map((s: any) => s.id));
-      const missingFromServer = activeRemote.filter((s: any) => s && s.id && !serverIds.has(s.id));
-      if (missingFromServer.length > 0) {
-        console.log(`[Startup Supabase Sync] Pulling ${missingFromServer.length} new pupil(s) from Supabase into server database...`);
-        const mapped = missingFromServer.map((r: any) => ({
-          id: r.id,
-          name: r.name || "",
-          rollNumber: r.roll_number || "",
-          level: r.level || "PRIMARY",
-          className: r.class_name || "",
-          guardianName: r.guardian_name || "",
-          guardianEmail: r.guardian_email || "",
-          guardianPhone: r.guardian_phone || "",
-          photoUrl: r.photo_url || ""
-        }));
-        const updated = [...serverStudents, ...mapped];
-        saveServerStudents(updated);
-      }
-      console.log(`[Startup Supabase Sync] Verified ea_students table synchronization: ${activeRemote.length + missingFromRemote.length} students total.`);
+      const activeRemote = remoteStudents.filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
+      const mapped = activeRemote.map((r: any) => ({
+        id: r.id,
+        name: r.name || "",
+        rollNumber: r.roll_number || "",
+        level: r.level || "PRIMARY",
+        className: r.class_name || "",
+        guardianName: r.guardian_name || "",
+        guardianEmail: r.guardian_email || "",
+        guardianPhone: r.guardian_phone || "",
+        photoUrl: r.photo_url || ""
+      }));
+      db.students = mapped;
+      db.rosterCleared = false;
+      saveServerStudents(mapped);
+      console.log(`[Startup Supabase Sync] Synchronized ${mapped.length} authoritative active pupils from Supabase ea_students.`);
     }
   } catch (err: any) {
     console.warn("[Startup Supabase Sync] Warning during background sync:", err?.message || err);
@@ -2814,8 +2744,26 @@ async function syncSupabaseTeachersOnStartup() {
     const client = createClient(supabaseUrl, supabaseKey);
 
     const db = loadServerDatabase();
-    const serverTeachers = db.teachers || [];
     const deletedSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
+
+    // Also fetch deleted teacher tombstones from remote ea_deleted_records
+    try {
+      const { data: delTombstones } = await client.from("ea_deleted_records").select("*").eq("record_type", "TEACHER");
+      if (Array.isArray(delTombstones)) {
+        delTombstones.forEach((row: any) => {
+          if (row.record_id) deletedSet.add(String(row.record_id).toLowerCase().trim());
+          if (row.name) deletedSet.add(String(row.name).toLowerCase().trim());
+          if (row.details) {
+            try {
+              const d = typeof row.details === "string" ? JSON.parse(row.details) : row.details;
+              if (d?.id) deletedSet.add(String(d.id).toLowerCase().trim());
+              if (d?.email) deletedSet.add(String(d.email).toLowerCase().trim());
+            } catch (e) {}
+          }
+        });
+        db.deletedTeacherIds = Array.from(deletedSet);
+      }
+    } catch (e) {}
 
     const { data: remoteTeachers, error } = await client.from("ea_teachers").select("*");
     if (error) {
@@ -2824,50 +2772,15 @@ async function syncSupabaseTeachersOnStartup() {
     }
 
     if (remoteTeachers && Array.isArray(remoteTeachers)) {
-      const remoteIds = new Set(remoteTeachers.map((t: any) => t.id));
-      const missingFromRemote = serverTeachers.filter((t: any) => {
-        if (!t || !t.id) return false;
-        if (remoteIds.has(t.id)) return false;
-        if (deletedSet.has(String(t.id).toLowerCase().trim())) return false;
-        if (t.email && deletedSet.has(String(t.email).toLowerCase().trim())) return false;
-        return true;
-      });
-
-      if (missingFromRemote.length > 0) {
-        console.log(`[Startup Supabase Sync] Pushing ${missingFromRemote.length} missing teacher(s) to Supabase ea_teachers...`);
-        const payloads = missingFromRemote.map((t: any) => ({
-          id: t.id,
-          name: t.name,
-          email: t.email,
-          role: t.role || "TEACHER",
-          password: t.password || null,
-          level: t.level || null,
-          subjects: t.subjects || null,
-          classes: t.classes || null,
-          date_of_birth: t.dateOfBirth || null,
-          phone_number: t.phoneNumber || null,
-          qualification: t.qualification || null,
-          profile_picture: t.profilePicture || null,
-          hometown: t.hometown || null,
-          ghana_card_number: t.ghanaCardNumber || null,
-          updated_at: new Date().toISOString()
-        }));
-        await client.from("ea_teachers").upsert(payloads, { onConflict: "id" });
-        console.log(`[Startup Supabase Sync] Successfully populated missing teachers to Supabase ea_teachers.`);
-      }
-
-      const serverIds = new Set(serverTeachers.map((t: any) => t.id));
-      const missingFromServer = remoteTeachers.filter((t: any) => {
-        if (!t || !t.id) return false;
-        if (serverIds.has(t.id)) return false;
-        if (deletedSet.has(String(t.id).toLowerCase().trim())) return false;
-        if (t.email && deletedSet.has(String(t.email).toLowerCase().trim())) return false;
-        return true;
-      });
-
-      if (missingFromServer.length > 0) {
-        console.log(`[Startup Supabase Sync] Pulling ${missingFromServer.length} new teacher(s) from Supabase into server database...`);
-        const mapped = missingFromServer.map((r: any) => ({
+      const cleanRemote = remoteTeachers
+        .filter((t: any) => {
+          if (!t || !t.id) return false;
+          if (deletedSet.has(String(t.id).toLowerCase().trim())) return false;
+          if (t.email && deletedSet.has(String(t.email).toLowerCase().trim())) return false;
+          if (t.name && deletedSet.has(String(t.name).toLowerCase().trim())) return false;
+          return true;
+        })
+        .map((r: any) => ({
           id: r.id,
           name: r.name || "",
           email: r.email || "",
@@ -2883,10 +2796,14 @@ async function syncSupabaseTeachersOnStartup() {
           hometown: r.hometown || undefined,
           ghanaCardNumber: r.ghana_card_number || undefined
         }));
-        db.teachers = [...serverTeachers, ...mapped];
-        saveServerDatabase(db, "teachers", db.teachers);
+
+      db.teachers = cleanRemote;
+      db.classTeacherAssignments = buildAssignmentsFromTeachers(cleanRemote);
+      if (db.config) {
+        db.config.classTeacherAssignments = db.classTeacherAssignments;
       }
-      console.log(`[Startup Supabase Sync] Verified ea_teachers table synchronization: ${remoteTeachers.length + missingFromRemote.length} teachers total.`);
+      saveServerDatabase(db, "teachers", cleanRemote);
+      console.log(`[Startup Supabase Sync] Synchronized ${cleanRemote.length} active staff from Supabase ea_teachers.`);
     }
   } catch (err: any) {
     console.warn("[Startup Supabase Sync] Warning during teacher background sync:", err?.message || err);

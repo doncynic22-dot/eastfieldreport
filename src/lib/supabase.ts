@@ -1422,60 +1422,13 @@ export function isTeacherDeleted(teacher?: { id?: string; email?: string; name?:
   return false;
 }
 
-// Global helper to automatically prune deleted tombstones for students and teachers
-export function pruneDeletedTombstones(activeStudents?: Student[], activeTeachers?: User[]): void {
-  if (Array.isArray(activeStudents) && activeStudents.length > 0) {
-    try {
-      const activeIds = new Set(activeStudents.map(s => String(s.id).toLowerCase().trim()).filter(Boolean));
-      const activeAlphas = new Set(activeStudents.map(s => String(s.id).toLowerCase().trim().replace(/[^a-z0-9]/g, '')).filter(Boolean));
-      const current = getDeletedStudentIds();
-      const pruned = current.filter(id => {
-        const norm = String(id).toLowerCase().trim();
-        const normAlpha = norm.replace(/[^a-z0-9]/g, '');
-        return !activeIds.has(norm) && !activeAlphas.has(normAlpha);
-      });
-      if (pruned.length !== current.length) {
-        localStorage.setItem('ea_deleted_student_ids', JSON.stringify(pruned));
-      }
-    } catch (e) {}
-  }
-
-  if (Array.isArray(activeTeachers) && activeTeachers.length > 0) {
-    try {
-      const activeIds = new Set(activeTeachers.map(t => String(t.id).toLowerCase().trim()));
-      const current = getDeletedTeacherIds();
-      const pruned = current.filter(id => !activeIds.has(String(id).toLowerCase().trim()));
-      if (pruned.length !== current.length) {
-        localStorage.setItem('ea_deleted_teacher_ids', JSON.stringify(pruned));
-      }
-    } catch (e) {}
-  }
+// Global helper to automatically prune deleted tombstones for students and teachers (only on explicit re-enrollment)
+export function pruneDeletedTombstones(_activeStudents?: Student[], _activeTeachers?: User[]): void {
+  // Retain tombstones securely to prevent resurrected records across distributed clients
 }
 
-export function pruneDeletedStudentTombstones(activeStudentsOrIds: (Student | string)[]): void {
-  if (!Array.isArray(activeStudentsOrIds) || activeStudentsOrIds.length === 0) return;
-  try {
-    const activeIds = new Set<string>();
-    const activeAlphas = new Set<string>();
-    activeStudentsOrIds.forEach(item => {
-      const id = typeof item === 'string' ? item : item?.id;
-      if (id) {
-        const clean = String(id).toLowerCase().trim();
-        activeIds.add(clean);
-        const alpha = clean.replace(/[^a-z0-9]/g, '');
-        if (alpha) activeAlphas.add(alpha);
-      }
-    });
-    const current = getDeletedStudentIds();
-    const pruned = current.filter(id => {
-      const norm = String(id).toLowerCase().trim();
-      const normAlpha = norm.replace(/[^a-z0-9]/g, '');
-      return !activeIds.has(norm) && !activeAlphas.has(normAlpha);
-    });
-    if (pruned.length !== current.length) {
-      localStorage.setItem('ea_deleted_student_ids', JSON.stringify(pruned));
-    }
-  } catch (e) {}
+export function pruneDeletedStudentTombstones(_activeStudentsOrIds: (Student | string)[]): void {
+  // Retain tombstones securely to prevent resurrected records across distributed clients
 }
 
 // 2. SYNC STUDENTS
@@ -1615,44 +1568,11 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     }
 
     if (!data || data.length === 0) {
-      const isExplicitlyCleared = typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
-      if (isExplicitlyCleared) {
-        return [];
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ea_students_cleared', 'true');
+        localStorage.setItem('ea_students', JSON.stringify([]));
+        localStorage.setItem('mock_supabase_ea_students', JSON.stringify([]));
       }
-
-      // Supabase returned 0 rows. Check if local cache has newly admitted pupils that haven't been cleared
-      const cached = typeof localStorage !== 'undefined' ? (localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students')) : null;
-      let localClean: Student[] = [];
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) {
-            localClean = filterDeleted(parsed);
-          }
-        } catch (e) {}
-      }
-
-      if (localClean.length > 0) {
-        // Local has pupils (e.g. freshly admitted) that need to be pushed to cloud
-        saveSupabaseStudents(localClean).catch(() => {});
-        return localClean;
-      }
-
-      // Fallback check to central server only if roster wasn't cleared
-      const serverResult = await fetchFromServer();
-      if (serverResult && serverResult.length > 0) {
-        const cleanServer = filterDeleted(serverResult);
-        if (cleanServer.length > 0) {
-          if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('ea_students', JSON.stringify(cleanServer));
-            localStorage.setItem('mock_supabase_ea_students', JSON.stringify(cleanServer));
-            localStorage.removeItem('ea_students_cleared');
-          }
-          saveSupabaseStudents(cleanServer).catch(() => {});
-          return cleanServer;
-        }
-      }
-
       return [];
     }
 
@@ -1671,43 +1591,13 @@ export async function fetchSupabaseStudents(): Promise<Student[] | null> {
     }));
 
     const cleanMapped = filterDeleted(mapped);
-
-    // Reconcile with local students (e.g. freshly admitted students that are not yet in remote)
-    const studentMap = new Map<string, Student>();
-    cleanMapped.forEach(s => {
-      if (s && s.id) studentMap.set(s.id, s);
-    });
-
-    const isExplicitlyCleared = typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
-    if (!isExplicitlyCleared && typeof localStorage !== 'undefined') {
-      const cached = localStorage.getItem('ea_students') || localStorage.getItem('mock_supabase_ea_students');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) {
-            const localClean = filterDeleted(parsed);
-            localClean.forEach(s => {
-              if (s && s.id && !studentMap.has(s.id)) {
-                studentMap.set(s.id, s);
-              } else if (s && s.id && studentMap.has(s.id)) {
-                const remote = studentMap.get(s.id)!;
-                const localTime = new Date(s.updatedAt || s.updated_at || '').getTime() || 0;
-                const remoteTime = new Date(remote.updatedAt || remote.updated_at || '').getTime() || 0;
-                if (localTime > remoteTime) {
-                  studentMap.set(s.id, { ...remote, ...s });
-                }
-              }
-            });
-          }
-        } catch (e) {}
-      }
-    }
-
-    const mergedStudents = deduplicateStudents(filterDeleted(Array.from(studentMap.values())));
+    const mergedStudents = deduplicateStudents(cleanMapped);
 
     if (typeof localStorage !== 'undefined') {
       if (mergedStudents.length > 0) {
         localStorage.removeItem('ea_students_cleared');
+      } else {
+        localStorage.setItem('ea_students_cleared', 'true');
       }
       localStorage.setItem('ea_students', JSON.stringify(mergedStudents));
       localStorage.setItem('mock_supabase_ea_students', JSON.stringify(mergedStudents));
@@ -2184,13 +2074,11 @@ export async function fetchSupabaseTeachers(): Promise<User[] | null> {
       return null;
     }
     if (!data || data.length === 0) {
-      const serverTeachers = await fetchServerEntity<User[]>('/teachers');
-      if (serverTeachers && serverTeachers.length > 0) {
-        const clean = filterDeleted(serverTeachers);
-        localStorage.setItem('ea_teachers', JSON.stringify(clean));
-        return clean;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ea_teachers', JSON.stringify([]));
+        localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify([]));
       }
-      return null;
+      return [];
     }
     const mapped = data.map(item => ({
       id: item.id,

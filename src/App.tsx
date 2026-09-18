@@ -77,10 +77,9 @@ export default function App() {
           return reconcileTeachersWithClassAssignments(clean);
         }
       }
-      const initialClean = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
-      return reconcileTeachersWithClassAssignments(initialClean);
+      return [];
     } catch {
-      return INITIAL_USERS.filter(t => !isTeacherDeleted(t));
+      return [];
     }
   });
   const [grades, setGrades] = useState<Grade[]>([]);
@@ -301,8 +300,7 @@ export default function App() {
         if (cachedTeachersStr) parsedTeachers = JSON.parse(cachedTeachersStr);
       } catch (e) {}
       const cleanParsed = (Array.isArray(parsedTeachers) ? parsedTeachers : []).filter(t => !isTeacherDeleted(t));
-      const cleanInitial = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
-      const localTeachers: User[] = cleanParsed.length > 0 ? cleanParsed : cleanInitial;
+      const localTeachers: User[] = cleanParsed;
 
       const cachedGradesStr = localStorage.getItem('ea_grades');
       const localGrades: Grade[] = cachedGradesStr ? JSON.parse(cachedGradesStr) : [];
@@ -379,62 +377,26 @@ export default function App() {
       const sTeachers = sTeachersRes.data;
       const teachersFetchSuccess = sTeachersRes.success;
 
-      const cleanDefaults = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
       const cleanLocalTeachers = (localTeachers || []).filter(t => !isTeacherDeleted(t));
-      let activeTeachers = cleanLocalTeachers.length > 0 ? cleanLocalTeachers : cleanDefaults;
+      let activeTeachers = cleanLocalTeachers;
 
       if (teachersFetchSuccess && sTeachers !== null) {
         if (sTeachers.length === 0) {
-          // Table in Supabase is empty: only seed active defaults if they haven't been deleted
-          if (activeTeachers.length > 0) {
-            activeTeachers = reconcileTeachersWithClassAssignments(activeTeachers, authoritativeAssignments);
-            setTeachers(activeTeachers);
-            localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
-            saveSupabaseTeachers(activeTeachers).catch(seedErr => {
-              console.error("Failed seeding teachers to Supabase:", seedErr);
-            });
-          } else {
-            setTeachers([]);
-            localStorage.setItem('ea_teachers', JSON.stringify([]));
-          }
+          activeTeachers = [];
+          setTeachers([]);
+          localStorage.setItem('ea_teachers', JSON.stringify([]));
+          localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify([]));
         } else {
           const cleanRemote = sTeachers.filter(t => !isTeacherDeleted(t));
-          const remoteIds = new Set(cleanRemote.map(t => t.id));
-          const remoteEmails = new Set(cleanRemote.map(t => (t.email || '').toLowerCase().trim()));
-
-          // Bidirectional sync: If local cache or initial users has teachers not yet in Supabase,
-          // merge them so no teacher is lost, and push them to Supabase
-          const candidateStaff = [...cleanLocalTeachers, ...cleanDefaults];
-          const unsyncedStaff = candidateStaff.filter(t => {
-            if (!t || !t.id) return false;
-            if (isTeacherDeleted(t)) return false;
-            if (remoteIds.has(t.id)) return false;
-            if (t.email && remoteEmails.has(t.email.toLowerCase().trim())) return false;
-            return true;
-          });
-
-          const mergedMap = new Map<string, User>();
-          cleanRemote.forEach(t => mergedMap.set(t.id, t));
-          unsyncedStaff.forEach(t => {
-            if (!mergedMap.has(t.id)) {
-              mergedMap.set(t.id, t);
-            }
-          });
-
-          const combinedList = Array.from(mergedMap.values());
-          activeTeachers = reconcileTeachersWithClassAssignments(combinedList, authoritativeAssignments);
+          activeTeachers = reconcileTeachersWithClassAssignments(cleanRemote, authoritativeAssignments);
           setTeachers(activeTeachers);
           localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
+          localStorage.setItem('mock_supabase_ea_teachers', JSON.stringify(activeTeachers));
           lastSavedTeachersSigRef.current = activeTeachers.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
-
-          if (unsyncedStaff.length > 0) {
-            console.log(`[App.tsx] Bidirectional sync: pushing ${unsyncedStaff.length} missing staff to Supabase ea_teachers...`);
-            saveSupabaseTeachers(activeTeachers).catch(() => {});
-          }
         }
       } else {
-        // Query failed or fallback -> populate clean local teachers or defaults
-        activeTeachers = reconcileTeachersWithClassAssignments(activeTeachers, authoritativeAssignments);
+        // Query failed or fallback -> retain clean local teachers
+        activeTeachers = reconcileTeachersWithClassAssignments(cleanLocalTeachers, authoritativeAssignments);
         setTeachers(activeTeachers);
         localStorage.setItem('ea_teachers', JSON.stringify(activeTeachers));
         lastSavedTeachersSigRef.current = activeTeachers.map(t => `${t.id}:${t.email}:${t.role}:${t.name || ''}:${(t.classes || []).join(',')}:${(t.subjects || []).join(',')}`).join('|');
@@ -449,9 +411,6 @@ export default function App() {
       const teacherIds = new Set(activeTeachers.map(t => t.id));
 
       if (studentsFetchSuccess && sStudents !== null) {
-        // Authoritative cloud pupils are active; ensure local browser deletion markers don't suppress enrolled pupils
-        pruneDeletedTombstones(sStudents, activeTeachers);
-
         let cleanStudents = sStudents.filter(
           s => !teacherIds.has(s.id) && !teacherEmails.has((s.guardianEmail || '').toLowerCase())
         );
@@ -468,36 +427,10 @@ export default function App() {
 
         cleanStudents = cleanStudents.filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
 
-        // Only reconcile local students if roster is NOT cleared, cloud returned students, and students are not deleted
         const isRosterCleared = typeof localStorage !== 'undefined' && localStorage.getItem('ea_students_cleared') === 'true';
 
-        if (!isRosterCleared && cleanStudents.length > 0) {
-          const remoteIds = new Set(cleanStudents.map(s => s.id));
-          const remoteNames = new Set(cleanStudents.map(s => (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ')));
-          const remoteRolls = new Set(cleanStudents.map(s => (s.rollNumber || '').trim().toLowerCase()));
-
-          const unsyncedLocal = localStudents.filter(s => {
-            if (!s || !s.id) return false;
-            if (isStudentDeleted(s) || isDemoStudent(s)) return false;
-            if (remoteIds.has(s.id)) return false;
-            const nName = (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
-            if (nName && remoteNames.has(nName)) return false;
-            const nRoll = (s.rollNumber || '').trim().toLowerCase();
-            if (nRoll && remoteRolls.has(nRoll)) return false;
-            return true;
-          });
-
-          if (unsyncedLocal.length > 0) {
-            console.log(`[Supabase Student Sync] Merging ${unsyncedLocal.length} unsynced local pupil(s) into cloud roster.`);
-            cleanStudents = deduplicateStudents([...cleanStudents, ...unsyncedLocal]);
-            saveSupabaseStudents(cleanStudents).catch(err => {
-              console.warn('[Supabase Student Sync] Background push of reconciled pupils warning:', err);
-            });
-          }
-        }
-
         // Deduplicate unified roster
-        const activeStudents = isRosterCleared ? [] : deduplicateStudents(cleanStudents);
+        const activeStudents = (isRosterCleared || cleanStudents.length === 0) ? [] : deduplicateStudents(cleanStudents);
 
         if (activeStudents.length > 0) {
           localStorage.removeItem('ea_students_cleared');
@@ -811,13 +744,13 @@ export default function App() {
       try {
         finalTeachers = JSON.parse(cachedTeachers) as User[];
       } catch (e) {
-        finalTeachers = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
+        finalTeachers = [];
       }
     } else {
-      finalTeachers = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
+      finalTeachers = [];
     }
     if (!Array.isArray(finalTeachers)) {
-      finalTeachers = INITIAL_USERS.filter(t => !isTeacherDeleted(t));
+      finalTeachers = [];
     }
     finalTeachers = finalTeachers.filter(t => !isTeacherDeleted(t));
     finalTeachers = reconcileTeachersWithClassAssignments(finalTeachers);
