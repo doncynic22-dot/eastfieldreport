@@ -1645,21 +1645,8 @@ async function startServer() {
       });
     }
     if (Array.isArray(incoming.teachers)) {
-      const incomingTeacherIds = new Set(incoming.teachers.map((t: any) => String(t.id || '').toLowerCase().trim()).filter(Boolean));
-      const incomingTeacherEmails = new Set(incoming.teachers.map((t: any) => String(t.email || '').toLowerCase().trim()).filter(Boolean));
-      const incomingTeacherNames = new Set(incoming.teachers.map((t: any) => String(t.name || '').toLowerCase().trim()).filter(Boolean));
-      if (db.deletedTeacherIds && db.deletedTeacherIds.length > 0) {
-        db.deletedTeacherIds = db.deletedTeacherIds.filter(id => {
-          const norm = String(id).toLowerCase().trim();
-          return !incomingTeacherIds.has(norm) && !incomingTeacherEmails.has(norm) && !incomingTeacherNames.has(norm);
-        });
-      }
       const deletedTeacherSet = new Set((db.deletedTeacherIds || []).map(x => String(x).toLowerCase().trim()));
-      const existingTeachers = Array.isArray(db.teachers) ? db.teachers : [];
       const teacherMap = new Map<string, any>();
-      existingTeachers.forEach((t: any) => {
-        if (t && t.id) teacherMap.set(String(t.id), t);
-      });
       incoming.teachers.forEach((t: any) => {
         if (t && t.id) {
           const existing = teacherMap.get(String(t.id));
@@ -1699,14 +1686,6 @@ async function startServer() {
       db.deletedStudentIds = sanitizeDeletedStudentIds(Array.from(currentDeleted));
     }
     if (Array.isArray(incoming.students)) {
-      const incomingIds = new Set(incoming.students.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
-      const incomingRolls = new Set(incoming.students.map((s: any) => String(s.rollNumber || '').toLowerCase().trim()).filter(Boolean));
-      if (db.deletedStudentIds && db.deletedStudentIds.length > 0) {
-        db.deletedStudentIds = db.deletedStudentIds.filter(id => {
-          const norm = String(id).toLowerCase().trim();
-          return !incomingIds.has(norm) && !incomingRolls.has(norm);
-        });
-      }
       const cleanStudents = incoming.students.filter((s: any) => !isDemoStudent(s) && !isStudentDeletedOnServer(s, db.deletedStudentIds));
       db.students = cleanStudents;
       if (cleanStudents.length > 0) {
