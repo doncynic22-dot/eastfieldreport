@@ -673,7 +673,7 @@ NOTIFY pgrst, 'reload schema';
 `;
 
 // SQL Script for setting up tables in Supabase Console
-export { SUPABASE_SQL_REPAIR, TABLE_SQL_DEFINITIONS, generateSuggestedSqlFix } from './supabaseRepairSql';
+export { SUPABASE_SQL_REPAIR, SUPABASE_SQL_RESET, TABLE_SQL_DEFINITIONS, generateSuggestedSqlFix } from './supabaseRepairSql';
 import { generateSuggestedSqlFix } from './supabaseRepairSql';
 
 export interface TableHealthStatus {

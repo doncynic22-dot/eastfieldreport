@@ -419,6 +419,46 @@ CREATE POLICY "Allow public deletes for testing" ON storage.objects FOR DELETE T
 NOTIFY pgrst, 'reload schema';
 `;
 
+/**
+ * Destructive, clean-schema recovery script.  This is deliberately separate from
+ * the non-destructive repair script above: it removes every application table and
+ * then runs the complete authoritative migration, including realtime setup.
+ * Supabase cannot safely execute DDL from the browser with an anon key, so an
+ * administrator must paste this into the project's SQL Editor.
+ */
+export const SUPABASE_SQL_RESET = `-- ==============================================================================
+-- EASTFIELD ACADEMY: DESTRUCTIVE SUPABASE RESET AND REBUILD
+-- ==============================================================================
+-- WARNING: This permanently deletes all Eastfield Academy cloud data, including
+-- pupils, grades, attendance, fee records, inventory, logs, and tombstones.
+-- Export a Supabase backup before running this script.
+-- Run the complete script in Supabase Dashboard > SQL Editor.
+-- ==============================================================================
+
+DROP TABLE IF EXISTS public.ea_notifications CASCADE;
+DROP TABLE IF EXISTS public.ea_sync_state CASCADE;
+DROP TABLE IF EXISTS public.ea_sync_logs CASCADE;
+DROP TABLE IF EXISTS public.ea_deleted_records CASCADE;
+DROP TABLE IF EXISTS public.ea_jhs_terminal_assessments CASCADE;
+DROP TABLE IF EXISTS public.ea_jhs_mock_exams CASCADE;
+DROP TABLE IF EXISTS public.ea_book_sales CASCADE;
+DROP TABLE IF EXISTS public.ea_book_stock CASCADE;
+DROP TABLE IF EXISTS public.ea_inventory CASCADE;
+DROP TABLE IF EXISTS public.ea_daily_collections CASCADE;
+DROP TABLE IF EXISTS public.ea_fee_structures CASCADE;
+DROP TABLE IF EXISTS public.ea_fee_payments CASCADE;
+DROP TABLE IF EXISTS public.ea_bills CASCADE;
+DROP TABLE IF EXISTS public.ea_daily_attendance CASCADE;
+DROP TABLE IF EXISTS public.ea_attendance CASCADE;
+DROP TABLE IF EXISTS public.ea_grades CASCADE;
+DROP TABLE IF EXISTS public.ea_teachers CASCADE;
+DROP TABLE IF EXISTS public.ea_students CASCADE;
+DROP TABLE IF EXISTS public.ea_config CASCADE;
+
+-- Recreate every table, compatibility view, permission, storage policy, and
+-- realtime publication entry using the current authoritative schema.
+${SUPABASE_SQL_REPAIR}`;
+
 export const TABLE_SQL_DEFINITIONS: Record<string, string> = {
   ea_config: `-- 1. Config Table
 CREATE TABLE IF NOT EXISTS public.ea_config (
@@ -808,4 +848,3 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role
 NOTIFY pgrst, 'reload schema';
 `;
 }
-
