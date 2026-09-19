@@ -14,6 +14,7 @@ import {
   auditDatabaseCounts, 
   DatabaseAuditReport, 
   SUPABASE_SQL_REPAIR, 
+  SUPABASE_SQL_RESET,
   pruneDeletedTombstones,
   fetchSupabaseStudents,
   fetchSupabaseTeachers,
@@ -64,6 +65,7 @@ export default function DatabaseAuditTab({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRealigning, setIsRealigning] = useState<boolean>(false);
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
+  const [copiedResetSql, setCopiedResetSql] = useState<boolean>(false);
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
   const [lastAuditTime, setLastAuditTime] = useState<Date>(new Date());
 
@@ -109,6 +111,17 @@ export default function DatabaseAuditTab({
     navigator.clipboard.writeText(SUPABASE_SQL_REPAIR);
     setCopiedSql(true);
     setTimeout(() => setCopiedSql(false), 3000);
+  };
+
+  const handleCopyResetSql = () => {
+    const confirmed = window.confirm(
+      'Copy destructive reset SQL? Running it in Supabase permanently deletes every Eastfield Academy cloud table and its data. Create a backup first.'
+    );
+    if (!confirmed) return;
+
+    navigator.clipboard.writeText(SUPABASE_SQL_RESET);
+    setCopiedResetSql(true);
+    setTimeout(() => setCopiedResetSql(false), 3000);
   };
 
   const handleForceRealignment = async () => {
@@ -739,6 +752,22 @@ export default function DatabaseAuditTab({
           >
             {copiedSql ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
             <span>{copiedSql ? 'SQL Script Copied!' : 'Copy Migration SQL'}</span>
+          </button>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-rose-400/40 bg-rose-500/10 p-4">
+          <div>
+            <h5 className="font-bold text-sm text-rose-200">Still failing? Rebuild all cloud tables</h5>
+            <p className="mt-1 text-xs leading-5 text-rose-100/80">
+              This drops all 19 Eastfield tables, recreates the authoritative schema, restores permissions, and re-enables real-time publication. It permanently deletes cloud data; make a Supabase backup first.
+            </p>
+          </div>
+          <button
+            onClick={handleCopyResetSql}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl transition flex items-center gap-2 cursor-pointer self-start sm:self-auto shrink-0"
+          >
+            {copiedResetSql ? <Check className="w-4 h-4 text-rose-100" /> : <Copy className="w-4 h-4" />}
+            <span>{copiedResetSql ? 'Reset SQL Copied!' : 'Copy Destructive Reset SQL'}</span>
           </button>
         </div>
 

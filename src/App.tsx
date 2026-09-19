@@ -1068,25 +1068,19 @@ export default function App() {
         }
         if (Array.isArray(p.students)) {
           const incomingClean = deduplicateStudents(p.students.filter(s => !isStudentDeleted(s) && !isDemoStudent(s)));
-          setStudents(prev => {
-            const cleanPrev = (prev || []).filter(s => !isStudentDeleted(s) && !isDemoStudent(s));
-            const studentMap = new Map<string, Student>();
-            incomingClean.forEach(s => { if (s?.id) studentMap.set(s.id, s); });
-            cleanPrev.forEach(s => {
-              if (s?.id && !studentMap.has(s.id)) {
-                studentMap.set(s.id, s);
-              }
-            });
-            const reconciled = deduplicateStudents(Array.from(studentMap.values()).filter(s => !isStudentDeleted(s)));
-            localStorage.setItem('ea_students', JSON.stringify(reconciled));
-            localStorage.setItem('mock_supabase_ea_students', JSON.stringify(reconciled));
-            lastSavedStudentsSigRef.current = reconciled.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
-            window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: reconciled }));
-            if (reconciled.length > 0) {
-              localStorage.removeItem('ea_students_cleared');
-            }
-            return reconciled;
-          });
+          // FULL_SYNC is a versioned server snapshot.  Re-merging entries that
+          // disappeared from it resurrects deleted pupils when an older tab has
+          // an in-flight save.  Replace the roster atomically instead.
+          setStudents(incomingClean);
+          localStorage.setItem('ea_students', JSON.stringify(incomingClean));
+          localStorage.setItem('mock_supabase_ea_students', JSON.stringify(incomingClean));
+          lastSavedStudentsSigRef.current = incomingClean.map(s => `${s.id}:${s.className}:${s.name}:${s.rollNumber}`).join('|');
+          window.dispatchEvent(new CustomEvent('ea_students_updated', { detail: incomingClean }));
+          if (incomingClean.length > 0) {
+            localStorage.removeItem('ea_students_cleared');
+          } else {
+            localStorage.setItem('ea_students_cleared', 'true');
+          }
         }
         if (Array.isArray(p.grades)) {
           setGrades(p.grades);

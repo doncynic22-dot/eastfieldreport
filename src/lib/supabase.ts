@@ -673,7 +673,7 @@ NOTIFY pgrst, 'reload schema';
 `;
 
 // SQL Script for setting up tables in Supabase Console
-export { SUPABASE_SQL_REPAIR, TABLE_SQL_DEFINITIONS, generateSuggestedSqlFix } from './supabaseRepairSql';
+export { SUPABASE_SQL_REPAIR, SUPABASE_SQL_RESET, TABLE_SQL_DEFINITIONS, generateSuggestedSqlFix } from './supabaseRepairSql';
 import { generateSuggestedSqlFix } from './supabaseRepairSql';
 
 export interface TableHealthStatus {
@@ -2307,13 +2307,13 @@ export async function repopulateAllStudents(canonicalList: Student[] = INITIAL_S
       const payloads = cleanList.map(s => ({
         id: s.id,
         name: s.name,
-        roll_number: s.rollNumber || s.roll_number || '',
+        roll_number: s.rollNumber || (s as any).roll_number || '',
         level: s.level || 'PRIMARY',
-        class_name: s.className || s.class_name || 'Primary 1',
-        guardian_name: s.guardianName || s.guardian_name || '',
-        guardian_email: s.guardianEmail || s.guardian_email || '',
-        guardian_phone: s.guardianPhone || s.guardian_phone || '',
-        photo_url: s.photoUrl || s.photo_url || '',
+        class_name: s.className || (s as any).class_name || 'Primary 1',
+        guardian_name: s.guardianName || (s as any).guardian_name || '',
+        guardian_email: s.guardianEmail || (s as any).guardian_email || '',
+        guardian_phone: s.guardianPhone || (s as any).guardian_phone || '',
+        photo_url: s.photoUrl || (s as any).photo_url || '',
         updated_at: new Date().toISOString()
       }));
 

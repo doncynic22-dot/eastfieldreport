@@ -237,24 +237,6 @@ class GlobalSyncManager {
           if (fresh && (fresh.data || fresh.students || fresh.teachers)) {
             const fullPayload = fresh.data || fresh;
 
-            // Prune active students from local deletion tombstones
-            if (Array.isArray(fullPayload.students) && fullPayload.students.length > 0) {
-              try {
-                const activeIds = new Set(fullPayload.students.map((s: any) => String(s.id || '').toLowerCase().trim()).filter(Boolean));
-                const activeAlphas = new Set(fullPayload.students.map((s: any) => String(s.id || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '')).filter(Boolean));
-                const savedDel = localStorage.getItem('ea_deleted_student_ids');
-                const delArr: string[] = savedDel ? JSON.parse(savedDel) : [];
-                const pruned = delArr.filter(id => {
-                  const norm = String(id).toLowerCase().trim();
-                  const normAlpha = norm.replace(/[^a-z0-9]/g, '');
-                  return !activeIds.has(norm) && !activeAlphas.has(normAlpha);
-                });
-                if (pruned.length !== delArr.length) {
-                  localStorage.setItem('ea_deleted_student_ids', JSON.stringify(pruned));
-                }
-              } catch (e) {}
-            }
-
             // Merge any deleted student IDs from server payload into localStorage (excluding active pupils)
             const serverDeletedIds = fresh.deletedStudentIds || (fresh.data && fresh.data.deletedStudentIds);
             if (Array.isArray(serverDeletedIds) && serverDeletedIds.length > 0) {
